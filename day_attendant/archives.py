@@ -14,16 +14,18 @@ import time
 import uuid
 import zipfile
 
+from . import __version__
 from .errors import AssistantError
 from .platforms import exclusive
 from .profiles import state_home,invalidate_pending,default_policy
-from .taskwarrior import canonical
+from .taskstore import canonical
 from .timeutil import parse,stamp
 
-FORMAT=1
+FORMAT=2
 MAX_TOTAL=2*1024**3
 RUNTIME_KEYS=('maintenance','chat_thread','chat_threads','agent_startup_error','agent_runtime','service_runtime','backup_running')
-BASE_FILES=('assistant.sqlite3','taskwarrior/taskrc','taskwarrior/data/taskchampion.sqlite3')
+BASE_FILES=('assistant.sqlite3','tasks.sqlite3')
+LEGACY_FILES=('assistant.sqlite3','taskwarrior/taskrc','taskwarrior/data/taskchampion.sqlite3')
 
 
 def encoded(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False)
@@ -132,7 +134,7 @@ def snapshot(app,destination=None,category='manual',key=None,timeout=20):
                     # the human is deciding whether to abandon.
                     with app.store.connect() as con:schema=con.execute('PRAGMA user_version').fetchone()[0]
                     profile=app.store.state_value('profile') or {'id':str(uuid.uuid5(uuid.NAMESPACE_URL,str(app.store.path))),'kind':'synthetic','name':app.store.path.name,'timezone':app.store.state_value('timezone','UTC')}
-                    selected=list(BASE_FILES)
+                    selected=list(app.tasks.storage_files)
                     with app.store.connect() as con:
                         has_images=con.execute("SELECT 1 FROM sqlite_master WHERE name='attachments'").fetchone()
                         images=[dict(r) for r in con.execute('SELECT * FROM attachments')] if has_images else []
@@ -143,8 +145,8 @@ def snapshot(app,destination=None,category='manual',key=None,timeout=20):
                         selected.append(rel)
                     size=sum((app.store.path/rel).stat().st_size for rel in selected if (app.store.path/rel).exists())
                     if size>MAX_TOTAL or shutil.disk_usage(folder).free<size*2+10*1024*1024:raise AssistantError('backup_space','There is not enough free space for a coherent staged backup.')
-                    sqlite_copy(app.store.database,staging/'assistant.sqlite3')
-                    sqlite_copy(app.store.path/'taskwarrior/data/taskchampion.sqlite3',staging/'taskwarrior/data/taskchampion.sqlite3')
+                    for rel in app.tasks.storage_files:
+                        if rel.endswith('.sqlite3'):sqlite_copy(app.store.path/rel,staging/rel)
                     for rel in selected:
                         if rel.endswith('.sqlite3'):continue
                         source=app.store.path/rel
@@ -153,7 +155,7 @@ def snapshot(app,destination=None,category='manual',key=None,timeout=20):
                     with sqlite3.connect(staging/'assistant.sqlite3') as con:
                         for name in RUNTIME_KEYS:con.execute('DELETE FROM state WHERE key=?',(name,))
                     captured=app.now();revision=app.store.revision()
-                    manifest={'format':FORMAT,'application':'Day Attendant','application_version':'0.3.0','state_schema':schema,'profile':profile,
+                    manifest={'format':app.tasks.storage_format,'task_backend':app.tasks.backend,'application':'Day Attendant','application_version':__version__,'state_schema':schema,'profile':profile,
                         'captured_at':captured,'revision':revision,'category':category,'task_fingerprint':task_digest(app.tasks.rows()),
                         'recovery_required':bool(app.store.unresolved()),'files':{}}
                     for rel in selected:
@@ -192,13 +194,16 @@ def verify(filename):
             if 'manifest.json' not in names:raise ValueError('manifest missing')
             if archive.getinfo('manifest.json').file_size>2*1024*1024:raise ValueError('manifest too large')
             manifest=json.loads(archive.read('manifest.json'))
-            if manifest.get('format')!=FORMAT or manifest.get('application')!='Day Attendant' or manifest.get('state_schema') not in (3,4):raise ValueError('unsupported format')
+            if manifest.get('format') not in (1,FORMAT) or manifest.get('application')!='Day Attendant' or manifest.get('state_schema') not in (3,4):raise ValueError('unsupported format')
             files=manifest['files']
-            if not isinstance(files,dict) or set(names)!=set(files)|{'manifest.json'} or not set(BASE_FILES)<=set(files):raise ValueError('incomplete stores')
+            base=BASE_FILES if manifest['format']==FORMAT else LEGACY_FILES
+            backend='python-sqlite' if manifest['format']==FORMAT else 'taskwarrior'
+            if manifest.get('task_backend',backend)!=backend:raise ValueError('task backend mismatch')
+            if not isinstance(files,dict) or set(names)!=set(files)|{'manifest.json'} or not set(base)<=set(files):raise ValueError('incomplete stores')
             if manifest['profile']['kind'] not in ('personal','synthetic'):raise ValueError('profile kind')
             uuid.UUID(manifest['profile']['id'])
             for name,expected in files.items():
-                if name not in BASE_FILES and not name.startswith('attachments/'):raise ValueError('unexpected member')
+                if name not in base and not name.startswith('attachments/'):raise ValueError('unexpected member')
                 if expected['bytes']!=archive.getinfo(name).file_size:raise ValueError('size mismatch')
                 checksum=hashlib.sha256()
                 with archive.open(name) as stream:
@@ -225,8 +230,10 @@ def inspect_database(path):
 
 
 @storage_errors
-def restore(archive_path,target,task_bin=None):
+def restore(archive_path,target,legacy_task_bin=None):
     archive_path=Path(archive_path).expanduser().resolve();manifest=verify(archive_path)
+    if manifest['format']==1 and not legacy_task_bin:
+        raise AssistantError('legacy_backup','This Taskwarrior-era backup needs one explicit conversion on a machine with Taskwarrior 3.5.0: restore with --taskwarrior-bin PATH. New backups use only Python/SQLite.')
     target=Path(target).expanduser().resolve();checkout=Path(__file__).resolve().parent.parent
     if target==checkout or checkout in target.parents:raise AssistantError('unsafe_state_path','Restore outside the checkout.')
     if target.exists() and (not target.is_dir() or any(target.iterdir())):raise AssistantError('restore_target_exists','Restore to a new or empty directory. Existing profiles are never overwritten.')
@@ -238,11 +245,16 @@ def restore(archive_path,target,task_bin=None):
                 output=staging/name;output.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
                 with archive.open(name) as src,output.open('xb') as dst:shutil.copyfileobj(src,dst,1024*1024)
                 output.chmod(0o600)
-        safe_taskrc(staging/'taskwarrior/taskrc')
-        inspect_database(staging/'assistant.sqlite3');inspect_database(staging/'taskwarrior/data/taskchampion.sqlite3')
+        inspect_database(staging/'assistant.sqlite3')
+        if manifest['format']==1:
+            safe_taskrc(staging/'taskwarrior/taskrc')
+            inspect_database(staging/'taskwarrior/data/taskchampion.sqlite3')
+            from .migration import import_legacy_rows
+            import_legacy_rows(staging,legacy_task_bin)
+        inspect_database(staging/'tasks.sqlite3')
         from .service import Assistant
         from .connected import Connected
-        app=Assistant(staging,task_bin)
+        app=Assistant(staging)
         board=Connected(app)
         if task_digest(app.tasks.rows())!=manifest['task_fingerprint']:raise AssistantError('invalid_backup','Native responsibility identity or content does not match the snapshot.')
         with app.store.connect() as con:
@@ -281,11 +293,11 @@ def restore(archive_path,target,task_bin=None):
             'reminders_enabled':False,'jobs_installed':False,'native_tasks':len(native),'pending_reasoning':'stale'}
 
 
-def upgrade_profile(state,task_bin=None):
+def upgrade_profile(state):
     from .web import preflight
     from .service import Assistant
     from .connected import Connected
-    app=Assistant(preflight(state),task_bin)
+    app=Assistant(preflight(state))
     with exclusive(app.store.path/'server.lock',timeout=0):
         with app.store.connect() as con:version=con.execute('PRAGMA user_version').fetchone()[0]
         if version==4:return {'upgraded':False,'schema':4,'profile':app.store.state_value('profile')}

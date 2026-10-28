@@ -1,6 +1,6 @@
 """Bounded real-model checks. Setup uses controlled reviews, explicitly labeled.
 
-State oracles inspect native Taskwarrior; semantic outputs remain available for
+State oracles inspect the SQLite task store; semantic outputs remain available for
 human review. Passing a transport/state check is not a mental-health validation.
 """
 import argparse
@@ -15,7 +15,7 @@ sys.path.insert(0,str(ROOT));sys.path.insert(0,str(ROOT/'tests'))
 from day_attendant.codexbridge import CodexBridge
 from day_attendant.connected import Connected
 from day_attendant.service import Assistant
-from day_attendant.taskwarrior import canonical
+from day_attendant.taskstore import canonical
 from day_attendant.timeutil import stamp
 from test_connected import ReviewFixture
 
@@ -26,7 +26,7 @@ def main():
     parser.add_argument('--out',required=True)
     parser.add_argument('--cases',default='F01,F02,F03,F04,F05,F06,F07,F08,F15')
     args=parser.parse_args()
-    report={'scope':'Real model evaluations on actual synthetic Taskwarrior/SQLite. Controlled reviewer used only to arrange each fixture. Semantic claims require trace review.','cases':[]}
+    report={'scope':'Real model evaluations on actual synthetic SQLite stores. Controlled reviewer used only to arrange each fixture. Semantic claims require trace review.','cases':[]}
     with tempfile.TemporaryDirectory(prefix='day-eval-harness-') as workspace:
         bridge=CodexBridge(workspace)
         report['model']=bridge.model;report['authentication']=bridge.authentication
@@ -86,7 +86,7 @@ def main():
                     passed=unrelated and completed and (expected is None or final['phase']==expected)
                     if expected=='review':passed=passed and before==after
                     output=final.get('review',{}).get('output') if final.get('review') else None
-                    report['cases'].append({'id':case,'fixture_setup':'real Taskwarrior with controlled review',
+                    report['cases'].append({'id':case,'fixture_setup':'real SQLite stores with controlled review',
                         'request':{'action':action,'payload':payload,'text':text},'expected_phase':expected,
                         'observed_phase':final['phase'],'state_oracle_passed':passed,'unrelated_tasks_preserved':unrelated,
                         'before':list(before.values()),'after':list(after.values()),'proposal':final,

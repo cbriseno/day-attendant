@@ -1,4 +1,4 @@
-"""Round-20 reproduced boundary failures, using real Taskwarrior/SQLite."""
+"""Round-20 reproduced boundary failures, using real SQLite stores."""
 from datetime import timedelta
 import json
 from pathlib import Path

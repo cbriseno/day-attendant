@@ -4,8 +4,8 @@
 
 Initialize once with `day-attendant init --zone IANA_ZONE --name NAME`. Restarting
 never reseeds a personal profile or changes its timezone. Select another state with
-`--state`; the CLI, API and UI share the same coordinator. Do not run direct native
-Taskwarrior commands on managed data.
+`--state`; the CLI, API and UI share the same coordinator. Do not edit either managed SQLite store directly. Linux and macOS use the same
+Python/SQLite task backend.
 
 `service start`, `stop`, `restart`, `status` and `open` operate only the selected
 profile. Start is idempotent and the kernel lifetime lock permits one server/profile.
@@ -56,7 +56,7 @@ day-attendant --json board chat 'Capture these selected responsibilities' \
 
 Dependency and related updates replace that entity's corresponding list. Preserve
 links the human did not ask to remove. Related links are symmetric and nonblocking.
-Use exact UUIDs, not numeric Taskwarrior IDs. New items in a capture receive UUIDs
+Use permanent UUIDs, never positional or numeric task IDs. New items in a capture receive UUIDs
 independently; requested links between new items need a follow-up using assigned IDs.
 
 `board list` returns current proposal phases and individual outcomes. A batch is not

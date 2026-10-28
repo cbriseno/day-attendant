@@ -1,4 +1,4 @@
-"""Real Taskwarrior oracles; controlled reviews test transport/state, not LLM quality."""
+"""Real SQLite task-store oracles; controlled reviews test transport/state, not LLM quality."""
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path

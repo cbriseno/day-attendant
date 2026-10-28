@@ -8,7 +8,7 @@ import uuid
 from .errors import AssistantError
 from . import platforms
 from .store import Store, DEFAULTS
-from .taskwarrior import Taskwarrior, canonical
+from .taskstore import TaskStore, canonical
 from .timeutil import instant, parse, stamp, utcnow, wire
 
 PRIORITIES = {"high": "H", "medium": "M", "low": "L"}
@@ -36,9 +36,9 @@ def continuity_values(payload):
 
 
 class Assistant:
-    def __init__(self, state, task_bin=None, clock=utcnow, notifier=platforms.notify, fault=None):
+    def __init__(self, state, clock=utcnow, notifier=platforms.notify, fault=None):
         self.store = Store(state)
-        self.tasks = Taskwarrior(self.store, task_bin)
+        self.tasks = TaskStore(self.store)
         self.clock = clock
         self.notifier = notifier
         self.fault = fault or (lambda point: None)
@@ -305,7 +305,7 @@ class Assistant:
             current = frames[-1]["target"] if frames else None
             active = [r["uuid"] for r in rows if r["status"] == "pending" and r.get("start")]
             if any(uid != current for uid in active):
-                raise AssistantError("external_focus", "Taskwarrior has an active task outside the focus stack.")
+                raise AssistantError("external_focus", "The task store has an active task outside the focus stack.")
             if action == "focus_push":
                 uid = self.validate_uuid(p["uuid"])
                 target = by_id.get(uid)
@@ -417,7 +417,7 @@ class Assistant:
                 if current == step["after"]:
                     continue
                 if current != step["before"]:
-                    raise AssistantError("external_conflict", "Taskwarrior changed outside this operation; no overwrite attempted.", {"uuid": step["uuid"]})
+                    raise AssistantError("external_conflict", "A task changed outside this operation; no overwrite attempted.", {"uuid": step["uuid"]})
                 if "create" in step:
                     self.tasks.create(step["create"])
                 else:
@@ -708,7 +708,7 @@ class Assistant:
                     if expired else "Review before retrying an uncertain delivery." if notice["status"] == "uncertain"
                     else "Wait for the active delivery." if notice["status"] == "sending"
                     else "Review the notifier failure; automatic retry limit was reached.")
-            return {"version": self.tasks.version(), "state": str(self.store.path), "integrity": integrity,
+            return {"backend": self.tasks.backend, "version": self.tasks.version(), "state": str(self.store.path), "integrity": integrity,
                     "revision": self.store.revision(), "operations": self.store.unresolved(),
                     "notices_requiring_attention": notices, "capabilities": caps,
                     "config": self.store.config(), "scheduler_installed_by_this_app": bool((self.store.state_value("scheduler") or {}).get('installed')), "scheduler":self.store.state_value("scheduler"), "last_tick":self.store.state_value("last_tick"), "last_backup":self.store.state_value("last_backup"), "notification_policy":self.store.state_value("notification_policy"), "maintenance":self.store.state_value("maintenance")}

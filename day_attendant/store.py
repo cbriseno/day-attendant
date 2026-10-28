@@ -1,4 +1,4 @@
-"""Private, versioned auxiliary state. Task records belong to Taskwarrior."""
+"""Private, versioned auxiliary state. Task records live in the companion SQLite task store."""
 from contextlib import contextmanager
 import json
 import os

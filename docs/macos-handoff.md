@@ -1,41 +1,42 @@
 # macOS handoff
 
-The domain and UI use the same portable code. macOS adapters implement user-state
-paths, kernel locks, owned subprocess cancellation, `osascript` notification delivery
-and a `launchd` LaunchAgent. No MCP server is required. Actual notification permission,
-company policy and resume behavior must be checked on the managed Mac. Linux results
-or hosted macOS core tests do not establish those facts.
+Day Attendant uses the **same Python/SQLite task backend on Linux and macOS**.
+Taskwarrior, TaskChampion, Rust, CMake and a C++ toolchain are not needed to install
+or run it. There is no separate Mac domain implementation.
 
-## Approved dependencies
+Only the OS boundary differs: user-state paths, kernel locks, owned subprocess
+cancellation, `osascript` notification delivery and the `launchd` LaunchAgent.
+Actual notification permission, company policy and sleep/resume behavior must be
+checked on the managed Mac. Linux tests do not establish those facts.
 
-Use Python 3.11+ with IANA timezone data, SQLite support, and the already authenticated
-Codex/Claude Code installations. Taskwarrior is intentionally pinned to **3.5.0**;
-other versions are rejected rather than modifying a different native schema blindly.
-The Linux development binary is a conda-forge package, not a source build and not
-portable to Mac. Do not copy `.runtime` as an installation strategy.
+## Approved dependencies and installation
 
-Where company approval permits source builds, use the fixed Taskwarrior source
-revision `3419d5ba1e6a780fbbb0a8d68d8fd31e675c1bf8` (`v3.5.0`) and its approved
-transitive Rust crates. The [release's INSTALL](https://github.com/GothenburgBitFactory/taskwarrior/blob/v3.5.0/INSTALL)
-requires CMake, make, C++17 and Rust **1.88.0 or newer**; libuuid is not required on
-macOS. Cargo.lock includes platform-specific entries, not a claim that all 348
-packages are built on Mac. The user's agents/IT must approve the actual toolchain,
-Git sources and dependency mirrors. Nothing here bypasses their controls.
+Use an approved Python 3.11+ installation with its standard-library `sqlite3` and
+IANA timezone data, plus an existing authenticated, company-approved Codex or
+Claude Code installation. Use the harness allowed on that machine; the app does
+not install either harness, copy credentials or activate API credits. No additional
+Python runtime packages, MCP server, native task binary or administrator access is
+required by Day Attendant.
+
+Copy or clone the source to an approved directory and run its absolute script:
 
 ```sh
-git clone https://github.com/GothenburgBitFactory/taskwarrior.git taskwarrior-source
-git -C taskwarrior-source checkout 3419d5ba1e6a780fbbb0a8d68d8fd31e675c1bf8
-cmake -S taskwarrior-source -B taskwarrior-build \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$HOME/.local/day-attendant-taskwarrior"
-cmake --build taskwarrior-build --parallel 2
-cmake --install taskwarrior-build
-export DAY_ATTENDANT_TASK_BIN="$HOME/.local/day-attendant-taskwarrior/bin/task"
-"$DAY_ATTENDANT_TASK_BIN" --version
+python3 -c 'import sqlite3, zoneinfo; print(sqlite3.sqlite_version)'
+python3 -B /absolute/day-attendant/day-attendant.py init \
+  --zone America/Edmonton --name 'My responsibilities'
+python3 -B /absolute/day-attendant/day-attendant.py service open
 ```
 
-No `sudo` or package manager is assumed. If an approved native package already supplies
-exactly 3.5.0, select that binary instead. Source downloads/builds are a handoff recipe,
-not evidence that a build was executed on the managed Mac.
+Select the approved installed harness with `init --harness claude` or
+`init --harness codex`, or change it in Settings. Startup and settings changes do
+not send inference requests. An optional package installation or shell wrapper can
+make `day-attendant` available from any directory. Do not copy the Linux `.runtime`
+directory; no part of it is required for a fresh Mac profile.
+
+A new profile is empty. Default state is under
+`~/Library/Application Support/Day Attendant/profiles/default`; `--state` selects
+another private directory. Both task records and auxiliary state use portable
+SQLite databases managed by the coordinator. Do not edit them directly.
 
 ## Empty acceptance profile before personal use
 
@@ -48,28 +49,56 @@ python3 -B /absolute/day-attendant/day-attendant.py \
 ```
 
 Use fictional data. Verify the profile starts empty and survives restart. Capture
-English/Spanish tasks and an event, link A as prerequisite of B, complete A and verify
-B becomes eligible without starting. Add a nonblocking related link and verify both
-sides. Select a fictional screenshot and check individual task/event results. Switch
-between the two installed subscription harnesses and verify a previous human idea can
-be recalled without creating it as a task. Check cancellation and visible auth/quota
-errors; never activate credits or add API credentials to make a test pass.
+English/Spanish tasks and an event, link A as prerequisite of B, complete A and
+verify B becomes eligible without starting it. Check both directions of related
+links, snooze/return, literal card language, selected-image receipts and `/clear`.
+Choose a model and reasoning level in Settings; confirm that a new conversation
+preserves tasks, calendar and declared context.
 
-Run `python3 -B -m unittest discover -s tests -q` with the approved binary. Linux-only
-private D-Bus cases skip on Mac; this is deliberate, not notification validation.
-Use the Mac's local notifier with a single fictional reminder in an allowed delivery
-window, verify OS permission/visibility, then confirm the durable receipt is accepted
-rather than claiming the user read it. Review quiet/pause settings.
+Run the portable core checks without any task executable:
+
+```sh
+python3 -B -m unittest discover -s tests -q
+```
+
+Linux-only D-Bus scenarios intentionally skip on Mac. Optional legacy-engine
+comparison/import tests skip unless `DAY_ATTENDANT_LEGACY_TASK_BIN` is explicitly
+set; they are not required to run the app or its SQLite integration tests.
+
+Use a single fictional reminder to check the Mac's local notifier, allowed delivery
+window and OS permission. An accepted receipt does not prove that a person read it.
+Review quiet/pause settings before explicitly installing the scheduler.
 
 `scheduler install` writes only the selected profile's
 `~/Library/LaunchAgents/local.day-attendant.PROFILE_UUID.plist` and bootstraps it into
-`gui/UID`. It uses absolute program arguments, inherited allowlisted graphical/session
-variables, a private log and StartInterval=60; `tick` enforces the configured interval.
-Check `doctor` for a completed actual `last_tick`, then test logout/login and a physical
-sleep/resume. Do not infer wake guarantees from a plist. `scheduler uninstall` removes
-only that job; repeated install/uninstall should not duplicate jobs.
+`gui/UID`. The job runs the same known-data `tick` as Linux: reminders and backups,
+never model turns. Check `doctor` for a completed actual `last_tick`, then test
+logout/login and physical sleep/resume. Do not infer wake guarantees from a plist.
+Repeated install/uninstall must not duplicate jobs; uninstall removes only that job.
 
-Back up, restore to a fresh acceptance directory, verify UUIDs/relations/languages and
-that reminders are disabled. Restore installs no LaunchAgent. Remove acceptance jobs
-when done; preserve any failure evidence for the Mac agents to adapt the OS boundary.
-Create the final personal profile separately, or use the default empty profile.
+Back up and restore to a fresh acceptance directory. Verify UUIDs, relationships,
+languages and conversation, and confirm reminders are disabled after restore. New
+format-2 backups require no Taskwarrior executable on either OS and install no jobs.
+Remove acceptance jobs when done and preserve failure evidence for the Mac agents
+to adapt the OS boundary. Create the final personal profile separately.
+
+## Existing data from the old engine
+
+Fresh profiles need no migration. An existing Taskwarrior-era profile requires one
+explicit offline conversion on a machine that already has Taskwarrior 3.5.0:
+
+```sh
+day-attendant service stop
+day-attendant --json profile migrate --taskwarrior-bin /absolute/path/to/task
+day-attendant service start
+```
+
+The converter takes a verified legacy backup, preserves UUIDs and auxiliary state,
+and leaves the old files untouched. It is an import tool, not a selectable runtime
+backend. New backups after conversion are portable SQLite backups. A format-1
+archive can be explicitly restored/converted on the legacy machine using
+`restore ARCHIVE --to NEW_DIRECTORY --taskwarrior-bin PATH`, then backed up again
+in format 2 before moving it to a Mac without the old engine.
+
+This does not add device synchronization. Physical installation, permissions and
+company approval on the managed Mac remain separate from Linux evidence.

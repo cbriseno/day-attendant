@@ -1,4 +1,37 @@
-# Daily validation — 0.3.0
+# Daily validation — 0.4.0
+
+## Shared Python/SQLite backend
+
+On 2026-10-28, local Linux discovery ran **177 cases** on the final SQLite backend:
+163 executed and passed; the 14 private-D-Bus scenarios skipped in discovery, then
+those same 14 executed and passed on an isolated bus. This is **177 distinct
+executed/passing cases**, not 191. No live LLM inference was performed for this change.
+
+The suite includes real SQLite participant/journal recovery, concurrent clients,
+HTTP/CLI authority, real headless-Chrome UI regressions, backup/restore, process death
+inside a task transaction, invalid graph restoration, and service ownership without
+a task engine. No Taskwarrior executable is required by those runtime scenarios.
+
+Six additional cases within that total use the explicitly selected legacy
+Taskwarrior 3.5.0 binary solely to compare native row semantics and verify conversion:
+field/dependency/status parity, preserved identity/metadata/notes, portable backup
+roundtrip, explicit old-archive conversion, offline/invalid-graph rejection,
+preservation/recovery of an interrupted operation, and interruption after atomic
+publication. Some scenarios share a case; they are not counted twice. To run the
+optional legacy checks, set `DAY_ATTENDANT_LEGACY_TASK_BIN` to an existing binary.
+They deliberately skip on a new machine without the old engine.
+
+A separate real-CLI smoke test ran from `/tmp` with an empty `PATH` and a nonexistent
+legacy binary setting. Init, doctor, format-2 backup/verify and restore all succeeded
+using only Python/SQLite, with application version 0.4.0. The package/service regression
+also launches a copied distributable tree from another directory with no tools on PATH.
+
+GitHub Actions remained disabled; no hosted CI or native macOS execution is claimed
+for this change. The managed-Mac installation, native notification permissions and
+sleep/resume checks remain the user's physical handoff. The same Python/SQLite task
+store is used on both operating systems.
+
+## Historical 0.3.0 evidence
 
 Validation is split by what each check can establish. Controlled reasoning is used
 for exact process/transaction races; actual models are used for semantic and image

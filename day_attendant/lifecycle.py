@@ -18,7 +18,7 @@ from .timeutil import parse
 
 def argv(app,*args):
     launcher="import runpy,sys;sys.path.insert(0,"+repr(str(Path(__file__).resolve().parent.parent))+");runpy.run_module('day_attendant',run_name='__main__')"
-    return [sys.executable,'-B','-c',launcher,'--state',str(app.store.path),'--task-bin',str(app.tasks.binary),*args]
+    return [sys.executable,'-B','-c',launcher,'--state',str(app.store.path),*args]
 
 def receipt(app):
     try:

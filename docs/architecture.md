@@ -1,8 +1,9 @@
 # Current daily architecture
 
 This section supersedes the historical pilot notes below. A portable Python domain
-owns all writes through a shared coordinator and native journal. Taskwarrior 3.5.0
-is the task authority; SQLite stores calendar events, declarations, provenance,
+owns all writes through a shared coordinator and durable journal. The same
+standard-library Python/SQLite task store (`tasks.sqlite3`) is the task authority
+on Linux and macOS; a companion SQLite database stores calendar events, declarations, provenance,
 relations, messages, proposals, authorization, facts and delivery receipts.
 
 Codex app-server and Claude Code CLI implement the same inference interface with a
@@ -18,7 +19,7 @@ admission of another until recovery/reconciliation. Native recovery compares its
 write participants against before/after states and its read set against recorded
 preconditions; it does not overwrite changed prerequisites or external native edits.
 
-Blocking graph edges are native Taskwarrior depends values; related pairs are sorted
+Blocking graph edges are task-record dependency UUIDs; related pairs are sorted
 symmetric SQLite links. Active, snoozed, awaiting and blocked are independent facts.
 
 Kernel locks separate the coordinator, server ownership, maintenance ownership and
@@ -27,6 +28,15 @@ receipt commit; snapshot maintenance acquires it exclusively outside any SQL wri
 transaction. Dead maintenance is recovered through kernel ownership rather than PID
 expiry. Backups capture immutable copies of both SQLite stores and selected files,
 then compress/publish atomically. They never advance a reconciliation target.
+
+Task participant writes use SQLite transactions independently of the auxiliary
+journal commit. A crash may leave an observed native effect without its receipt;
+the existing before/after and read-set checks recover it rather than inventing
+a cross-database transaction. There are no Taskwarrior subprocesses in normal
+operation. An explicit offline legacy importer is the only code path that invokes
+the old engine, takes a format-1 backup and publishes the converted store atomically.
+New format-2 backups contain both portable SQLite stores; restoration checks
+integrity, identity, dependency graphs, relations and durable authorization.
 
 Linux cron/systemd and macOS launchd adapters execute the same bounded known-data tick.
 Delivery policy, budgets, coalescing, suppression and backups are independent of LLM

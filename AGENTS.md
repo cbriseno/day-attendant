@@ -3,7 +3,7 @@
 Use `day-attendant --json --state PATH board ...` for the selected daily profile. The
 legacy task/focus commands cannot write connected state. Use explicit workspace
 paths and stable request keys; confirm only the current proposal generation. The local service
-owns state access; do not edit SQLite or invoke Taskwarrior directly on its state.
+owns state access; do not edit either SQLite store directly.
 Read `README.md` and `docs/daily-operation.md` for commands and limits. Follow the user's language;
 default to short English reports with UUID references and one next action.
 
@@ -27,8 +27,11 @@ force an overwrite or delete the database. Consult the saved architect conversat
 before architectural changes or push: the local run metadata is under `arquitecto/`.
 Keep `.lavish/`, `arquitecto/`, `.runtime/` and private state out of publication.
 
-For implementation changes, run the real integration tests with Taskwarrior 3.5.0
-and review the affected failure paths. Linux is validated locally; Mac requires
+The task backend is Python/SQLite on both Linux and macOS. For implementation
+changes, run the real SQLite integration tests and review affected failure paths.
+Taskwarrior is only an optional, explicit one-time importer for old profiles; never
+select it as a runtime backend. Preserve old files and take a verified backup before
+conversion. Do not add a different task backend for each operating system. Linux is validated locally; Mac requires
 real deployment and notification tests, not simulated claims.
 
 Use `dependency_update` for blocking prerequisites and `related_update` for

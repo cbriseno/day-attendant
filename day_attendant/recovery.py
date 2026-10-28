@@ -2,7 +2,7 @@
 import json
 from .errors import AssistantError
 from .service import fingerprint,encoded
-from .taskwarrior import canonical
+from .taskstore import canonical
 from .profiles import invalidate_pending
 
 

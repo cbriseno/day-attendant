@@ -1,4 +1,4 @@
-"""Bounded CLI adapter. Never touches the user's default TASKRC/TASKDATA."""
+"""Legacy import/parity helper only. Day Attendant never uses it as its task store."""
 import json
 import os
 from pathlib import Path
@@ -8,16 +8,12 @@ import subprocess
 from .errors import AssistantError
 
 
-def canonical(row):
-    if row is None:
-        return None
-    result={k:v for k,v in row.items() if k not in ('id','urgency','modified')}
-    if result.get('depends'):result['depends']=sorted(result['depends'])
-    else:result.pop('depends',None)
-    return result
-
+from .taskstore import canonical
 
 class Taskwarrior:
+    backend = "taskwarrior"
+    storage_format = 1
+    storage_files = ("assistant.sqlite3", "taskwarrior/taskrc", "taskwarrior/data/taskchampion.sqlite3")
     def __init__(self, store, binary=None):
         development = Path(__file__).resolve().parent.parent / ".runtime/taskwarrior/bin/task"
         chosen = binary or os.environ.get("DAY_ATTENDANT_TASK_BIN") or shutil.which("task") or (development if development.is_file() else None)

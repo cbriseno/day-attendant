@@ -1,6 +1,6 @@
 """Persistent proposals for an explicitly initialized personal or synthetic profile.
 
-Taskwarrior remains the task authority. A proposal cannot be recovered as an
+The Python/SQLite task store is the task authority on every platform. A proposal cannot be recovered as an
 operation until admission and its authorization are committed together.
 """
 from datetime import timedelta
@@ -14,7 +14,7 @@ import uuid
 from .errors import AssistantError
 from .profiles import turn_timeout
 from .service import Assistant, encoded, fingerprint
-from .taskwarrior import canonical
+from .taskstore import canonical
 from .timeutil import instant, parse, stamp, wire
 
 REVIEW_SCHEMA = {"type": "object", "properties": {

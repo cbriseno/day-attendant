@@ -17,8 +17,8 @@ SPANISH_ERRORS = {
     "ambiguous_time": "Esa hora se repite; aclara si corresponde a fold 0 o 1.",
     "invalid_time": "Usa una fecha ISO 8601 y una zona IANA válida.",
     "unsafe_state_path": "Los datos privados deben quedar fuera del proyecto.",
-    "task_missing": "Falta Taskwarrior 3.5.0; configura DAY_ATTENDANT_TASK_BIN.",
-    "unsupported_task_version": "Esta versión requiere Taskwarrior 3.5.0.",
+    "task_missing": "La conversión de datos antiguos requiere Taskwarrior 3.5.0; usa --taskwarrior-bin.",
+    "unsupported_task_version": "La conversión de datos antiguos requiere Taskwarrior 3.5.0.",
     "key_required": "La operación requiere una clave de idempotencia.",
     "idempotency_conflict": "Esa clave ya se usó para otro contenido.",
     "recovery_required": "Ejecuta recover; hay una operación pendiente de reconciliar.",
@@ -46,7 +46,8 @@ class Parser(argparse.ArgumentParser):
 def parser():
     common = Parser(add_help=False, argument_default=argparse.SUPPRESS)
     common.add_argument("--state")
-    common.add_argument("--task-bin")
+    # Compatibility for previously installed scheduler commands; never executed.
+    common.add_argument("--task-bin", help=argparse.SUPPRESS)
     common.add_argument("--json", action="store_true")
     common.add_argument("--lang", choices=["es", "en"])
     root = Parser(prog="day-attendant", parents=[common])
@@ -134,11 +135,13 @@ def parser():
     p=command(profiles,'configure',True)
     p.add_argument('--values',required=True,help='JSON settings object')
     command(profiles,'upgrade')
+    p=command(profiles,'migrate')
+    p.add_argument('--taskwarrior-bin',help='Legacy Taskwarrior 3.5.0 executable; used only for this explicit offline migration')
     backups=command(groups,'backup').add_subparsers(dest='command',required=True,parser_class=Parser)
     p=command(backups,'create');p.add_argument('--destination');p.add_argument('--key')
     command(backups,'list')
     p=command(backups,'verify');p.add_argument('archive')
-    p=command(groups,'restore');p.add_argument('archive');p.add_argument('--to',required=True)
+    p=command(groups,'restore');p.add_argument('archive');p.add_argument('--to',required=True);p.add_argument('--taskwarrior-bin',help='Optional one-time conversion of a legacy backup')
     service=command(groups,'service').add_subparsers(dest='command',required=True,parser_class=Parser)
     for name in ('start','stop','restart','status','open'):command(service,name)
     sched=command(groups,'scheduler').add_subparsers(dest='command',required=True,parser_class=Parser)
@@ -171,7 +174,7 @@ def schedule(app, every):
         raise AssistantError("invalid_interval", "Use an interval that divides 60 minutes.")
     caps = capabilities()
     argv = [sys.executable, str(Path(__file__).resolve().parent.parent / "day-attendant.py"),
-            "--state", str(app.store.path), "--task-bin", app.tasks.binary, "notify"]
+            "--state", str(app.store.path), "notify"]
     if caps["platform"] == "darwin":
         backend = "launchd"
     else:
@@ -238,7 +241,7 @@ def human(data, language, group):
         return "\n".join(f"{r['id'][:10]} · {states.get(r['status'], r['status']) if es else r['status']}" for r in data["attempts"][:8])
     if group == "doctor":
         label = "Estado" if es else "State"
-        return f"Taskwarrior {data['version']} · SQLite {data['integrity']}\n{label}: {data['state']}\n" + (
+        return f"{data['backend']} {data['version']} · SQLite {data['integrity']}\n{label}: {data['state']}\n" + (
             f"Operaciones pendientes: {len(data['operations'])}" if es else f"Unresolved operations: {len(data['operations'])}")
     if "uuid" in data:
         return ("Guardado: " if es else "Saved: ") + data["uuid"]
@@ -262,14 +265,19 @@ def main(argv=None):
             from .profiles import default_state,configure
             state=getattr(args,'state',None) or default_state()
             if args.group == "web":
-                serve(state,getattr(args,'task_bin',None),args.port,args.zone,kind='synthetic' if args.synthetic else None,supervised=args.supervised)
+                serve(state,args.port,args.zone,kind='synthetic' if args.synthetic else None,supervised=args.supervised)
                 return 0
             if args.group in ('backup','restore','service','scheduler','tick','reconcile'):
                 from . import archives,lifecycle,recovery
-                if args.group=='restore':data=archives.restore(args.archive,args.to,getattr(args,'task_bin',None))
+                if args.group=='restore':data=archives.restore(args.archive,args.to,getattr(args,'taskwarrior_bin',None))
                 elif args.group=='backup' and args.command=='verify':data=archives.verify(args.archive)
                 else:
-                    app=Assistant(preflight(state),getattr(args,'task_bin',None))
+                    if args.group=='service' and args.command in ('stop','status'):
+                        # Service ownership is readable even before an old task store is migrated.
+                        from types import SimpleNamespace
+                        from .store import Store
+                        app=SimpleNamespace(store=Store(preflight(state)))
+                    else:app=Assistant(preflight(state))
                     if not app.store.state_value('profile'):raise AssistantError('profile_required','Initialize a personal or synthetic profile first.')
                     if args.group=='backup':data=archives.list_backups(app) if args.command=='list' else archives.snapshot(app,args.destination,key=args.key)
                     elif args.group=='scheduler':data=lifecycle.scheduler(app,args.command)
@@ -284,16 +292,19 @@ def main(argv=None):
                         lifecycle.start(app);url=lifecycle.session_url(app);opened=webbrowser.open(url);data={'opened':opened,'url':url}
                     else:data=lifecycle.status(app)
             elif args.group=='init':
-                app=initialize_profile(state,getattr(args,'task_bin',None),'synthetic' if args.synthetic else 'personal',args.zone,args.name)
+                app=initialize_profile(state,'synthetic' if args.synthetic else 'personal',args.zone,args.name)
                 changes={'harness':args.harness,'model':args.model,'effort':args.effort}
                 configure(app,changes,'initial-harness:'+app.store.state_value('profile')['id'])
                 data={'profile':app.store.state_value('profile'),'state':str(app.store.path),'tasks':len(app.tasks.rows())}
             elif args.group=='profile':
-                if args.command=='upgrade':
+                if args.command=='migrate':
+                    from .migration import migrate_profile
+                    data=migrate_profile(preflight(state),args.taskwarrior_bin)
+                elif args.command=='upgrade':
                     from .archives import upgrade_profile
-                    data=upgrade_profile(state,getattr(args,'task_bin',None))
+                    data=upgrade_profile(state)
                 else:
-                    app=Assistant(preflight(state),getattr(args,'task_bin',None))
+                    app=Assistant(preflight(state))
                     if args.command=='show':data={'profile':app.store.state_value('profile'),'notification_policy':app.store.state_value('notification_policy')}
                     else:
                         values=json.loads(args.values)
@@ -334,8 +345,7 @@ def main(argv=None):
         legacy=Path(os.environ.get('XDG_STATE_HOME',Path.home()/'.local/state'))/'asistente-dia'
         if not explicit and (os.environ.get('ASISTENTE_STATE') or legacy.exists()):
             raise AssistantError('state_selection_required','Legacy state exists. Select the intended path explicitly with --state; no data was moved or recreated.')
-        app = Assistant(explicit or default,
-                        getattr(args, "task_bin", None))
+        app = Assistant(explicit or default)
         data = execute(app, args)
         if wants_json:
             print(json.dumps({"schema_version": 1, "ok": True, "operation_id": operation_id, "data": data, "error": None}, ensure_ascii=False))
