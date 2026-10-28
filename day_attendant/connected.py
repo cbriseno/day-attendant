@@ -232,6 +232,7 @@ class Connected:
             selected_images={r['message_key']:[] for r in con.execute('SELECT DISTINCT message_key FROM message_attachments')}
             for r in con.execute('SELECT m.message_key,a.id,a.name,a.mime FROM message_attachments m JOIN attachments a ON a.id=m.attachment_id ORDER BY a.id'):selected_images[r['message_key']].append({'id':r['id'],'name':r['name'],'mime':r['mime']})
             for message in messages:message['attachments']=selected_images.get(message['key'],[])
+        startup=self.store.state_value('agent_startup_error') or {}
         tasks = []
         for row in rows:
             extra = continuation.get(row["uuid"], {})
@@ -253,13 +254,13 @@ class Connected:
                 "revision": self.store.revision(), "now": self.app.now(), "synthetic": self.store.state_value('profile',{}).get('kind')=='synthetic',
                 "profile":self.store.state_value('profile'), "readOnly":bool(unresolved or maintenance),
                 "diagnostics":{"operations":unresolved,"maintenance":maintenance,"reminders":transport_issues}, "epoch":self.store.epoch(),
-                "continuity_summary":self.store.state_value('continuity_summary',{}),"conversation":{'clearedAt':conversation.get('clearedAt')},
+                "conversation":{'clearedAt':conversation.get('clearedAt')},
                 "operations_status":{"last_tick":self.store.state_value('last_tick'),'last_backup':self.store.state_value('last_backup'),'scheduler':self.store.state_value('scheduler')},
                 "agent": {"provider":self.store.state_value('profile',{}).get('harness'),'connected':  self.bridge is not None and getattr(self.bridge,'available',True) and getattr(self.bridge,'provider',self.store.state_value('profile',{}).get('harness'))==self.store.state_value('profile',{}).get('harness'),
                           "model": self.bridge.model if self.bridge else self.store.state_value('profile',{}).get('model'),
                           "effort": getattr(self.bridge,'effort',None) if self.bridge else self.store.state_value('profile',{}).get('effort'),
                           "catalog": getattr(self.bridge,'catalog',None) if self.bridge else None,
-                          "error":self.store.state_value('agent_startup_error')}}
+                          "error":startup.get('message'),"errorCode":startup.get('code')}}
 
     def snapshot(self):
         with self.store.lock():

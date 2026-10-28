@@ -10,24 +10,27 @@ from day_attendant.claudebridge import ClaudeBridge
 from day_attendant.codexbridge import CodexBridge
 from day_attendant.connected import Connected
 from day_attendant.errors import AssistantError
-from day_attendant.profiles import configure
+from day_attendant.profiles import configure,turn_timeout
 from day_attendant.service import Assistant
+from day_attendant.web import LocalServer
 from test_claude_bridge import SCHEMA
 
 FAKE_CLAUDE='''#!/usr/bin/env python3
-import json,os,sys
+import json,os,sys,time
 from pathlib import Path
 if 'auth' in sys.argv:print(json.dumps({'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}));sys.exit(0)
 if '--version' in sys.argv:print('2.1.312 (Claude Code)');sys.exit(0)
 if '--help' in sys.argv:print('--safe-mode --restricted --tools --json-schema --permission-prompts --no-session-persistence');sys.exit(0)
-sys.stdin.readline();(Path(__file__).parent/'args.json').write_text(json.dumps(sys.argv))
+text=json.loads(sys.stdin.readline())['message']['content'][0]['text'];(Path(__file__).parent/'args.json').write_text(json.dumps(sys.argv))
 print(json.dumps({'type':'system','subtype':'init','cwd':os.getcwd(),'tools':['StructuredOutput'],'mcp_servers':[],'plugins':[],'model':'exact-model'}),flush=True)
+if text=='hang':time.sleep(60)
+print(json.dumps({'type':'assistant','message':{'content':[{'type':'text','text':text}]}}),flush=True)
 print(json.dumps({'type':'result','subtype':'success','is_error':False,'structured_output':{'answer':'ok'},'uuid':'turn'}),flush=True)
 '''
 
 # A minimal app-server speaking the same JSON-RPC lines; it records every request.
 FAKE_CODEX='''#!/usr/bin/env python3
-import json,sys
+import json,os,sys,time
 from pathlib import Path
 if '--version' in sys.argv:print('codex-cli 0.164.0');sys.exit(0)
 log=Path(__file__).parent/'requests.jsonl'
@@ -36,6 +39,8 @@ features['skip_host_skill_discovery']=True
 config={'features':features,'web_search':'disabled','project_doc_max_bytes':0,'notify':[],'mcp_servers':{},'memories':{'use_memories':False,'generate_memories':False}}
 catalog=[{'id':'fixture-model','model':'fixture-model','isDefault':True,'defaultReasoningEffort':'high',
           'supportedReasoningEfforts':[{'reasoningEffort':'low','description':''},{'reasoningEffort':'high','description':''}]}]
+levels=Path(__file__).parent/'levels.json'
+if levels.exists():catalog[0]['supportedReasoningEfforts']=[{'reasoningEffort':e,'description':''} for e in json.loads(levels.read_text())]
 def send(message):sys.stdout.write(json.dumps(message)+"\\n");sys.stdout.flush()
 threads=0
 for line in sys.stdin:
@@ -49,7 +54,11 @@ for line in sys.stdin:
     elif method=='thread/start':
         threads+=1;result={'thread':{'id':'thread-'+str(threads),'cwd':params['cwd']}}
     elif method=='turn/start':
-        result={'turn':{'id':'turn-1'}};send({'id':request['id'],'result':result})
+        result={'turn':{'id':'turn-1'}};send({'id':request['id'],'result':result});text=params['input'][0]['text']
+        if text=='hang':continue
+        if text=='mute':os.close(1);time.sleep(60)
+        # Like the real app-server, the turn input comes back as a userMessage item.
+        send({'method':'item/completed','params':{'threadId':params['threadId'],'turnId':'turn-1','item':{'type':'userMessage','content':[{'type':'text','text':text}]}}})
         send({'method':'item/completed','params':{'threadId':params['threadId'],'turnId':'turn-1','item':{'type':'agentMessage','text':json.dumps({'answer':'ok'})}}})
         send({'method':'turn/completed','params':{'threadId':params['threadId'],'turn':{'id':'turn-1','status':'completed'}}})
         continue
@@ -75,6 +84,13 @@ class ProfileEffort(unittest.TestCase):
         self.assertEqual(configure(self.app,{'effort':'max'},'claude-max')['profile']['effort'],'max')
         configure(self.app,{'harness':'codex','effort':'high'},'back-to-codex');self.assertEqual(self.profile()['effort'],'high')
         self.assertFalse(configure(self.app,{'effort':'high'},'same-level')['engine_changed'])
+
+    def test_harness_switch_without_a_level_resets_it_in_both_directions(self):
+        configure(self.app,{'harness':'claude','effort':'max'},'claude-max')
+        changed=configure(self.app,{'harness':'codex'},'to-codex')
+        self.assertTrue(changed['engine_changed']);self.assertIsNone(self.profile()['effort']);self.assertIsNone(self.profile()['model'])
+        configure(self.app,{'effort':'high'},'codex-high');configure(self.app,{'harness':'claude'},'to-claude-again')
+        self.assertIsNone(self.profile()['effort'])
 
 
 class NativeEffort(unittest.TestCase):
@@ -114,6 +130,56 @@ class NativeEffort(unittest.TestCase):
         self.assertEqual(self.codex().effort,'high')
         with self.assertRaises(AssistantError) as error:self.codex(effort='xhigh')
         self.assertEqual(error.exception.code,'agent_effort_unavailable')
+
+    def gives_up_after(self,bridge):
+        """Controlled seconds an unfinished turn waits before its visible timeout."""
+        clock=SteppingClock()
+        with patch('time.monotonic',clock),self.assertRaises(AssistantError) as error:bridge.turn(bridge.thread(),'hang',SCHEMA)
+        self.assertEqual(error.exception.code,'agent_timeout')
+        return clock.elapsed
+
+    def test_turn_time_limit_follows_the_selected_level(self):
+        self.assertEqual({e:turn_timeout(e) for e in ('minimal','low','medium','high','xhigh','max','none')},
+                         {'minimal':120,'low':120,'medium':120,'high':300,'xhigh':600,'max':900,'none':120})
+        (self.folder/'levels.json').write_text(json.dumps(['none','low','high']))
+        for bridge,limit in ((self.codex(effort='high'),300),(self.codex(effort='none'),120),(self.claude(effort='max'),900),(self.claude(effort='low'),120)):
+            elapsed=self.gives_up_after(bridge)
+            self.assertTrue(limit<=elapsed<=limit+SteppingClock.step*2,(bridge.provider,bridge.effort,elapsed))
+
+    def test_oversized_native_lines_round_trip(self):
+        large='x'*4_100_000
+        codex=self.codex()
+        self.assertEqual(codex.turn(codex.thread(),large,SCHEMA)['output'],{'answer':'ok'})
+        self.assertEqual(len(self.codex_requests('turn/start')[-1]['input'][0]['text']),len(large))
+        self.assertEqual(codex.turn(codex.thread(),'Hello',SCHEMA)['output'],{'answer':'ok'})
+        self.assertEqual(self.claude().turn('logical',large,SCHEMA)['output'],{'answer':'ok'})
+
+    def test_a_silent_app_server_fails_the_turn_and_reports_unavailable(self):
+        bridge=self.codex()
+        with self.assertRaises(AssistantError) as error:bridge.turn(bridge.thread(),'mute',SCHEMA)
+        self.assertEqual(error.exception.code,'agent_disconnected')
+        self.assertFalse(bridge.available)
+
+    def test_refused_level_at_startup_keeps_its_code_for_the_interface(self):
+        with tempfile.TemporaryDirectory(prefix='day-effort-startup-') as state:
+            app=Assistant(state);Connected(app).initialize(kind='personal',zone='America/Edmonton')
+            configure(app,{'effort':'xhigh'},'unoffered-level')
+            server=LocalServer(app,None)
+            try:
+                with patch.dict(os.environ,{'PATH':str(self.folder)+os.pathsep+os.environ['PATH']}):server.configure_harness()
+                agent=server.board.snapshot()['agent']
+            finally:server.server_close()
+        self.assertFalse(agent['connected']);self.assertEqual(agent['errorCode'],'agent_effort_unavailable')
+        self.assertIn('reasoning level',agent['error'])
+
+
+class SteppingClock:
+    """Each reading advances one controlled minute; only the adapters' turn loops read it."""
+    step=60
+    def __init__(self):self.readings=0
+    def __call__(self):self.readings+=1;return float(self.readings*self.step)
+    @property
+    def elapsed(self):return (self.readings-1)*self.step
 
 
 if __name__=='__main__':unittest.main()

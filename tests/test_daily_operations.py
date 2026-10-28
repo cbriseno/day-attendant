@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from day_attendant import lifecycle,recovery
-from day_attendant.conversation import continuity_summary,portable_context
+from day_attendant.conversation import portable_context
 from day_attendant.errors import AssistantError
 from day_attendant.profiles import configure,default_policy
 from day_attendant.service import encoded
@@ -51,10 +51,9 @@ class DailyOperations(DailyBase):
         texts=['Original '+str(n)+' '+('x'*3000) for n in range(80)]
         with self.app.store.connect() as con:
             for n,text in enumerate(texts):con.execute("INSERT INTO messages(key,role,text,status,at) VALUES(?,'user',?,'completed',?)",('human-'+str(n),text,self.app.now()))
-        summary=continuity_summary(self.app.store);self.assertEqual(summary['messages'],80)
         configure(self.app,{'harness':'claude'},'switch')
         self.assertEqual([m['text'] for m in portable_context(self.board.snapshot())['messages']],texts)
-        self.assertEqual(self.app.store.state_value('continuity_summary'),summary);self.assertIsNone(self.app.store.state_value('profile')['model'])
+        self.assertIsNone(self.app.store.state_value('profile')['model'])
     def test_keep_observed_does_not_execute_a_prepared_original_action(self):
         uid=self.add('Before admission')
         self.app.fault=lambda point:(_ for _ in ()).throw(RuntimeError('interrupted after admission')) if point=='after_admission' else None

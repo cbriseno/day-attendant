@@ -73,7 +73,7 @@ class ConversationClearTests(unittest.TestCase):
         self.assertEqual([m['key'] for m in self.board.snapshot()['messages']],['after','after:assistant'])
         self.assertEqual(len(self.board.snapshot()['tasks']),before)
         self.assertEqual(self.stored(),4)
-        self.assertEqual(self.app.store.state_value('continuity_summary')['messages'],2)
+        self.assertEqual(set(continuity),{'messages','openQuestions','scope','authority'})
 
     def test_clear_is_idempotent_and_slash_clear_is_the_same_action(self):
         self.say('First conversation.','one')

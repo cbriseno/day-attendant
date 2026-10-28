@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import hashlib
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,16 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.request('/api/state',host='unrelated.example')[0],403)
         self.assertEqual(self.request('/api/app-server',{'method':'thread/shellCommand','command':'anything'})[0],404)
         self.assertEqual(self.request('/api/state',authenticated=True)[0],200)
+
+    def test_unauthenticated_bodies_are_not_read(self):
+        # Only the session exchange reads a body before authentication, and only a small one.
+        port=self.server.server_port
+        for path,expected in (('/api/chat',b'401'),('/api/attachments',b'401'),('/api/session',b'400')):
+            with socket.create_connection(('127.0.0.1',port),timeout=5) as client:
+                client.sendall(('POST '+path+' HTTP/1.1\r\nHost: 127.0.0.1:'+str(port)+'\r\nOrigin: '+self.server.origin+
+                                '\r\nContent-Type: application/json\r\nContent-Length: 100000000\r\n\r\n').encode())
+                self.assertEqual(client.makefile('rb').readline().split()[1],expected,path)
+        self.assertEqual(self.request('/api/session',{'token':self.server.token},authenticated=False)[0],200)
 
     def test_cli_and_http_share_idempotency_and_authority(self):
         body={'action':'front_activate','payload':{'uuid':self.uid},'key':'shared-input'}

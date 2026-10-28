@@ -12,6 +12,12 @@ from .errors import AssistantError
 # Claude Code advertises a fixed set; Codex validates against each model's catalog.
 CLAUDE_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 DEFAULT_EFFORT = 'medium'
+# Seconds one model turn may take at each level; an unknown catalog level uses the medium limit.
+TURN_SECONDS = {'minimal': 120, 'low': 120, 'medium': 120, 'high': 300, 'xhigh': 600, 'max': 900}
+
+
+def turn_timeout(effort):
+    return TURN_SECONDS.get(effort, TURN_SECONDS[DEFAULT_EFFORT])
 
 
 def state_home(platform=None):
@@ -149,7 +155,7 @@ def configure(app,values,key,expected_revision=None):
         if profile['model'] is not None and (not isinstance(profile['model'],str) or not 1<=len(profile['model'])<=150 or any(c.isspace() for c in profile['model'])):
             raise AssistantError('invalid_settings','Use an exact model identifier or select the installed default.')
         if profile['harness']!=current['harness'] and 'model' not in values:profile['model']=None
-        if profile['harness']=='claude' and 'effort' not in values and profile.get('effort') not in (None,)+CLAUDE_EFFORTS:profile['effort']=None
+        if profile['harness']!=current['harness'] and 'effort' not in values:profile['effort']=None
         effort=profile.get('effort')
         if effort is not None and (not isinstance(effort,str) or not re.fullmatch(r'[a-z]{1,20}',effort) or profile['harness']=='claude' and effort not in CLAUDE_EFFORTS):
             raise AssistantError('invalid_settings','Choose a reasoning level that the selected harness offers.')

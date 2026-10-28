@@ -65,7 +65,7 @@ class LocalServer(ThreadingHTTPServer):
                 self.board.bridge=bridge
             except (AssistantError,OSError,ValueError) as error:
                 if bridge:bridge.close()
-                with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('agent_startup_error',?)",(encoded(str(error)[:400]),))
+                with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('agent_startup_error',?)",(encoded({'code':getattr(error,'code',None),'message':str(error)[:400]}),))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -132,21 +132,22 @@ class Handler(BaseHTTPRequestHandler):
         if not self.host_valid():return
         if self.headers.get('Origin')!=self.server.origin or not self.headers.get('Content-Type','').startswith('application/json'):
             self.reply(403,{'error':{'code':'origin_forbidden','message':'The request must originate from this local application.'}});return
+        session=self.path=='/api/session'
+        if not session and not self.authenticated():
+            self.reply(401,{'error':{'code':'session_required','message':'Reopen the session link.'}});return
         try:
             size=int(self.headers.get('Content-Length','0'))
-            # Authenticated loopback only; message and image sizes are not product-capped.
-            if size<=0:raise ValueError('size')
+            # Only the session exchange reads an unauthenticated body; authenticated messages and images are not product-capped.
+            if size<=0 or session and size>4096:raise ValueError('size')
             body=json.loads(self.rfile.read(size))
             if not isinstance(body,dict):raise ValueError('object')
         except (ValueError,TypeError):
             self.reply(400,{'error':{'code':'invalid_json','message':'Invalid request.'}});return
-        if self.path=='/api/session':
+        if session:
             token=body.get('token','')
             if not isinstance(token,str) or not hmac.compare_digest(token,self.server.token):
                 self.reply(401,{'error':{'code':'session_required','message':'Invalid session link.'}});return
             self.reply(200,{'data':{'authenticated':True}},cookie='day_session='+self.server.token+'; HttpOnly; SameSite=Strict; Path=/');return
-        if not self.authenticated():
-            self.reply(401,{'error':{'code':'session_required','message':'Reopen the session link.'}});return
         board=self.server.board
         try:
             if self.path=='/api/attachments':

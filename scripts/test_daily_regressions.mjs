@@ -176,6 +176,18 @@ try{
   await fill('setting-harness','codex');await fill('setting-effort','low');const sent=settings.length;await submit('settings-dialog');await saved('settings-dialog');
   assert.equal(settings[sent].values.effort,'low');assert.equal('harness' in settings[sent].values,false);
   delete state.profile.effort;state.agent={connected:true,model:'controlled'};await refresh();
+  // A model without medium falls back to its catalog default; without a catalog only the model default is offered.
+  state.agent={connected:true,model:'controlled',effort:'medium',catalog:[{model:'controlled',isDefault:true,efforts:['low','medium','high'],defaultEffort:'medium'},{model:'deep',isDefault:false,efforts:['low','high'],defaultEffort:'high'}]};await refresh();
+  await click('#settings-open');await fill('setting-model','deep');assert.equal(await evaluate("document.getElementById('setting-effort').value"),'high');await close();
+  state.profile.harness='claude';state.agent={connected:true,model:'claude-controlled',effort:'medium'};await fill('locale-choice','es');await refresh();
+  await click('#settings-open');await fill('setting-harness','codex');
+  assert.deepEqual(await evaluate("[...document.getElementById('setting-effort').options].map(o=>[o.value,o.textContent])"),[['','Predeterminado del modelo']]);
+  const switched=settings.length;await submit('settings-dialog');await saved('settings-dialog');
+  assert.equal(settings[switched].values.harness,'codex');assert.equal(settings[switched].values.effort,null);
+  // A level refused at startup is shown in the interface language.
+  state.agent={connected:false,model:null,error:'The selected model does not offer this reasoning level; no other level was selected.',errorCode:'agent_effort_unavailable'};await refresh();
+  assert.equal(await evaluate("document.getElementById('bridge-state').textContent"),'El modelo elegido no ofrece este nivel de razonamiento. Elige otro nivel.');
+  await fill('locale-choice','en');state.profile.model='controlled';delete state.profile.effort;state.agent={connected:true,model:'controlled'};await refresh();
  }
  if(group==='all'){
  for(const [action,control,key] of [['dependency_update','edit-dependencies','dependsOn'],['related_update','edit-related','relatedTo']]){

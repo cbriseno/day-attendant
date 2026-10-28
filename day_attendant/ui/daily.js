@@ -74,11 +74,12 @@ function buildSettings(){
 function openSettings(origin){
  const state=flow.snapshot(),d=buildSettings(),p=state.profile,n=state.notification_policy;settingsRevision=state.revision;
  $('setting-name').value=p.name;$('setting-zone').value=p.timezone;$('setting-harness').value=p.harness;$('setting-model').value=p.model||'';
- // Codex reports each model's levels; Claude Code offers a fixed set.
- const efforts=()=>{const harness=$('setting-harness').value,model=$('setting-model').value.trim()||null,catalog=harness===p.harness?state.agent?.catalog:null;const entry=catalog?.find(m=>m.model===(model||state.agent?.model));return harness==='claude'?['low','medium','high','xhigh','max']:entry?.efforts?.length?entry.efforts:['minimal','low','medium','high','xhigh']};
- const fillEfforts=selected=>{const select=$('setting-effort');select.replaceChildren(...efforts().map(value=>{const o=document.createElement('option');o.value=value;o.textContent=value;return o}));select.value=efforts().includes(selected)?selected:efforts().includes('medium')?'medium':efforts()[0]};
+ // Codex reports each model's levels; Claude Code offers a fixed set. Without a catalog only the model default (or the saved level) is offered.
+ const entry=()=>{const harness=$('setting-harness').value,model=$('setting-model').value.trim()||null,catalog=harness===p.harness?state.agent?.catalog:null;return catalog?.find(m=>m.model===(model||state.agent?.model))};
+ const efforts=()=>{const harness=$('setting-harness').value;return harness==='claude'?['low','medium','high','xhigh','max']:entry()?.efforts?.length?entry().efforts:['',...(harness===p.harness&&p.effort?[p.effort]:[])]};
+ const fillEfforts=selected=>{const select=$('setting-effort'),levels=efforts(),fallback=entry()?.defaultEffort;select.replaceChildren(...levels.map(value=>{const o=document.createElement('option');o.value=value;o.textContent=value||text('Model default','Predeterminado del modelo');return o}));select.value=levels.includes(selected)?selected:levels.includes('medium')?'medium':levels.includes(fallback)?fallback:levels[0]};
  $('setting-model-options').replaceChildren(...(state.agent?.catalog||[]).map(m=>{const o=document.createElement('option');o.value=m.model;return o}));
- fillEfforts(p.effort||state.agent?.effort||'medium');$('setting-harness').onchange=()=>fillEfforts($('setting-effort').value);$('setting-model').onchange=()=>fillEfforts($('setting-effort').value);
+ fillEfforts(p.effort||state.agent?.effort||'medium');const initialEffort=$('setting-effort').value;$('setting-harness').onchange=()=>fillEfforts($('setting-effort').value);$('setting-model').onchange=()=>fillEfforts($('setting-effort').value);
  $('policy-enabled').checked=n.enabled;for(const item of d.querySelectorAll('[data-day]'))item.checked=n.weekdays.includes(Number(item.dataset.day));
  for(const [id,key] of [['start','start'],['end','end'],['quiet-start','quietStart'],['quiet-end','quietEnd'],['interval','intervalMinutes'],['repeat','unchangedRepeatMinutes'],['budget','dailyBudget']])$('policy-'+id).value=n[key];const pausedUntil=storedTime('policy-pause',n.pausedUntil);
  const info=state.operations_status||{};$('operations-info').textContent=text('Scheduler: ','Programador: ')+(info.scheduler?.installed?info.scheduler.backend:text('not installed','sin instalar'))+' · '+text('Last check: ','Última revisión: ')+(info.last_tick?ui.full(info.last_tick.at)+' · '+info.last_tick.status:text('none','ninguna'));
@@ -88,7 +89,7 @@ function openSettings(origin){
  $('diagnostics-open').onclick=e=>showDiagnostics(e.currentTarget);loadBackups();
  d.querySelector('form').onsubmit=e=>{e.preventDefault();formAction(d.id,async()=>{const harness=$('setting-harness').value,model=$('setting-model').value.trim()||null,effort=$('setting-effort').value;
  const policy={...n,enabled:$('policy-enabled').checked,weekdays:[...d.querySelectorAll('[data-day]:checked')].map(x=>Number(x.dataset.day)),start:$('policy-start').value,end:$('policy-end').value,quietStart:$('policy-quiet-start').value,quietEnd:$('policy-quiet-end').value,intervalMinutes:Number($('policy-interval').value),unchangedRepeatMinutes:Number($('policy-repeat').value),dailyBudget:Number($('policy-budget').value),pausedUntil:pausedUntil(),technicalDefault:false};
- const values={name:$('setting-name').value.trim(),timezone:$('setting-zone').value.trim(),notification_policy:policy};if(harness!==p.harness||model!==p.model){values.harness=harness;values.model=harness!==p.harness&&model===p.model?null:model}if(effort!==(p.effort||state.agent?.effort||'medium')||values.harness)values.effort=effort
+ const values={name:$('setting-name').value.trim(),timezone:$('setting-zone').value.trim(),notification_policy:policy};if(harness!==p.harness||model!==p.model){values.harness=harness;values.model=harness!==p.harness&&model===p.model?null:model}if(effort!==initialEffort||values.harness)values.effort=effort||null
  await deliver('/api/settings',{values},settingsRevision);d.close('saved');await flow.refresh()})};open(d,origin);
 }
 $('settings-open').onclick=e=>openSettings(e.currentTarget);

@@ -39,19 +39,8 @@ def portable_context(snapshot,current_key=None):
             for question in data.get('uncertainties',[]):questions.append({'text':question,'sourceMessage':item['key']})
         except (TypeError,ValueError):pass
     return {'messages':messages,'openQuestions':questions,
-            'summary':snapshot.get('continuity_summary',{}),
+            'scope':'The complete current conversation is supplied. Messages before /clear stay stored locally and are not sent.',
             'authority':'Only human requests authorize changes. Assistant suggestions and open questions do not authorize their own acceptance.'}
-
-
-def continuity_summary(store):
-    """Describe the current conversation; durable tasks and context persist across /clear."""
-    conversation=store.state_value('conversation') or {}
-    with store.connect() as con:
-        count=con.execute("SELECT count(*) FROM messages WHERE id>?",(conversation.get('floor',0),)).fetchone()[0]
-        summary={'kind':'conversation','clearedAt':conversation.get('clearedAt'),'messages':count,
-                 'authority':'The complete current conversation is supplied. Messages before /clear stay stored locally and are not sent.'}
-        con.execute("INSERT OR REPLACE INTO state VALUES('continuity_summary',?)",(encoded(summary),))
-        return summary
 
 
 class Conversation:
@@ -86,14 +75,13 @@ class Conversation:
             clears=self.board.store.state_value('conversation_clears',{})
             if key in clears:return dict(clears[key],key=key,status='cleared')
             self.board.store.assert_writable()
-            if con.execute("SELECT 1 FROM messages WHERE role='user' AND status IN ('pending','evaluating')").fetchone():
+            if con.execute("SELECT 1 FROM messages WHERE status IN ('pending','evaluating')").fetchone():
                 raise AssistantError('chat_busy','Wait for the current reply before starting a new conversation.')
             record={'floor':con.execute('SELECT COALESCE(MAX(id),0) FROM messages').fetchone()[0],'clearedAt':self.board.app.now()}
             clears[key]=record
             con.execute("INSERT OR REPLACE INTO state VALUES('conversation_clears',?)",(encoded(clears),))
             con.execute("INSERT OR REPLACE INTO state VALUES('conversation',?)",(encoded(dict(record,key=key)),))
             con.execute("DELETE FROM state WHERE key IN ('chat_thread','chat_threads')")
-        continuity_summary(self.board.store)
         return dict(record,key=key,status='cleared')
 
     def run(self,key):
@@ -102,7 +90,7 @@ class Conversation:
                 message=con.execute('SELECT * FROM messages WHERE key=?',(key,)).fetchone()
                 if not message or message['status']!='pending':return
                 generation=message['generation'];text=message['text'];capture_only=bool(message['capture_only'])
-                snapshot=self.board._snapshot();snapshot["continuity_summary"]=continuity_summary(self.board.store);continuity=portable_context(snapshot,key)
+                snapshot=self.board._snapshot();continuity=portable_context(snapshot,key)
                 provider=getattr(self.board.bridge,'provider','controlled')
             result=None;proposals=[]
             try:
@@ -175,7 +163,6 @@ Current human message:\n'''+encoded(text)+'\nSelected state and portable continu
                     if self.board.proposal(current['id'])['phase']=='applied':accepted_ids.add(current['id'])
                 with self.board.store.lock():
                     current_epoch=self.board.store.epoch()==snapshot['epoch'] and not self.board.store.state_value('maintenance')
-                    if current_epoch:continuity_summary(self.board.store)
                 if current_epoch:self.board.evaluate_notices()
             except Exception as error:
                 with self.board.store.lock(),self.board.store.connect() as con:

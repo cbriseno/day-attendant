@@ -15,7 +15,7 @@ import time
 import tomllib
 
 from .errors import AssistantError
-from .profiles import DEFAULT_EFFORT
+from .profiles import DEFAULT_EFFORT, turn_timeout
 
 from .instructions import PERSONAL_ASSISTANT as INSTRUCTIONS
 
@@ -117,8 +117,6 @@ class CodexBridge:
     def _read(self):
         try:
             for line in self.process.stdout:
-                if len(line) > 4_000_000:
-                    raise ValueError("Oversized app-server message")
                 try:
                     message = json.loads(line)
                 except ValueError:
@@ -135,11 +133,15 @@ class CodexBridge:
                 else:
                     self._notify(message)
         finally:
-            with self.lock:
-                waiting = list(self.pending.values())
-            for target in waiting:
-                target.put({"error": {"message": "The assistant process ended."}})
-            self._notify({"method": "bridge/closed", "params": {}})
+            try:
+                # Without a reader no later request can be answered; report the assistant as unavailable.
+                self.close()
+            finally:
+                with self.lock:
+                    waiting = list(self.pending.values())
+                for target in waiting:
+                    target.put({"error": {"message": "The assistant process ended."}})
+                self._notify({"method": "bridge/closed", "params": {}})
 
     def _notify(self, message):
         method = message.get("method", "")
@@ -181,7 +183,7 @@ class CodexBridge:
             with self.lock:
                 self.pending.pop(identity, None)
 
-    def thread(self, previous=None):
+    def thread(self):
         # Every request starts an ephemeral native thread; the profile supplies the conversation.
         options = {"cwd": self.workspace, "sandbox": "read-only", "approvalPolicy": "never",
                    "model": self.model, "baseInstructions": INSTRUCTIONS, "ephemeral": True,
@@ -191,7 +193,8 @@ class CodexBridge:
             raise AssistantError("agent_workspace_mismatch", "The agent did not use the selected synthetic workspace.")
         return result["thread"]["id"]
 
-    def turn(self, thread_id, prompt, schema, timeout=120, canceled=None, started=None, images=None):
+    def turn(self, thread_id, prompt, schema, timeout=None, canceled=None, started=None, images=None):
+        timeout = timeout or turn_timeout(self.effort)
         target = queue.Queue()
         with self.lock:
             self.subscribers.append(target)

@@ -85,9 +85,10 @@ day-attendant --json profile configure --key backup-location-001 \
 ```
 
 `effort` selects the reasoning level the harness offers for the model; an unavailable
-level is rejected instead of replaced. `board clear` (or a chat message that is exactly
+level is rejected instead of replaced. Changing `harness` without `effort` resets the level
+to unset, as it resets `model`. `board clear` (or a chat message that is exactly
 `/clear`) starts a new conversation and is idempotent per key. It is refused while a
-reply is pending. Earlier messages remain in the profile and its backups.
+reply or contextual guidance is pending. Earlier messages remain in the profile and its backups.
 
 Exact model IDs are pinned after resolution. A model alias that resolves to another
 identifier is rejected; use the resolved exact ID. No automatic change of harness,

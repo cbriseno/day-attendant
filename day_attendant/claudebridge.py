@@ -12,7 +12,7 @@ import time
 import uuid
 
 from .errors import AssistantError
-from .profiles import CLAUDE_EFFORTS,DEFAULT_EFFORT
+from .profiles import CLAUDE_EFFORTS,DEFAULT_EFFORT,turn_timeout
 
 # Shared behavioral contract, independent of either native transport.
 from .instructions import PERSONAL_ASSISTANT
@@ -61,9 +61,9 @@ class ClaudeBridge:
     @property
     def available(self):return not self.closed
 
-    def thread(self,previous=None):
+    def thread(self):
         # Portable conversation is supplied by Day Attendant, not global CLI history.
-        return previous or str(uuid.uuid4())
+        return str(uuid.uuid4())
 
     def command(self,schema):
         args=[self.binary,'--safe-mode','--restricted','--tools','',
@@ -90,7 +90,8 @@ class ClaudeBridge:
             process.wait(timeout=3)
         except ProcessLookupError:pass
 
-    def turn(self,thread_id,prompt,schema,timeout=120,canceled=None,started=None,images=None):
+    def turn(self,thread_id,prompt,schema,timeout=None,canceled=None,started=None,images=None):
+        timeout=timeout or turn_timeout(self.effort)
         if self.closed:raise AssistantError('agent_disconnected','The Claude adapter is closed.')
         content=[{'type':'text','text':prompt}]
         for selected in images or []:
@@ -107,9 +108,7 @@ class ClaudeBridge:
             stream=queue.Queue();errors=[]
             def consume():
                 try:
-                    for line in process.stdout:
-                        if len(line)>4_000_000:raise ValueError('Oversized Claude event')
-                        stream.put(json.loads(line))
+                    for line in process.stdout:stream.put(json.loads(line))
                 except Exception as error:stream.put(error)
                 finally:stream.put(None)
             def stderr():

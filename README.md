@@ -78,9 +78,12 @@ Choose Codex or Claude Code, an exact model ID and a reasoning level in Settings
 use `profile configure` (`init` also accepts `--harness`, `--model` and `--effort`).
 An empty model selects the installed default once and saves the resolved identifier.
 Codex offers the levels its catalog lists for the model; Claude Code offers low,
-medium, high, xhigh and max. An unset level uses medium. Starting the service or
-changing these settings sends no model request; tokens are spent only by conversation
-messages and contextual reviews. There is no silent provider/model/account fallback or automatic
+medium, high, xhigh and max. An unset level uses medium on Claude Code; on Codex it
+uses medium when the model offers it, otherwise the model's default level. A model turn
+may take up to 2 minutes at minimal, low or medium, 5 at high, 10 at xhigh and 15 at max.
+Starting the service or changing these settings sends no model request; tokens are spent
+only by conversation messages, contextual reviews and the informational guidance after a
+context correction. There is no silent provider/model/account fallback or automatic
 credit activation. The Claude adapter requires the CLI's restricted safe-mode print
 and structured-output capabilities; the tested installation is 2.1.312.
 
