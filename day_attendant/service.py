@@ -63,8 +63,33 @@ class Assistant:
     def actionable(self, row, by_id):
         return (row is not None and row["status"] == "pending"
                 and not (row.get("wait") and parse(row["wait"]) > self.clock())
-                and not any(by_id.get(dep, {}).get("status") in ("pending", "recurring")
-                            for dep in row.get("depends", [])))
+                and not self.blockers(row,by_id))
+
+    def blockers(self,row,by_id):
+        connected=self.store.state_value('connected',False)
+        if connected:return [dep for dep in row.get('depends',[]) if by_id.get(dep,{}).get('status')!='completed']
+        return [dep for dep in row.get('depends',[]) if by_id.get(dep,{}).get('status') in ('pending','recurring')]
+
+    def validate_dependencies(self,target,refs):
+        if not isinstance(refs,list) or len(refs)>100 or any(not isinstance(x,str) for x in refs):
+            raise AssistantError('invalid_dependencies','Dependencies must be a bounded list of task UUIDs.')
+        wanted=sorted({self.validate_uuid(x) for x in refs})
+        rows={r['uuid']:r for r in self.tasks.rows()}
+        if target in wanted:raise AssistantError('dependency_cycle','A responsibility cannot depend on itself.')
+        if any(x not in rows for x in wanted):raise AssistantError('task_not_found','A selected dependency does not exist.')
+        graph={uid:list(r.get('depends',[])) for uid,r in rows.items()};graph[target]=wanted
+        visited=set();active=set()
+        for root in graph:
+            stack=[(root,False)]
+            while stack:
+                uid,leaving=stack.pop()
+                if leaving:active.discard(uid);visited.add(uid);continue
+                if uid in active:raise AssistantError('dependency_cycle','Blocking dependencies cannot form a cycle.')
+                if uid in visited:continue
+                if uid not in graph:raise AssistantError('invalid_dependencies','A dependency refers to a missing responsibility.')
+                active.add(uid);stack.append((uid,True))
+                stack.extend((other,False) for other in graph[uid])
+        return wanted
 
     def clean_read(self):
         pending = self.store.unresolved()
@@ -72,6 +97,7 @@ class Assistant:
             raise AssistantError("recovery_required", "Run recover before reading a coherent state.", {"operations": pending})
 
     def _recover(self):
+        self.store.assert_writable()
         with self.store.connect() as con:
             rows = [dict(r) for r in con.execute("SELECT * FROM operations WHERE status IN ('prepared','applying') ORDER BY rowid")]
         for row in rows:
@@ -141,42 +167,49 @@ class Assistant:
                    "priority": PRIORITIES[p.get("priority", "medium")]}
             if p.get("due"):
                 row["due"] = wire(instant(p["due"], p.get("zone"), p.get("fold")))
-            observed = instant(p["observed_at"], p.get("zone")) if p.get("observed_at") else None
+            observed = instant(p["observed_at"], p.get("zone"), p.get("fold")) if p.get("observed_at") else None
             if observed and parse(observed) > self.clock():
                 raise AssistantError("future_observation", "Observation time cannot be in the future.")
             plan["steps"].append({"uuid": uid, "before": None, "after": row, "create": row})
             plan["effect"] = {"meta_add": [uid, p.get("source", "general"), p.get("person"),
                 p.get("reference"), observed, now, now, p.get("zone"), p.get("estimate_minutes")]}
             continuation=continuity_values(p)
-            if continuation and not self.store.state_value('synthetic_bootstrap',False):
+            if continuation and not (self.store.state_value('synthetic_bootstrap',False) or self.store.state_value('connected',False)):
                 raise AssistantError('proposal_required','Continuity capture requires an initialized connected workspace.')
             if continuation:plan['effect']['continuity_set']=[uid,continuation,now]
             plan["result"] = {"uuid": uid}
-        elif action in ("task_update", "task_snooze", "task_done", "front_activate", "front_todo", "front_retire", "task_restore"):
+        elif action in ("task_update", "task_snooze", "task_done", "front_activate", "front_todo", "front_retire", "task_restore", "dependency_update", "task_reopen"):
             row = self.required(p["uuid"])
             changes = {}
             if action == "task_restore":
                 if canonical(row) != p["expected_after"]:
                     raise AssistantError("undo_conflict", "The responsibility changed after this fact; nothing was overwritten.")
                 changes = p["patch"]
-                if not changes or set(changes) - {"description", "priority", "due", "wait", "start", "status", "end"}:
+                if not changes or set(changes) - {"description", "priority", "due", "wait", "start", "status", "end", "depends"}:
                     raise AssistantError("invalid_restore", "The inverse exceeds the fields of that decision.")
                 if changes.get('start',row.get('start')) and changes.get('status',row['status'])=='pending':
                     by_id={item['uuid']:item for item in self.tasks.rows()}
-                    if any(by_id.get(dep,{}).get('status') in ('pending','recurring') for dep in row.get('depends',[])):
+                    if self.blockers(dict(row,depends=changes.get('depends',row.get('depends')) or []),by_id):
                         raise AssistantError('not_actionable','The inverse cannot activate a responsibility whose dependencies are now pending.')
+                if 'depends' in changes:self.validate_dependencies(row['uuid'],changes['depends'] or [])
+            elif action=='dependency_update':
+                wanted=self.validate_dependencies(row['uuid'],p['dependsOn'])
+                changes={'depends':wanted or None}
             elif action in ("front_activate", "front_todo", "front_retire"):
                 if row["status"] != "pending":
                     raise AssistantError("terminal_task", "The responsibility is already closed.")
                 if action == "front_activate":
                     by_id = {item["uuid"]: item for item in self.tasks.rows()}
-                    if any(by_id.get(dep, {}).get("status") in ("pending", "recurring") for dep in row.get("depends", [])):
+                    if self.blockers(row,by_id):
                         raise AssistantError("not_actionable", "The responsibility depends on another pending task.")
                     changes = {"start": row.get("start") or wire(now), "wait": None}
                 elif action == "front_todo":
                     changes = {"start": None, "wait": None}
                 else:
                     changes = {"status": "deleted", "end": wire(now), "start": None, "wait": None}
+            elif action=='task_reopen':
+                if row['status'] not in ('completed','deleted'):raise AssistantError('not_closed','Only a completed or retired responsibility can be reopened.')
+                changes={'status':'pending','end':None,'start':None,'wait':None}
             elif action == "task_done":
                 if row['status']=='deleted':
                     raise AssistantError('terminal_task','Restore a retired responsibility before marking it complete.')
@@ -201,10 +234,35 @@ class Assistant:
                     plan["effect"]["progress"] = [row["uuid"], now]
                     if row.get("wait") and parse(row["wait"]) <= self.clock():
                         changes["wait"] = None
+                continuation=continuity_values(p)
+                if continuation:
+                    with self.store.connect() as con:
+                        record=con.execute('SELECT data FROM continuity WHERE uuid=?',(row['uuid'],)).fetchone()
+                    previous=json.loads(record[0]) if record else {}
+                    if any(previous.get(k)!=v for k,v in continuation.items()):plan['effect']['continuity_set']=[row['uuid'],continuation,now]
                 if not changes and not plan["effect"]:
                     raise AssistantError("empty_update", "No change was supplied.")
             patch(row, changes)
             plan["result"] = {"uuid": row["uuid"]}
+        elif action=='related_update':
+            uid=self.required(p['uuid'])['uuid'];refs=p['relatedTo']
+            if not isinstance(refs,list) or len(refs)>100 or any(not isinstance(x,str) for x in refs):raise AssistantError('invalid_relations','Related responsibilities must be a bounded UUID list.')
+            wanted=sorted({self.required(x)['uuid'] for x in refs})
+            if uid in wanted:raise AssistantError('invalid_relations','A responsibility cannot be related to itself.')
+            with self.store.connect() as con:
+                current=sorted(r['b'] if r['a']==uid else r['a'] for r in con.execute('SELECT * FROM related WHERE a=? OR b=?',(uid,uid)))
+            if current!=wanted:plan['effect']['related_set']=[uid,wanted]
+            plan['result']={'uuid':uid}
+        elif action=='provenance_update':
+            uid=self.required(p['uuid'])['uuid'];fields={'source','person','reference','observed_at'}
+            if set(p)-fields-{'uuid','zone'}:raise AssistantError('invalid_provenance','Unknown provenance fields.')
+            value={k:p[k] for k in fields if k in p}
+            if 'observed_at' in value and value['observed_at']:
+                value['observed_at']=instant(value['observed_at'],p.get('zone'))
+                if parse(value['observed_at'])>self.clock():raise AssistantError('future_observation','Observation time cannot be in the future.')
+            previous=self.store.metadata().get(uid,{})
+            if any(previous.get(k)!=v for k,v in value.items()):plan['effect']['meta_update']=[uid,value]
+            plan['result']={'uuid':uid,'declared':True}
         elif action in ("context_update", "continuity_update"):
             if action == "context_update":
                 current = self.store.state_value("day_context", {"availableMinutes": None, "availableUntil": None, "rest": False})
@@ -283,12 +341,30 @@ class Assistant:
                 raise AssistantError("invalid_event", "An event needs a title and an end after its start.")
             uid = str(uuid.uuid4())
             plan["effect"] = {"event_add": [uid, p["title"].strip(), start, end, p.get("zone"), p["start"]]}
+            if self.store.state_value('connected',False):
+                metadata={k:p[k] for k in ('source','person','reference','observed_at') if k in p}
+                if metadata.get('observed_at'):metadata['observed_at']=instant(metadata['observed_at'],p.get('zone') or self.store.state_value('timezone'),p.get('fold'))
+                plan['effect']['event_meta']=[uid,metadata|{'captured_at':now}]
             plan["result"] = {"uuid": uid}
+        elif action=='event_update':
+            uid=self.validate_uuid(p['uuid'])
+            with self.store.connect() as con:old=con.execute('SELECT * FROM events WHERE uuid=? AND canceled=0',(uid,)).fetchone()
+            if not old:raise AssistantError('event_not_found','The event does not exist or was canceled.')
+            value=dict(old);changes={}
+            for key,column in [('title','title'),('start','start_at'),('end','end_at')]:
+                if key in p:
+                    result=instant(p[key],p.get('zone'),p.get('fold')) if key!='title' else p[key].strip()
+                    if key=='title' and (not result or len(result)>500):raise AssistantError('invalid_event','Invalid event title.')
+                    if value[column]!=result:changes[column]=result;value[column]=result
+            if parse(value['end_at'])<=parse(value['start_at']):raise AssistantError('invalid_event','The event must end after it starts.')
+            if changes:plan['effect']['event_patch']=[uid,changes]
+            plan['result']={'uuid':uid}
         elif action == "event_cancel":
             uid = self.validate_uuid(p["uuid"])
-            if not any(e["uuid"] == uid for e in self.store.events()):
+            with self.store.connect() as con:event=con.execute('SELECT canceled FROM events WHERE uuid=?',(uid,)).fetchone()
+            if not event:
                 raise AssistantError("event_not_found", "The event does not exist.")
-            plan["effect"] = {"event_cancel": uid}
+            if not event['canceled']:plan["effect"] = {"event_cancel": uid}
             plan["result"] = {"uuid": uid}
         elif action == "config_set":
             if p["name"] not in DEFAULTS or not isinstance(p["value"], int) or not 1 <= p["value"] <= 10080:
@@ -297,9 +373,27 @@ class Assistant:
             plan["result"] = p
         else:
             raise AssistantError("unknown_action", "Unsupported mutation.")
+        # Persist both read and write preconditions for recovery.
+        native=self.tasks.rows();written={step['uuid'] for step in plan['steps']}
+        plan['reads']={r['uuid']:canonical(r) for r in native if r['uuid'] not in written}
+        plan['known_uuids']=sorted({r['uuid'] for r in native}|written)
         return plan
 
+    def read_observations(self,plan):
+        if 'reads' not in plan:return {'matching':True,'participants':[],'unexpected':[]}
+        rows={r['uuid']:canonical(r) for r in self.tasks.rows()}
+        participants=[{'uuid':uid,'expected':expected,'observed':rows.get(uid)} for uid,expected in plan['reads'].items()]
+        # A not-yet-created write participant is optional until its own step.
+        mandatory=set(plan.get('known_uuids',[]))-{s['uuid'] for s in plan['steps'] if s.get('before') is None}
+        unexpected=sorted(set(rows)-set(plan.get('known_uuids',[])))
+        return {'matching':not unexpected and mandatory<=set(rows) and all(p['expected']==p['observed'] for p in participants),'participants':participants,'unexpected':unexpected}
+
+    def validate_reads(self,plan):
+        observations=self.read_observations(plan)
+        if not observations['matching']:raise AssistantError('external_conflict','A prerequisite or reviewed native participant changed after admission; no additional effect was authorized.',observations)
+
     def _apply(self, key, plan):
+        self.store.assert_writable()
         try:
             if self.store.state_value("connected", False):
                 with self.store.connect() as con:
@@ -310,6 +404,7 @@ class Assistant:
                 con.execute("UPDATE operations SET status='applying',error=NULL WHERE key=?", (key,))
             if self.store.revision() != plan["revision"]:
                 raise AssistantError("external_conflict", "The auxiliary revision changed during an incomplete operation.")
+            self.validate_reads(plan)
             # Validate every participant before executing any remaining step.
             # A conflict in a later participant must not cause an earlier one
             # to acquire another partial effect during recovery.
@@ -334,11 +429,15 @@ class Assistant:
             for step in plan["steps"]:
                 if canonical(self.tasks.get(step["uuid"])) != step["after"]:
                     raise AssistantError("external_conflict", "A task changed before the auxiliary commit.", {"uuid": step["uuid"]})
+            self.validate_reads(plan)
             result = dict(plan["result"], revision=plan["revision"] + 1)
             effect = plan["effect"]
             with self.store.connect() as con:
                 if "meta_add" in effect:
                     con.execute("INSERT INTO task_meta VALUES(?,?,?,?,?,?,?,?,?)", effect["meta_add"])
+                if 'attachments_link' in effect:
+                    uid,refs=effect['attachments_link']
+                    for ref in refs:con.execute('INSERT OR IGNORE INTO item_attachments VALUES(?,?)',(uid,ref))
                 if "progress" in effect:
                     uid, at = effect["progress"]
                     con.execute("UPDATE task_meta SET human_progress_at=? WHERE uuid=?", (at, uid))
@@ -350,6 +449,20 @@ class Assistant:
                     con.execute("INSERT INTO events(uuid,title,start_at,end_at,origin_zone,original_start) VALUES(?,?,?,?,?,?)", effect["event_add"])
                 if "event_cancel" in effect:
                     con.execute("UPDATE events SET canceled=1 WHERE uuid=?", (effect["event_cancel"],))
+                if 'event_meta' in effect:
+                    uid,values=effect['event_meta']
+                    for field,value in values.items():con.execute('UPDATE events SET '+field+'=? WHERE uuid=?',(value,uid))
+                if 'event_patch' in effect:
+                    uid,values=effect['event_patch']
+                    for field,value in values.items():con.execute('UPDATE events SET '+field+'=? WHERE uuid=?',(value,uid))
+                if 'meta_update' in effect:
+                    uid,values=effect['meta_update']
+                    con.execute('INSERT OR IGNORE INTO task_meta(uuid,captured_at,human_progress_at) VALUES(?,?,NULL)',(uid,self.now()))
+                    for field,value in values.items():
+                        if con.execute('UPDATE task_meta SET '+field+'=? WHERE uuid=?',(value,uid)).rowcount!=1:raise AssistantError('metadata_missing','Source metadata was not persisted.')
+                if 'related_set' in effect:
+                    uid,refs=effect['related_set'];con.execute('DELETE FROM related WHERE a=? OR b=?',(uid,uid))
+                    for other in refs:con.execute('INSERT OR IGNORE INTO related VALUES(?,?)',tuple(sorted((uid,other))))
                 if "config" in effect:
                     name, value = effect["config"]
                     con.execute("UPDATE config SET value=? WHERE key=?", (value, name))
@@ -374,8 +487,8 @@ class Assistant:
                 con.execute("UPDATE operations SET status=?,error=? WHERE key=?", (status, str(error), key))
             raise
 
-    def _view(self):
-        self.clean_read()
+    def _view(self,coherent=True):
+        if coherent:self.clean_read()
         rows = self.tasks.rows()
         by_id = {r["uuid"]: r for r in rows}
         meta = self.store.metadata()
@@ -393,7 +506,8 @@ class Assistant:
                          "priority": PUBLIC_PRIORITY.get(row.get("priority"), "medium"),
                          "due_at": stamp(parse(row["due"])) if row.get("due") else None,
                          "snoozed_until": stamp(parse(row["wait"])) if row.get("wait") else None,
-                         "focused": (bool(row.get("start")) if self.store.state_value("connected", False) else uid == focused and bool(row.get("start"))) and status == "pending",
+                         "focused": bool(row.get("start")) and row["status"]=="pending" if self.store.state_value("connected",False) else uid==focused and bool(row.get("start")) and status=="pending",
+                         "dependsOn":row.get('depends',[]),"blockedBy":self.blockers(row,by_id) if row['status']=='pending' else [],
                          "metadata": meta.get(uid, {})})
         return view
 
@@ -455,8 +569,17 @@ class Assistant:
                     "notices": self._candidates(view)}
 
     def notify(self, retry_uncertain=False):
+        from .profiles import delivery_allowed
+        from zoneinfo import ZoneInfo
+        policy=self.store.state_value('notification_policy')
+        def permitted():
+            current=self.store.state_value('notification_policy')
+            return delivery_allowed(current,self.clock(),self.store.state_value('timezone','UTC')) if current else (True,'legacy')
+        allowed,reason=permitted()
+        if not allowed:return {'attempts':[],'deferred':reason}
         results = []
         with self.store.lock():
+            self.store.assert_writable()
             self.clean_read()
             now = self.now()
             # One reason per entity, ordered independently of backend export order.
@@ -467,6 +590,14 @@ class Assistant:
             for item in candidates:
                 selected.setdefault(item["entity"], item)
             candidates = list(selected.values())
+            hold=self.store.state_value('restore_suppression',{})
+            if hold.get('until') and parse(hold['until'])>self.clock():candidates=[x for x in candidates if x['id'] not in hold.get('ids',[])]
+            if policy:
+                with self.store.connect() as con:
+                    prior={r['entity']:r['last_at'] for r in con.execute("SELECT entity,max(accepted_at) last_at FROM notices WHERE accepted_at IS NOT NULL GROUP BY entity")}
+                # Unnotified work precedes unchanged repeats; the rolling budget
+                # cannot permanently starve later entities of the same urgency.
+                candidates.sort(key=lambda n:(prior.get(n['entity']) is not None,prior.get(n['entity']) or '',rank[n['kind']],n['episode'],n['entity']))
             with self.store.connect() as con:
                 for item in candidates:
                     con.execute("INSERT OR IGNORE INTO notices(id,episode,entity,kind,status) VALUES(?,?,?,?, 'pending')",
@@ -482,7 +613,9 @@ class Assistant:
         # both the SQLite transaction and the coordinator lock.
         for item in candidates:
             with self.store.lock():
+                self.store.assert_writable()
                 self.clean_read()
+                if not permitted()[0]:break
                 current = {n["id"]: n for n in self._candidates(self._view())}
                 if item["id"] not in current:
                     continue
@@ -494,8 +627,13 @@ class Assistant:
                     since = stamp(self.clock() - timedelta(minutes=5))
                     if con.execute("SELECT count(*) FROM attempts WHERE at>?", (since,)).fetchone()[0] >= self.store.config()["notification_budget"]:
                         continue
+                    current_policy=self.store.state_value('notification_policy')
+                    if current_policy:
+                        local=self.clock().astimezone(ZoneInfo(current_policy.get('timezone') or self.store.state_value('timezone','UTC')))
+                        start=stamp(local.replace(hour=0,minute=0,second=0,microsecond=0))
+                        if con.execute("SELECT count(*) FROM attempts WHERE at>=?",(start,)).fetchone()[0]>=current_policy['dailyBudget']:continue
                     siblings = con.execute("SELECT * FROM notices WHERE entity=?", (item["entity"],)).fetchall()
-                    repeat = timedelta(minutes=self.store.config()["repeat_minutes"])
+                    repeat = timedelta(minutes=current_policy["unchangedRepeatMinutes"] if current_policy else self.store.config()["repeat_minutes"])
                     if any(r["status"] == "sending" or
                            (r["status"] == "uncertain" and not retry_uncertain) or
                            (r["accepted_at"] and parse(r["accepted_at"]) + repeat > self.clock())
@@ -505,7 +643,7 @@ class Assistant:
                         continue
                     if row["retry_at"] and parse(row["retry_at"]) > self.clock():
                         continue
-                    repeat = timedelta(minutes=self.store.config()["repeat_minutes"])
+                    repeat = timedelta(minutes=current_policy["unchangedRepeatMinutes"] if current_policy else self.store.config()["repeat_minutes"])
                     if row["accepted_at"] and parse(row["accepted_at"]) + repeat > self.clock():
                         continue
                     attempt_number = row["attempts"] + 1 if row["status"] != "accepted" else 1
@@ -514,38 +652,45 @@ class Assistant:
                         continue
                     attempt = con.execute("INSERT INTO attempts(notice_id,at,status) VALUES(?,?,'sending')", (item["id"], self.now())).lastrowid
                     con.execute("UPDATE notices SET status='sending',attempts=?,claimed_at=?,active_attempt_id=? WHERE id=?", (attempt_number, self.now(), attempt, item["id"]))
-            self.fault("after_claim")
-            with self.store.lock():
-                self.clean_read()
-                current = {n["id"]: n for n in self._candidates(self._view())}
-                with self.store.connect() as con:
-                    owned = con.execute("SELECT 1 FROM notices WHERE id=? AND status='sending' AND active_attempt_id=?", (item["id"], attempt)).fetchone()
-                if not owned:
-                    results.append({"id": item["id"], "status": "ownership_lost", "read_by_user": "unknown"})
-                    continue
-                if item["id"] not in current:
+            with platforms.exclusive(self.store.path/'delivery.lock',shared=True):
+                self.fault("after_claim")
+                self.fault("before_notify")
+                with self.store.lock():
+                    if self.store.state_value('maintenance') or not permitted()[0]:
+                        with self.store.connect() as con:
+                            changed=con.execute("UPDATE notices SET status='pending',attempts=max(0,attempts-1),active_attempt_id=NULL,claimed_at=NULL WHERE id=? AND status='sending' AND active_attempt_id=?",(item['id'],attempt)).rowcount
+                            if changed:con.execute('DELETE FROM attempts WHERE id=?',(attempt,))
+                        results.append({'id':item['id'],'status':'deferred','read_by_user':'unknown'})
+                        continue
+                    self.clean_read()
+                    current = {n["id"]: n for n in self._candidates(self._view())}
                     with self.store.connect() as con:
-                        con.execute("UPDATE attempts SET status='obsolete',error='Condition changed after claim' WHERE id=?", (attempt,))
-                        con.execute("UPDATE notices SET status='obsolete',active_attempt_id=NULL,error='Condition changed after claim' WHERE id=? AND status='sending' AND active_attempt_id=?", (item["id"], attempt))
-                    results.append({"id": item["id"], "status": "obsolete", "read_by_user": "unknown"})
-                    continue
-                item = current[item["id"]]
-            # A task may still change after this last check. This is a bounded
-            # race with external delivery, not an atomic task+popup operation.
-            self.fault("before_notify")
-            outcome = self.notifier("Day Attendant", item["title"])
-            self.fault("after_notify")
-            status = "uncertain" if outcome.get("uncertain") else "accepted" if outcome.get("accepted") else "pending" if attempt_number < 3 else "failed"
-            retry_at = stamp(self.clock() + timedelta(minutes=2 ** attempt_number)) if status == "pending" else None
-            with self.store.lock(), self.store.connect() as con:
-                changed = con.execute("UPDATE notices SET status=?,active_attempt_id=NULL,error=?,retry_at=?,accepted_at=CASE WHEN ?='accepted' THEN ? ELSE accepted_at END WHERE id=? AND status='sending' AND active_attempt_id=?",
-                            (status, outcome.get("error"), retry_at, status, self.now(), item["id"], attempt)).rowcount
-                if changed:
-                    con.execute("UPDATE attempts SET status=?,error=? WHERE id=?", (status, outcome.get("error"), attempt))
-                else:
-                    con.execute("UPDATE attempts SET late_outcome=? WHERE id=?", (encoded(outcome), attempt))
-                    status = "ownership_lost"
-            results.append({"id": item["id"], "status": status, "read_by_user": "unknown"})
+                        owned = con.execute("SELECT 1 FROM notices WHERE id=? AND status='sending' AND active_attempt_id=?", (item["id"], attempt)).fetchone()
+                    if not owned:
+                        results.append({"id": item["id"], "status": "ownership_lost", "read_by_user": "unknown"})
+                        continue
+                    if item["id"] not in current:
+                        with self.store.connect() as con:
+                            con.execute("UPDATE attempts SET status='obsolete',error='Condition changed after claim' WHERE id=?", (attempt,))
+                            con.execute("UPDATE notices SET status='obsolete',active_attempt_id=NULL,error='Condition changed after claim' WHERE id=? AND status='sending' AND active_attempt_id=?", (item["id"], attempt))
+                        results.append({"id": item["id"], "status": "obsolete", "read_by_user": "unknown"})
+                        continue
+                    item = current[item["id"]]
+                # A task may still change after this last check. This is a bounded
+                # race with external delivery, not an atomic task+popup operation.
+                outcome = self.notifier("Day Attendant", item["title"])
+                self.fault("after_notify")
+                status = "uncertain" if outcome.get("uncertain") else "accepted" if outcome.get("accepted") else "pending" if attempt_number < 3 else "failed"
+                retry_at = stamp(self.clock() + timedelta(minutes=2 ** attempt_number)) if status == "pending" else None
+                with self.store.lock(), self.store.connect() as con:
+                    changed = con.execute("UPDATE notices SET status=?,active_attempt_id=NULL,error=?,retry_at=?,accepted_at=CASE WHEN ?='accepted' THEN ? ELSE accepted_at END WHERE id=? AND status='sending' AND active_attempt_id=?",
+                                (status, outcome.get("error"), retry_at, status, self.now(), item["id"], attempt)).rowcount
+                    if changed:
+                        con.execute("UPDATE attempts SET status=?,error=? WHERE id=?", (status, outcome.get("error"), attempt))
+                    else:
+                        con.execute("UPDATE attempts SET late_outcome=? WHERE id=?", (encoded(outcome), attempt))
+                        status = "ownership_lost"
+                results.append({"id": item["id"], "status": status, "read_by_user": "unknown"})
         return {"attempts": results}
 
     def doctor(self):
@@ -566,4 +711,4 @@ class Assistant:
             return {"version": self.tasks.version(), "state": str(self.store.path), "integrity": integrity,
                     "revision": self.store.revision(), "operations": self.store.unresolved(),
                     "notices_requiring_attention": notices, "capabilities": caps,
-                    "config": self.store.config(), "scheduler_installed_by_this_app": False}
+                    "config": self.store.config(), "scheduler_installed_by_this_app": bool((self.store.state_value("scheduler") or {}).get('installed')), "scheduler":self.store.state_value("scheduler"), "last_tick":self.store.state_value("last_tick"), "last_backup":self.store.state_value("last_backup"), "notification_policy":self.store.state_value("notification_policy"), "maintenance":self.store.state_value("maintenance")}

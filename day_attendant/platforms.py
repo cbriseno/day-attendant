@@ -10,7 +10,7 @@ from .errors import AssistantError
 
 
 @contextmanager
-def exclusive(path, timeout=15):
+def exclusive(path, timeout=15, shared=False):
     # Kernel locks are released when a process dies; no stale PID-file guessing.
     with path.open("a+b") as handle:
         if os.name != "nt":
@@ -25,7 +25,7 @@ def exclusive(path, timeout=15):
             release = lambda: msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         else:
             import fcntl
-            acquire = lambda: fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquire = lambda: fcntl.flock(handle, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
             release = lambda: fcntl.flock(handle, fcntl.LOCK_UN)
         while True:
             try:

@@ -1,3 +1,39 @@
+# Current daily architecture
+
+This section supersedes the historical pilot notes below. A portable Python domain
+owns all writes through a shared coordinator and native journal. Taskwarrior 3.5.0
+is the task authority; SQLite stores calendar events, declarations, provenance,
+relations, messages, proposals, authorization, facts and delivery receipts.
+
+Codex app-server and Claude Code CLI implement the same bounded inference interface.
+The model receives selected profile facts and images, has no external task-writing
+tools, and returns typed interpretations/reviews. The selected harness/model is
+validated for every conversation, proposal and informational-guidance turn. Epochs,
+generations, fingerprints and native read/write guards prevent stale application.
+
+Pending interpretations are not executable operations. Admission records a decision,
+operation and admitted transition together. An incomplete executable operation prevents
+admission of another until recovery/reconciliation. Native recovery compares its
+write participants against before/after states and its read set against recorded
+preconditions; it does not overwrite changed prerequisites or external native edits.
+
+Blocking graph edges are native Taskwarrior depends values; related pairs are sorted
+symmetric SQLite links. Active, snoozed, awaiting and blocked are independent facts.
+
+Kernel locks separate the coordinator, server ownership, maintenance ownership and
+notification transport. Concurrent deliveries hold a shared transport lock through
+receipt commit; snapshot maintenance acquires it exclusively outside any SQL write
+transaction. Dead maintenance is recovered through kernel ownership rather than PID
+expiry. Backups capture immutable copies of both SQLite stores and selected files,
+then compress/publish atomically. They never advance a reconciliation target.
+
+Linux cron/systemd and macOS launchd adapters execute the same bounded known-data tick.
+Delivery policy, budgets, coalescing, suppression and backups are independent of LLM
+availability. OS/harness interfaces remain adapters; there is no extra scheduler
+daemon, global skill, SDLC coordinator, cloud sync or inbox integration.
+
+## Historical pilot design
+
 # Architecture
 
 The loopback browser interface and CLI share a typed local HTTP service. Taskwarrior

@@ -9,5 +9,6 @@ A concrete consequence is reviewed before the state change; the human may cancel
 correct context, retry or explicitly continue. Rest is legitimate and does not
 create a task. Unavailable reasoning remains visible rather than implying approval.
 
-No scheduler or external inbox integration is installed. macOS deployment,
-production backup/restore and synchronization remain separate work.
+Starting this workspace installs no scheduler or external inbox integration.
+For optional scheduling and backup/recovery, see [daily operation](daily-operation.md).
+For deployment checks on the managed Mac, see the [macOS handoff](macos-handoff.md).

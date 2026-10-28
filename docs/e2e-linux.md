@@ -1,4 +1,7 @@
-# Linux validation scope
+# Linux pilot validation scope (historical)
+
+This page describes the connected pilot at `8c9701d`. For current daily-readiness
+evidence and platform limits, see [daily validation](daily-validation.md).
 
 Three different kinds of evidence must remain distinct:
 

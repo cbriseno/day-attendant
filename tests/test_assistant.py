@@ -32,15 +32,16 @@ class Clock:
 
 class TimeTests(unittest.TestCase):
     def test_ambiguous_hour_requires_choice(self):
+        # Use historical Edmonton rules; Alberta stopped falling back in 2026.
         with self.assertRaises(AssistantError) as caught:
-            instant("2026-11-01T01:30:00", "America/Edmonton")
+            instant("2025-11-02T01:30:00", "America/Edmonton")
         self.assertEqual(caught.exception.code, "ambiguous_time")
-        self.assertEqual(instant("2026-11-01T01:30:00", "America/Edmonton", 0), "2026-11-01T07:30:00Z")
-        self.assertEqual(instant("2026-11-01T01:30:00", "America/Edmonton", 1), "2026-11-01T08:30:00Z")
+        self.assertEqual(instant("2025-11-02T01:30:00", "America/Edmonton", 0), "2025-11-02T07:30:00Z")
+        self.assertEqual(instant("2025-11-02T01:30:00", "America/Edmonton", 1), "2025-11-02T08:30:00Z")
 
     def test_nonexistent_hour_rejected(self):
         with self.assertRaises(AssistantError) as caught:
-            instant("2026-03-08T02:30:00", "America/Edmonton")
+            instant("2025-03-09T02:30:00", "America/Edmonton")
         self.assertEqual(caught.exception.code, "nonexistent_time")
 
     def test_naive_time_requires_zone(self):

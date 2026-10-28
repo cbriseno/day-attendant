@@ -25,16 +25,17 @@ class Store:
         self.lock_path = self.path / "writer.lock"
         with exclusive(self.lock_path), self.connect() as con:
             version = con.execute("PRAGMA user_version").fetchone()[0]
-            if version > 3:
+            if version > 4:
                 raise AssistantError("newer_schema", "The state requires a newer assistant version.")
             if version == 0:
                 con.executescript('''
+                    BEGIN IMMEDIATE;
                     CREATE TABLE operations(key TEXT PRIMARY KEY, digest TEXT NOT NULL,
                         action TEXT NOT NULL, plan TEXT NOT NULL, status TEXT NOT NULL,
                         result TEXT, error TEXT, created_at TEXT NOT NULL);
                     CREATE TABLE task_meta(uuid TEXT PRIMARY KEY, source TEXT, person TEXT,
                         reference TEXT, observed_at TEXT, captured_at TEXT NOT NULL,
-                        human_progress_at TEXT NOT NULL, origin_zone TEXT, estimate_minutes INTEGER);
+                        human_progress_at TEXT, origin_zone TEXT, estimate_minutes INTEGER);
                     CREATE TABLE frames(id INTEGER PRIMARY KEY AUTOINCREMENT,
                         operation_key TEXT UNIQUE, target TEXT NOT NULL, previous TEXT);
                     CREATE TABLE state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -78,6 +79,13 @@ class Store:
     def lock(self):
         return exclusive(self.lock_path)
 
+    def assert_writable(self):
+        if self.state_value('maintenance'):
+            raise AssistantError('maintenance','This profile is in maintenance. New changes and deliveries are paused.')
+
+    def epoch(self):
+        return self.state_value('context_epoch',0)
+
     def state_value(self, key, default=None):
         with self.connect() as con:
             row = con.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
@@ -93,7 +101,7 @@ class Store:
 
     def unresolved(self):
         with self.connect() as con:
-            return [dict(r) for r in con.execute("SELECT key,action,status,error FROM operations WHERE status!='confirmed'")]
+            return [dict(r) for r in con.execute("SELECT key,action,status,error FROM operations WHERE status NOT IN ('confirmed','abandoned')")]
 
     def frames(self):
         with self.connect() as con:

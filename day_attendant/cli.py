@@ -118,9 +118,32 @@ def parser():
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--every-minutes", type=int, default=10)
     p = command(groups, "web")
-    p.add_argument("--synthetic", action="store_true", required=True)
+    p.add_argument("--synthetic", action="store_true")
     p.add_argument("--port", type=int, default=0)
-    p.add_argument("--zone", default="America/Edmonton")
+    p.add_argument("--zone")
+    p.add_argument('--supervised',action='store_true',help=argparse.SUPPRESS)
+    p=command(groups,'init')
+    p.add_argument('--synthetic',action='store_true')
+    p.add_argument('--zone')
+    p.add_argument('--name')
+    p.add_argument('--harness',choices=['codex','claude'],default='codex')
+    p.add_argument('--model')
+    profiles=command(groups,'profile').add_subparsers(dest='command',required=True,parser_class=Parser)
+    command(profiles,'show')
+    p=command(profiles,'configure',True)
+    p.add_argument('--values',required=True,help='JSON settings object')
+    command(profiles,'upgrade')
+    backups=command(groups,'backup').add_subparsers(dest='command',required=True,parser_class=Parser)
+    p=command(backups,'create');p.add_argument('--destination');p.add_argument('--key')
+    command(backups,'list')
+    p=command(backups,'verify');p.add_argument('archive')
+    p=command(groups,'restore');p.add_argument('archive');p.add_argument('--to',required=True)
+    service=command(groups,'service').add_subparsers(dest='command',required=True,parser_class=Parser)
+    for name in ('start','stop','restart','status','open'):command(service,name)
+    sched=command(groups,'scheduler').add_subparsers(dest='command',required=True,parser_class=Parser)
+    for name in ('install','uninstall','status'):command(sched,name)
+    command(groups,'tick')
+    p=command(groups,'reconcile');p.add_argument('operation_key');p.add_argument('--resolution',choices=['complete','keep_observed']);p.add_argument('--precondition')
     board = command(groups, "board").add_subparsers(dest="command", required=True, parser_class=Parser)
     command(board, "list")
     p = command(board, "request", True)
@@ -136,6 +159,8 @@ def parser():
     p.add_argument("fact_id", type=int)
     p = command(board, "chat", True)
     p.add_argument("text")
+    p.add_argument("--image",action="append",default=[])
+    p.add_argument("--capture-only",action="store_true")
     return root
 
 
@@ -230,15 +255,49 @@ def main(argv=None):
         wants_json = getattr(args, "json", False)
         language = getattr(args, "lang", "en")
         operation_id = getattr(args, "key", operation_id)
-        if args.group in ("web", "board"):
-            from .web import client, serve
-            state = getattr(args, "state", None)
-            if not state:
-                raise AssistantError("state_required", "Provide --state with a separate synthetic workspace.")
+        if args.group in ("web", "board",'init','profile','backup','restore','service','scheduler','tick','reconcile'):
+            from .web import client, serve,initialize_profile,preflight
+            from .profiles import default_state,configure
+            state=getattr(args,'state',None) or default_state()
             if args.group == "web":
-                serve(state, getattr(args, "task_bin", None), args.port, args.zone)
+                serve(state,getattr(args,'task_bin',None),args.port,args.zone,kind='synthetic' if args.synthetic else None,supervised=args.supervised)
                 return 0
-            if args.command == "list":
+            if args.group in ('backup','restore','service','scheduler','tick','reconcile'):
+                from . import archives,lifecycle,recovery
+                if args.group=='restore':data=archives.restore(args.archive,args.to,getattr(args,'task_bin',None))
+                elif args.group=='backup' and args.command=='verify':data=archives.verify(args.archive)
+                else:
+                    app=Assistant(preflight(state),getattr(args,'task_bin',None))
+                    if not app.store.state_value('profile'):raise AssistantError('profile_required','Initialize a personal or synthetic profile first.')
+                    if args.group=='backup':data=archives.list_backups(app) if args.command=='list' else archives.snapshot(app,args.destination,key=args.key)
+                    elif args.group=='scheduler':data=lifecycle.scheduler(app,args.command)
+                    elif args.group=='tick':data=lifecycle.tick(app)
+                    elif args.group=='reconcile':
+                        data=recovery.resolve(app,args.operation_key,args.resolution,args.precondition) if args.resolution else recovery.inspect(app,args.operation_key)
+                    elif args.command=='start':data=lifecycle.start(app)
+                    elif args.command=='stop':data=lifecycle.stop(app)
+                    elif args.command=='restart':lifecycle.stop(app);data=lifecycle.start(app)
+                    elif args.command=='open':
+                        import webbrowser
+                        lifecycle.start(app);url=lifecycle.session_url(app);opened=webbrowser.open(url);data={'opened':opened,'url':url}
+                    else:data=lifecycle.status(app)
+            elif args.group=='init':
+                app=initialize_profile(state,getattr(args,'task_bin',None),'synthetic' if args.synthetic else 'personal',args.zone,args.name)
+                changes={'harness':args.harness,'model':args.model}
+                configure(app,changes,'initial-harness:'+app.store.state_value('profile')['id'])
+                data={'profile':app.store.state_value('profile'),'state':str(app.store.path),'tasks':len(app.tasks.rows())}
+            elif args.group=='profile':
+                if args.command=='upgrade':
+                    from .archives import upgrade_profile
+                    data=upgrade_profile(state,getattr(args,'task_bin',None))
+                else:
+                    app=Assistant(preflight(state),getattr(args,'task_bin',None))
+                    if args.command=='show':data={'profile':app.store.state_value('profile'),'notification_policy':app.store.state_value('notification_policy')}
+                    else:
+                        values=json.loads(args.values)
+                        if (Path(state)/'ui-server.json').exists():data=client(state,'/api/settings',{'values':values,'key':args.key,'expected_revision':getattr(args,'expect',None)})
+                        else:data=configure(app,values,args.key,getattr(args,'expect',None))
+            elif args.command == "list":
                 data = client(state)
             elif args.command == "request":
                 try:
@@ -248,7 +307,15 @@ def main(argv=None):
                 data = client(state, "/api/proposals", {"action": args.action, "payload": payload,
                               "key": args.key, "expected_revision": getattr(args,"expect",None)})
             elif args.command == "chat":
-                data = client(state, "/api/chat", {"text": args.text, "key": args.key})
+                refs=[]
+                if len(args.image)>3:raise AssistantError('invalid_message','Select at most three images.')
+                for index,image in enumerate(args.image):
+                    import base64,mimetypes
+                    path=Path(image).expanduser()
+                    if path.stat().st_size>10*1024*1024:raise AssistantError('attachment_too_large','An image exceeds 10 MiB.')
+                    uploaded=client(state,'/api/attachments',{'name':path.name,'mime':mimetypes.guess_type(path.name)[0] or '', 'base64':base64.b64encode(path.read_bytes()).decode(),'key':args.key+':image:'+str(index)})
+                    refs.append(uploaded['id'])
+                data = client(state, "/api/chat", {"text": args.text, "key": args.key,'attachments':refs,'capture_only':args.capture_only})
             elif args.command == "undo":
                 data = client(state, "/api/undo", {"fact_id": args.fact_id, "key": args.key, "expected_revision": getattr(args,"expect",None)})
             else:
@@ -259,7 +326,8 @@ def main(argv=None):
             else:
                 print(json.dumps(data,ensure_ascii=False,indent=2))
             return 0
-        default = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "day-attendant"
+        from .profiles import default_state
+        default = default_state()
         explicit=getattr(args,'state',None) or os.environ.get('DAY_ATTENDANT_STATE')
         legacy=Path(os.environ.get('XDG_STATE_HOME',Path.home()/'.local/state'))/'asistente-dia'
         if not explicit and (os.environ.get('ASISTENTE_STATE') or legacy.exists()):
@@ -274,6 +342,11 @@ def main(argv=None):
             if text:
                 print(text)
         return 0
+    except (OSError,ValueError) as error:
+        message="A file or JSON argument could not be read: "+str(error)[:300]
+        if wants_json:print(json.dumps({"schema_version":1,"ok":False,"operation_id":operation_id,"data":None,"error":{"code":"invalid_arguments","message":message,"details":{}}}))
+        else:print(message,file=sys.stderr)
+        return 2
     except AssistantError as error:
         if wants_json:
             print(json.dumps({"schema_version": 1, "ok": False, "operation_id": operation_id,
