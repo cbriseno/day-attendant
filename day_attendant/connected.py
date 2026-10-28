@@ -12,6 +12,7 @@ import threading
 import uuid
 
 from .errors import AssistantError
+from .profiles import turn_timeout
 from .service import Assistant, encoded, fingerprint
 from .taskwarrior import canonical
 from .timeutil import instant, parse, stamp, wire
@@ -133,6 +134,8 @@ class Connected:
                 con.execute("INSERT OR IGNORE INTO state VALUES('context_epoch','0')")
                 con.execute("INSERT OR IGNORE INTO state VALUES('synthetic_bootstrap',?)",(encoded(selected=='synthetic'),))
                 if selected=='synthetic':con.execute("INSERT OR IGNORE INTO state VALUES('bootstrap_clock',?)",(encoded(self.app.now()),))
+                floor=con.execute('SELECT COALESCE(MAX(id),0) FROM messages').fetchone()[0]
+                con.execute("INSERT OR IGNORE INTO state VALUES('conversation',?)",(encoded({'floor':floor,'clearedAt':self.app.now() if floor else None}),))
                 con.execute('PRAGMA user_version=4')
             if existing:return
             if selected=='personal':
@@ -176,7 +179,8 @@ class Connected:
             raise AssistantError('agent_unavailable','The assistant is unavailable. Known-data reminders still work.')
         profile=self.store.state_value('profile',{})
         provider=getattr(self.bridge,'provider',profile.get('harness','codex'))
-        if provider!=profile.get('harness','codex') or profile.get('model') and self.bridge.model and profile['model']!=self.bridge.model:
+        effort=getattr(self.bridge,'effort',None)
+        if provider!=profile.get('harness','codex') or profile.get('model') and self.bridge.model and profile['model']!=self.bridge.model or profile.get('effort') and effort and profile['effort']!=effort:
             raise AssistantError('agent_restart_required','Apply the selected harness/model before sending another model request.')
         return self.bridge
 
@@ -222,13 +226,16 @@ class Connected:
             continuation = {r["uuid"]: json.loads(r["data"]) for r in con.execute("SELECT * FROM continuity")}
             proposals = [self.unpack(r) for r in con.execute("SELECT * FROM proposals ORDER BY rowid")]
             facts = [dict(r) for r in con.execute("SELECT * FROM facts ORDER BY id")]
-            messages = [dict(r) for r in con.execute("SELECT * FROM messages ORDER BY id DESC LIMIT 100")][::-1]
+            # Only the current conversation is shown and sent; /clear keeps older messages stored locally.
+            conversation=self.store.state_value('conversation') or {}
+            messages = [dict(r) for r in con.execute("SELECT * FROM messages WHERE id>? ORDER BY id",(conversation.get('floor',0),))]
             transport_issues=[dict(r) for r in con.execute("SELECT id,entity,status,error,retry_at FROM notices WHERE status IN ('failed','uncertain') OR status='pending' AND error IS NOT NULL")]
             related=[dict(r) for r in con.execute('SELECT * FROM related ORDER BY a,b')]
             image_links=[dict(r) for r in con.execute('SELECT * FROM item_attachments')]
             selected_images={r['message_key']:[] for r in con.execute('SELECT DISTINCT message_key FROM message_attachments')}
             for r in con.execute('SELECT m.message_key,a.id,a.name,a.mime FROM message_attachments m JOIN attachments a ON a.id=m.attachment_id ORDER BY a.id'):selected_images[r['message_key']].append({'id':r['id'],'name':r['name'],'mime':r['mime']})
             for message in messages:message['attachments']=selected_images.get(message['key'],[])
+        startup=self.store.state_value('agent_startup_error') or {}
         tasks = []
         for row in rows:
             extra = continuation.get(row["uuid"], {})
@@ -250,11 +257,13 @@ class Connected:
                 "revision": self.store.revision(), "now": self.app.now(), "synthetic": self.store.state_value('profile',{}).get('kind')=='synthetic',
                 "profile":self.store.state_value('profile'), "readOnly":bool(unresolved or maintenance),
                 "diagnostics":{"operations":unresolved,"maintenance":maintenance,"reminders":transport_issues}, "epoch":self.store.epoch(),
-                "continuity_summary":self.store.state_value('continuity_summary',{}),
+                "conversation":{'clearedAt':conversation.get('clearedAt')},
                 "operations_status":{"last_tick":self.store.state_value('last_tick'),'last_backup':self.store.state_value('last_backup'),'scheduler':self.store.state_value('scheduler')},
                 "agent": {"provider":self.store.state_value('profile',{}).get('harness'),'connected':  self.bridge is not None and getattr(self.bridge,'available',True) and getattr(self.bridge,'provider',self.store.state_value('profile',{}).get('harness'))==self.store.state_value('profile',{}).get('harness'),
                           "model": self.bridge.model if self.bridge else self.store.state_value('profile',{}).get('model'),
-                          "error":self.store.state_value('agent_startup_error')}}
+                          "effort": getattr(self.bridge,'effort',None) if self.bridge else self.store.state_value('profile',{}).get('effort'),
+                          "catalog": getattr(self.bridge,'catalog',None) if self.bridge else None,
+                          "error":startup.get('message'),"errorCode":startup.get('code')}}
 
     def snapshot(self):
         with self.store.lock():
@@ -294,7 +303,8 @@ class Connected:
         return value
 
     def _review_expired(self, inputs):
-        return (self.app.clock()-parse(inputs['observed_at'])).total_seconds() >= 120
+        effort=getattr(self.bridge,'effort',None) or self.store.state_value('profile',{}).get('effort')
+        return (self.app.clock()-parse(inputs['observed_at'])).total_seconds() >= turn_timeout(effort)
 
     def _input(self, proposal, snapshot=None):
         snapshot = snapshot or self._snapshot()

@@ -9,12 +9,12 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
 const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2025-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
-const requests=[],settings=[];
+const requests=[],settings=[],chats=[],clears=[];
 const server=createServer(async(req,res)=>{
  try{
   if(req.url.startsWith('/api/')){
@@ -41,6 +41,12 @@ const server=createServer(async(req,res)=>{
     if(profileValues.timezone)state.timezone=profileValues.timezone;
     if(notification_policy)state.notification_policy=notification_policy;
     data=state.profile;
+   }else if(req.url==='/api/chat'){
+    chats.push(body);const at=state.now;
+    state.messages.push({key:body.key,role:'user',text:body.text,status:'completed',at,attachments:[]},{key:body.key+':assistant',role:'assistant',text:'Controlled reply.',status:'completed',at,attachments:[]});
+    data={key:body.key,status:'completed'};
+   }else if(req.url==='/api/chat/clear'){
+    clears.push(body);state.messages=[];data={key:body.key,status:'cleared'};
    }else if(req.url==='/api/backups')data={backups:[]};
    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:true,data}));return;
   }
@@ -153,6 +159,35 @@ try{
   target.due=null;target.title='Responsabilidad original';state.calendar_events=[];state.notification_policy.pausedUntil=null;
   state.context={availableMinutes:null,availableUntil:null,rest:false};state.revision++;await refresh();
   console.log('Stored date regressions passed');
+ }
+ if(group==='all'||group==='conversation'){
+  // Typed /clear and the button use the clear action; neither becomes a model message.
+  state.agent={connected:true,model:'controlled',effort:'high',catalog:[{model:'controlled',isDefault:true,efforts:['low','high'],defaultEffort:'high'}]};await refresh();
+  const shown=n=>wait(`document.querySelectorAll('#messages .message').length===${n}`);
+  await fill('conversation-input','First message');await click('#send-message');await shown(2);
+  await fill('conversation-input','/clear');await click('#send-message');await shown(0);
+  assert.equal(chats.length,1);assert.equal(clears.length,1);assert.equal(await evaluate("document.getElementById('conversation-input').value"),'');
+  await fill('conversation-input','Another message');await click('#send-message');await shown(2);await click('#chat-clear');await shown(0);
+  assert.equal(chats.length,2);assert.equal(clears.length,2);assert.notEqual(clears[0].key,clears[1].key);
+  // Reasoning choices follow the model catalog for Codex and the fixed Claude Code set.
+  const efforts="[...document.getElementById('setting-effort').options].map(o=>o.value)";
+  await click('#settings-open');assert.deepEqual(await evaluate(efforts),['low','high']);assert.equal(await evaluate("document.getElementById('setting-effort').value"),'high');
+  await fill('setting-harness','claude');assert.deepEqual(await evaluate(efforts),['low','medium','high','xhigh','max']);
+  await fill('setting-harness','codex');await fill('setting-effort','low');const sent=settings.length;await submit('settings-dialog');await saved('settings-dialog');
+  assert.equal(settings[sent].values.effort,'low');assert.equal('harness' in settings[sent].values,false);
+  delete state.profile.effort;state.agent={connected:true,model:'controlled'};await refresh();
+  // A model without medium falls back to its catalog default; without a catalog only the model default is offered.
+  state.agent={connected:true,model:'controlled',effort:'medium',catalog:[{model:'controlled',isDefault:true,efforts:['low','medium','high'],defaultEffort:'medium'},{model:'deep',isDefault:false,efforts:['low','high'],defaultEffort:'high'}]};await refresh();
+  await click('#settings-open');await fill('setting-model','deep');assert.equal(await evaluate("document.getElementById('setting-effort').value"),'high');await close();
+  state.profile.harness='claude';state.agent={connected:true,model:'claude-controlled',effort:'medium'};await fill('locale-choice','es');await refresh();
+  await click('#settings-open');await fill('setting-harness','codex');
+  assert.deepEqual(await evaluate("[...document.getElementById('setting-effort').options].map(o=>[o.value,o.textContent])"),[['','Predeterminado del modelo']]);
+  const switched=settings.length;await submit('settings-dialog');await saved('settings-dialog');
+  assert.equal(settings[switched].values.harness,'codex');assert.equal(settings[switched].values.effort,null);
+  // A level refused at startup is shown in the interface language.
+  state.agent={connected:false,model:null,error:'The selected model does not offer this reasoning level; no other level was selected.',errorCode:'agent_effort_unavailable'};await refresh();
+  assert.equal(await evaluate("document.getElementById('bridge-state').textContent"),'El modelo elegido no ofrece este nivel de razonamiento. Elige otro nivel.');
+  await fill('locale-choice','en');state.profile.model='controlled';delete state.profile.effort;state.agent={connected:true,model:'controlled'};await refresh();
  }
  if(group==='all'){
  for(const [action,control,key] of [['dependency_update','edit-dependencies','dependsOn'],['related_update','edit-related','relatedTo']]){

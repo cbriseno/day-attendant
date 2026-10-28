@@ -54,10 +54,10 @@ class LocalServer(ThreadingHTTPServer):
             workspace=app.store.path/'agent-workspace';workspace.mkdir(mode=0o700,exist_ok=True)
             bridge=None
             try:
-                bridge=create_harness(profile['harness'],workspace,profile.get('model'))
+                bridge=create_harness(profile['harness'],workspace,profile.get('model'),profile.get('effort'))
                 with app.store.lock(),app.store.connect() as con:
                     current=app.store.state_value('profile')
-                    if app.store.epoch()!=epoch or current['harness']!=profile['harness'] or current.get('model')!=profile.get('model'):
+                    if app.store.epoch()!=epoch or any(current.get(k)!=profile.get(k) for k in ('harness','model','effort')):
                         bridge.close();return
                     if bridge.model and not current.get('model'):
                         current['model']=bridge.model;con.execute("INSERT OR REPLACE INTO state VALUES('profile',?)",(encoded(current),))
@@ -65,7 +65,7 @@ class LocalServer(ThreadingHTTPServer):
                 self.board.bridge=bridge
             except (AssistantError,OSError,ValueError) as error:
                 if bridge:bridge.close()
-                with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('agent_startup_error',?)",(encoded(str(error)[:400]),))
+                with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('agent_startup_error',?)",(encoded({'code':getattr(error,'code',None),'message':str(error)[:400]}),))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -132,20 +132,22 @@ class Handler(BaseHTTPRequestHandler):
         if not self.host_valid():return
         if self.headers.get('Origin')!=self.server.origin or not self.headers.get('Content-Type','').startswith('application/json'):
             self.reply(403,{'error':{'code':'origin_forbidden','message':'The request must originate from this local application.'}});return
+        session=self.path=='/api/session'
+        if not session and not self.authenticated():
+            self.reply(401,{'error':{'code':'session_required','message':'Reopen the session link.'}});return
         try:
             size=int(self.headers.get('Content-Length','0'))
-            if not 0<size<=(15*1024*1024 if self.path=='/api/attachments' else 65536):raise ValueError('size')
+            # Only the session exchange reads an unauthenticated body; authenticated messages and images are not product-capped.
+            if size<=0 or session and size>4096:raise ValueError('size')
             body=json.loads(self.rfile.read(size))
             if not isinstance(body,dict):raise ValueError('object')
         except (ValueError,TypeError):
             self.reply(400,{'error':{'code':'invalid_json','message':'Invalid request.'}});return
-        if self.path=='/api/session':
+        if session:
             token=body.get('token','')
             if not isinstance(token,str) or not hmac.compare_digest(token,self.server.token):
                 self.reply(401,{'error':{'code':'session_required','message':'Invalid session link.'}});return
             self.reply(200,{'data':{'authenticated':True}},cookie='day_session='+self.server.token+'; HttpOnly; SameSite=Strict; Path=/');return
-        if not self.authenticated():
-            self.reply(401,{'error':{'code':'session_required','message':'Reopen the session link.'}});return
         board=self.server.board
         try:
             if self.path=='/api/attachments':
@@ -168,6 +170,9 @@ class Handler(BaseHTTPRequestHandler):
                 if set(body)-{'text','key','attachments','capture_only'}:raise ValueError('fields')
                 result=self.server.chat.submit(body['text'],body['key'],body.get('attachments'),body.get('capture_only',False))
                 if result['status']=='pending':self.server.pool.submit(self.server.chat.run,body['key'])
+            elif self.path=='/api/chat/clear':
+                if set(body)!={'key'}:raise ValueError('fields')
+                result=self.server.chat.clear(body['key'])
             elif self.path=='/api/chat/retry':
                 if set(body)!={'key'}:raise ValueError('fields')
                 result=self.server.chat.retry(body['key'])

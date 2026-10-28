@@ -317,6 +317,35 @@ Connected(app).confirm(sys.argv[2],0,without_review=True)
         self.apply('context_update',{'rest':True})
         self.assertTrue(self.board.snapshot()['context']['rest'])
 
+    def test_review_freshness_follows_the_selected_level(self):
+        clock=[NOW];self.app.clock=lambda:clock[0]
+        fixture=self.fixture;review=fixture.turn
+        def slow(thread,prompt,schema,**kwargs):
+            clock[0]+=timedelta(seconds=fixture.seconds);return review(thread,prompt,schema,**kwargs)
+        fixture.turn=slow
+        for effort,limit in (('high',300),('xhigh',600),('max',900)):
+            fixture.effort=effort
+            for seconds,phase in ((limit-30,'applied'),(limit+30,'stale')):
+                fixture.seconds=seconds
+                proposal=self.request('task_update',{'uuid':self.ids[1],'title':'Reviewed at '+effort+' after '+str(seconds)+' s'})
+                self.assertEqual(proposal['phase'],'evaluating')
+                self.board.evaluate(proposal['id'])
+                self.assertEqual(self.board.proposal(proposal['id'])['phase'],phase,(effort,seconds))
+
+    def test_clear_waits_for_pending_contextual_guidance(self):
+        from day_attendant.conversation import Conversation
+        end=stamp(NOW+timedelta(hours=1))
+        for uid in self.ids[:2]:self.apply('task_update',{'uuid':uid,'due':end})
+        self.apply('continuity_update',{'uuid':self.ids[1],'remainingMinutes':5})
+        self.apply('context_update',{'availableMinutes':45,'availableUntil':end})
+        self.apply('front_activate',{'uuid':self.ids[1]})
+        self.apply('continuity_update',{'uuid':self.ids[1],'remainingMinutes':40})
+        chat=Conversation(self.board)
+        with self.assertRaises(AssistantError) as error:chat.clear('during-guidance')
+        self.assertEqual(error.exception.code,'chat_busy')
+        self.board.evaluate_notices()
+        self.assertEqual(chat.clear('after-guidance')['status'],'cleared')
+
     def test_corrected_effort_creates_deduplicated_informational_guidance(self):
         end=stamp(NOW+timedelta(hours=1))
         for uid in self.ids[:2]:self.apply('task_update',{'uuid':uid,'due':end})

@@ -12,6 +12,7 @@ import time
 import uuid
 
 from .errors import AssistantError
+from .profiles import CLAUDE_EFFORTS,DEFAULT_EFFORT,turn_timeout
 
 # Shared behavioral contract, independent of either native transport.
 from .instructions import PERSONAL_ASSISTANT
@@ -30,8 +31,11 @@ def subscription_environment():
 class ClaudeBridge:
     provider='claude'
 
-    def __init__(self,workspace,model=None,binary=None):
+    def __init__(self,workspace,model=None,binary=None,effort=None):
         self.workspace=str(Path(workspace).resolve())
+        self.effort=effort or DEFAULT_EFFORT
+        if self.effort not in CLAUDE_EFFORTS:raise AssistantError('agent_effort_unavailable','Claude Code does not offer this reasoning level; no other level was selected.')
+        self.catalog=None
         self.binary=binary or shutil.which('claude')
         if not self.binary:raise AssistantError('agent_missing','Claude Code is not installed.')
         self.environment=subscription_environment()
@@ -57,9 +61,9 @@ class ClaudeBridge:
     @property
     def available(self):return not self.closed
 
-    def thread(self,previous=None):
+    def thread(self):
         # Portable conversation is supplied by Day Attendant, not global CLI history.
-        return previous or str(uuid.uuid4())
+        return str(uuid.uuid4())
 
     def command(self,schema):
         args=[self.binary,'--safe-mode','--restricted','--tools','',
@@ -67,7 +71,7 @@ class ClaudeBridge:
               '--disable-slash-commands','--no-chrome','--permission-prompts','none',
               '--permission-mode','dontAsk','--setting-sources','',
               '--no-session-persistence','--system-prompt-snapshot','off',
-              '--effort','medium','--system-prompt',PERSONAL_ASSISTANT,
+              '--effort',self.effort,'--system-prompt',PERSONAL_ASSISTANT,
               '-p','--input-format','stream-json','--output-format','stream-json',
               '--verbose','--json-schema',json.dumps(schema)]
         if self.model:args.extend(['--model',self.model])
@@ -86,13 +90,13 @@ class ClaudeBridge:
             process.wait(timeout=3)
         except ProcessLookupError:pass
 
-    def turn(self,thread_id,prompt,schema,timeout=120,canceled=None,started=None,images=None):
+    def turn(self,thread_id,prompt,schema,timeout=None,canceled=None,started=None,images=None):
+        timeout=timeout or turn_timeout(self.effort)
         if self.closed:raise AssistantError('agent_disconnected','The Claude adapter is closed.')
         content=[{'type':'text','text':prompt}]
         for selected in images or []:
             path=Path(selected['path'])
             data=path.read_bytes()
-            if len(data)>10*1024*1024:raise AssistantError('attachment_too_large','Selected image exceeds the input limit.')
             content.append({'type':'image','source':{'type':'base64','media_type':selected['mime'],'data':base64.b64encode(data).decode()}})
         record={'type':'user','message':{'role':'user','content':content}}
         begin=time.monotonic();process=None;readers=[]
@@ -104,9 +108,7 @@ class ClaudeBridge:
             stream=queue.Queue();errors=[]
             def consume():
                 try:
-                    for line in process.stdout:
-                        if len(line)>4_000_000:raise ValueError('Oversized Claude event')
-                        stream.put(json.loads(line))
+                    for line in process.stdout:stream.put(json.loads(line))
                 except Exception as error:stream.put(error)
                 finally:stream.put(None)
             def stderr():

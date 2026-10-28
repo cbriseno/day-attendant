@@ -7,14 +7,11 @@ import struct
 import uuid
 from .errors import AssistantError
 
-MAX_BYTES=10*1024*1024
-MAX_PIXELS=24_000_000
-
 
 def image_type(data):
     if data.startswith(b'\x89PNG\r\n\x1a\n') and len(data)>=24:
         width,height=struct.unpack('>II',data[16:24])
-        if not width or not height or width*height>MAX_PIXELS:raise AssistantError('image_dimensions','The image dimensions exceed the input limit.')
+        if not width or not height:raise AssistantError('image_dimensions','The image has no dimensions.')
         return 'image/png','.png'
     if data.startswith(b'\xff\xd8\xff') and data.endswith(b'\xff\xd9'):return 'image/jpeg','.jpg'
     if len(data)>=16 and data[:4]==b'RIFF' and data[8:12]==b'WEBP':return 'image/webp','.webp'
@@ -22,11 +19,12 @@ def image_type(data):
 
 
 def save(app,name,mime,encoded_data,key):
-    if not isinstance(name,str) or not 1<=len(name)<=200 or not isinstance(encoded_data,str) or len(encoded_data)>MAX_BYTES*4//3+8 or not isinstance(key,str) or not 1<=len(key)<=200:
+    if not isinstance(name,str) or not 1<=len(name)<=200 or not isinstance(encoded_data,str) or not isinstance(key,str) or not 1<=len(key)<=200:
         raise AssistantError('invalid_attachment','Invalid image name, content or delivery key.')
     try:data=base64.b64decode(encoded_data,validate=True)
     except (ValueError,TypeError) as error:raise AssistantError('invalid_attachment','Invalid encoded image.') from error
-    if not 0<len(data)<=MAX_BYTES:raise AssistantError('attachment_too_large','Select an image smaller than 10 MiB.')
+    # No product size cap: a provider limit surfaces as that turn's visible error.
+    if not data:raise AssistantError('invalid_attachment','The image is empty.')
     actual,suffix=image_type(data)
     if mime!=actual:raise AssistantError('invalid_image','The declared image type does not match its content.')
     digest=hashlib.sha256(data).hexdigest()
@@ -56,5 +54,5 @@ def load(app,identity):
     path=(app.store.path/row['relative_path']).resolve()
     if not path.is_relative_to((app.store.path/'attachments').resolve()) or not path.is_file():raise AssistantError('attachment_corrupt','The image location is invalid.')
     data=path.read_bytes()
-    if len(data)>MAX_BYTES or hashlib.sha256(data).hexdigest()!=row['sha256']:raise AssistantError('attachment_corrupt','The image failed its integrity check.')
+    if hashlib.sha256(data).hexdigest()!=row['sha256']:raise AssistantError('attachment_corrupt','The image failed its integrity check.')
     return data,row['mime']

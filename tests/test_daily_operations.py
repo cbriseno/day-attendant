@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from day_attendant import lifecycle,recovery
-from day_attendant.conversation import continuity_summary,portable_context
+from day_attendant.conversation import portable_context
 from day_attendant.errors import AssistantError
 from day_attendant.profiles import configure,default_policy
 from day_attendant.service import encoded
@@ -47,12 +47,13 @@ class DailyOperations(DailyBase):
         self.assertEqual(lifecycle.without_block(original+block,self.app.store.state_value('profile')['id']),original)
         self.assertEqual(lifecycle.without_block(original,self.app.store.state_value('profile')['id']),original)
         with self.assertRaises(AssistantError):lifecycle.without_block(original+block.split(':end')[0],self.app.store.state_value('profile')['id'])
-    def test_sourced_human_memory_survives_harness_switch_and_is_bounded(self):
+    def test_current_conversation_survives_harness_switch_untruncated(self):
+        texts=['Original '+str(n)+' '+('x'*3000) for n in range(80)]
         with self.app.store.connect() as con:
-            for n in range(80):con.execute("INSERT INTO messages(key,role,text,status,at) VALUES(?,'user',?,'completed',?)",('human-'+str(n),'Original '+str(n)+' '+('x'*300),self.app.now()))
-        summary=continuity_summary(self.app.store);self.assertEqual(len(summary['excerpts']),48);self.assertTrue(all(len(x['humanExcerpt'])<=160 for x in summary['excerpts']))
+            for n,text in enumerate(texts):con.execute("INSERT INTO messages(key,role,text,status,at) VALUES(?,'user',?,'completed',?)",('human-'+str(n),text,self.app.now()))
         configure(self.app,{'harness':'claude'},'switch')
-        self.assertEqual(self.app.store.state_value('continuity_summary'),summary);self.assertIsNone(self.app.store.state_value('profile')['model'])
+        self.assertEqual([m['text'] for m in portable_context(self.board.snapshot())['messages']],texts)
+        self.assertIsNone(self.app.store.state_value('profile')['model'])
     def test_keep_observed_does_not_execute_a_prepared_original_action(self):
         uid=self.add('Before admission')
         self.app.fault=lambda point:(_ for _ in ()).throw(RuntimeError('interrupted after admission')) if point=='after_admission' else None

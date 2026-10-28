@@ -59,8 +59,9 @@ an open UI or LLM session. Open the UI on demand with `service open`.
   does not fulfill it. Cycles and missing references are rejected.
 - Add and edit calendar commitments in the same interface. Relevant calendar changes
   invalidate pending reviews; expired event reminders are not replayed after absence.
-- Capture several unambiguous items from text or up to three selected PNG/JPEG/WebP
-  images. Each item has its own durable proposal and outcome. Ambiguous dates or
+- Capture several unambiguous items from text or any number of selected PNG/JPEG/WebP
+  images. Day Attendant sets no message or image size cap; a provider limit appears
+  as that turn's visible error. Each item has its own durable proposal and outcome. Ambiguous dates or
   unsupported items remain questions. Source/person/reference, observed time and
   capture time remain distinct. The app never opens Teams or an inbox.
 - Keep declared remaining effort, waiting state, where you left off and a next step.
@@ -73,16 +74,28 @@ Technical invalidity cannot be bypassed by acknowledging a consequence.
 
 ## Harnesses and portable continuity
 
-Choose Codex or Claude Code and an exact model ID in Settings, or use
-`profile configure`. An empty model selects the installed default once and saves the
-resolved identifier. There is no silent provider/model/account fallback or automatic
+Choose Codex or Claude Code, an exact model ID and a reasoning level in Settings, or
+use `profile configure` (`init` also accepts `--harness`, `--model` and `--effort`).
+An empty model selects the installed default once and saves the resolved identifier.
+Codex offers the levels its catalog lists for the model; Claude Code offers low,
+medium, high, xhigh and max. An unset level uses medium on Claude Code; on Codex it
+uses medium when the model offers it, otherwise the model's default level. A model turn
+may take up to 2 minutes at minimal, low or medium, 5 at high, 10 at xhigh and 15 at max,
+and a contextual review stays valid for the same time unless relevant state changes.
+Starting the service or changing these settings sends no model request; tokens are spent
+only by conversation messages, contextual reviews and the informational guidance after a
+context correction. There is no silent provider/model/account fallback or automatic
 credit activation. The Claude adapter requires the CLI's restricted safe-mode print
 and structured-output capabilities; the tested installation is 2.1.312.
 
-Task context, declared facts, selected recent messages and bounded, attributed human
-excerpts live in the profile. Native harness sessions are optional caches. Switching
-or restarting a harness reconstructs this context without importing global histories.
-This bounded memory is not an unlimited verbatim archive in the model's context.
+Tasks, calendar, declared context and the current conversation live in the profile.
+Every message starts a fresh native harness session (ephemeral for Codex) that receives
+the complete current conversation, untruncated. **New conversation** in the chat, or
+typing `/clear`, starts over: earlier messages stay stored locally but are no longer
+shown or sent, while tasks, calendar, context and per-task notes stay. Switching or
+restarting a harness keeps the current conversation without importing global
+histories. A very long conversation can reach the provider's context window; use
+`/clear` instead of relying on silent truncation.
 
 ## Backups and recovery
 
