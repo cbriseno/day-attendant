@@ -5,8 +5,9 @@ owns all writes through a shared coordinator and native journal. Taskwarrior 3.5
 is the task authority; SQLite stores calendar events, declarations, provenance,
 relations, messages, proposals, authorization, facts and delivery receipts.
 
-Codex app-server and Claude Code CLI implement the same bounded inference interface.
-The model receives selected profile facts and images, has no external task-writing
+Codex app-server and Claude Code CLI implement the same inference interface with a
+selected model and reasoning level. Each turn uses a fresh native session; the model
+receives profile facts, the current conversation since `/clear` and selected images, has no external task-writing
 tools, and returns typed interpretations/reviews. The selected harness/model is
 validated for every conversation, proposal and informational-guidance turn. Epochs,
 generations, fingerprints and native read/write guards prevent stale application.

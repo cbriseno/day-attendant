@@ -15,6 +15,7 @@ import time
 import tomllib
 
 from .errors import AssistantError
+from .profiles import DEFAULT_EFFORT
 
 from .instructions import PERSONAL_ASSISTANT as INSTRUCTIONS
 
@@ -50,7 +51,7 @@ def restricted_command(binary=None):
 
 class CodexBridge:
     provider="codex"
-    def __init__(self, workspace, model=None, binary=None):
+    def __init__(self, workspace, model=None, binary=None, effort=None):
         self.workspace = str(Path(workspace).resolve())
         self.command = restricted_command(binary)
         self.model = model
@@ -80,6 +81,14 @@ class CodexBridge:
             if not self.model:
                 selected = next((m for m in catalog if m.get("isDefault")), catalog[0])
                 self.model = selected.get("model") or selected["id"]
+            self.catalog = [{"model": m.get("model") or m["id"], "isDefault": bool(m.get("isDefault")),
+                             "efforts": [o["reasoningEffort"] for o in m.get("supportedReasoningEfforts") or []],
+                             "defaultEffort": m.get("defaultReasoningEffort")} for m in catalog]
+            entry = next(e for m, e in zip(catalog, self.catalog) if self.model in (m.get("model"), m.get("id")))
+            if effort and entry["efforts"] and effort not in entry["efforts"]:
+                raise AssistantError("agent_effort_unavailable", "The selected model does not offer this reasoning level; no other level was selected.")
+            # An unset level keeps the historical default when the model offers it.
+            self.effort = effort or (DEFAULT_EFFORT if not entry["efforts"] or DEFAULT_EFFORT in entry["efforts"] else entry["defaultEffort"] or entry["efforts"][0])
             self.server_version = subprocess.check_output([self.command[0], "--version"], text=True, timeout=10).strip()
             self.assert_restricted(self.call('config/read',{'includeLayers':False})['config'])
         except BaseException:
@@ -173,12 +182,11 @@ class CodexBridge:
                 self.pending.pop(identity, None)
 
     def thread(self, previous=None):
+        # Every request starts an ephemeral native thread; the profile supplies the conversation.
         options = {"cwd": self.workspace, "sandbox": "read-only", "approvalPolicy": "never",
-                   "model": self.model, "baseInstructions": INSTRUCTIONS,
+                   "model": self.model, "baseInstructions": INSTRUCTIONS, "ephemeral": True,
                    "developerInstructions": "Selected data only. No tools or external effects."}
-        if previous:
-            options["threadId"] = previous
-        result = self.call("thread/resume" if previous else "thread/start", options, 40)
+        result = self.call("thread/start", options, 40)
         if str(Path(result["thread"]["cwd"]).resolve()) != self.workspace:
             raise AssistantError("agent_workspace_mismatch", "The agent did not use the selected synthetic workspace.")
         return result["thread"]["id"]
@@ -192,7 +200,7 @@ class CodexBridge:
         try:
             result = self.call("turn/start", {"threadId": thread_id,
                 "input": [{"type": "text", "text": prompt}]+[{"type":"localImage","path":str(Path(image["path"]).resolve())} for image in images or []], "outputSchema": schema,
-                "effort": "medium"}, 40)
+                "effort": self.effort}, 40)
             turn_id = result["turn"]["id"]
             if started:
                 started(turn_id)

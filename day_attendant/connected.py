@@ -176,7 +176,8 @@ class Connected:
             raise AssistantError('agent_unavailable','The assistant is unavailable. Known-data reminders still work.')
         profile=self.store.state_value('profile',{})
         provider=getattr(self.bridge,'provider',profile.get('harness','codex'))
-        if provider!=profile.get('harness','codex') or profile.get('model') and self.bridge.model and profile['model']!=self.bridge.model:
+        effort=getattr(self.bridge,'effort',None)
+        if provider!=profile.get('harness','codex') or profile.get('model') and self.bridge.model and profile['model']!=self.bridge.model or profile.get('effort') and effort and profile['effort']!=effort:
             raise AssistantError('agent_restart_required','Apply the selected harness/model before sending another model request.')
         return self.bridge
 
@@ -222,7 +223,9 @@ class Connected:
             continuation = {r["uuid"]: json.loads(r["data"]) for r in con.execute("SELECT * FROM continuity")}
             proposals = [self.unpack(r) for r in con.execute("SELECT * FROM proposals ORDER BY rowid")]
             facts = [dict(r) for r in con.execute("SELECT * FROM facts ORDER BY id")]
-            messages = [dict(r) for r in con.execute("SELECT * FROM messages ORDER BY id DESC LIMIT 100")][::-1]
+            # Only the current conversation is shown and sent; /clear keeps older messages stored locally.
+            conversation=self.store.state_value('conversation') or {}
+            messages = [dict(r) for r in con.execute("SELECT * FROM messages WHERE id>? ORDER BY id",(conversation.get('floor',0),))]
             transport_issues=[dict(r) for r in con.execute("SELECT id,entity,status,error,retry_at FROM notices WHERE status IN ('failed','uncertain') OR status='pending' AND error IS NOT NULL")]
             related=[dict(r) for r in con.execute('SELECT * FROM related ORDER BY a,b')]
             image_links=[dict(r) for r in con.execute('SELECT * FROM item_attachments')]
@@ -250,10 +253,12 @@ class Connected:
                 "revision": self.store.revision(), "now": self.app.now(), "synthetic": self.store.state_value('profile',{}).get('kind')=='synthetic',
                 "profile":self.store.state_value('profile'), "readOnly":bool(unresolved or maintenance),
                 "diagnostics":{"operations":unresolved,"maintenance":maintenance,"reminders":transport_issues}, "epoch":self.store.epoch(),
-                "continuity_summary":self.store.state_value('continuity_summary',{}),
+                "continuity_summary":self.store.state_value('continuity_summary',{}),"conversation":{'clearedAt':conversation.get('clearedAt')},
                 "operations_status":{"last_tick":self.store.state_value('last_tick'),'last_backup':self.store.state_value('last_backup'),'scheduler':self.store.state_value('scheduler')},
                 "agent": {"provider":self.store.state_value('profile',{}).get('harness'),'connected':  self.bridge is not None and getattr(self.bridge,'available',True) and getattr(self.bridge,'provider',self.store.state_value('profile',{}).get('harness'))==self.store.state_value('profile',{}).get('harness'),
                           "model": self.bridge.model if self.bridge else self.store.state_value('profile',{}).get('model'),
+                          "effort": getattr(self.bridge,'effort',None) if self.bridge else self.store.state_value('profile',{}).get('effort'),
+                          "catalog": getattr(self.bridge,'catalog',None) if self.bridge else None,
                           "error":self.store.state_value('agent_startup_error')}}
 
     def snapshot(self):

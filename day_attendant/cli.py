@@ -128,6 +128,7 @@ def parser():
     p.add_argument('--name')
     p.add_argument('--harness',choices=['codex','claude'],default='codex')
     p.add_argument('--model')
+    p.add_argument('--effort',help='Reasoning level offered by the harness, for example low, medium or high')
     profiles=command(groups,'profile').add_subparsers(dest='command',required=True,parser_class=Parser)
     command(profiles,'show')
     p=command(profiles,'configure',True)
@@ -157,6 +158,7 @@ def parser():
             p.add_argument("--without-review", action="store_true")
     p = command(board, "undo", True)
     p.add_argument("fact_id", type=int)
+    command(board, "clear", True)
     p = command(board, "chat", True)
     p.add_argument("text")
     p.add_argument("--image",action="append",default=[])
@@ -283,7 +285,7 @@ def main(argv=None):
                     else:data=lifecycle.status(app)
             elif args.group=='init':
                 app=initialize_profile(state,getattr(args,'task_bin',None),'synthetic' if args.synthetic else 'personal',args.zone,args.name)
-                changes={'harness':args.harness,'model':args.model}
+                changes={'harness':args.harness,'model':args.model,'effort':args.effort}
                 configure(app,changes,'initial-harness:'+app.store.state_value('profile')['id'])
                 data={'profile':app.store.state_value('profile'),'state':str(app.store.path),'tasks':len(app.tasks.rows())}
             elif args.group=='profile':
@@ -308,14 +310,14 @@ def main(argv=None):
                               "key": args.key, "expected_revision": getattr(args,"expect",None)})
             elif args.command == "chat":
                 refs=[]
-                if len(args.image)>3:raise AssistantError('invalid_message','Select at most three images.')
                 for index,image in enumerate(args.image):
                     import base64,mimetypes
                     path=Path(image).expanduser()
-                    if path.stat().st_size>10*1024*1024:raise AssistantError('attachment_too_large','An image exceeds 10 MiB.')
                     uploaded=client(state,'/api/attachments',{'name':path.name,'mime':mimetypes.guess_type(path.name)[0] or '', 'base64':base64.b64encode(path.read_bytes()).decode(),'key':args.key+':image:'+str(index)})
                     refs.append(uploaded['id'])
                 data = client(state, "/api/chat", {"text": args.text, "key": args.key,'attachments':refs,'capture_only':args.capture_only})
+            elif args.command == "clear":
+                data = client(state, "/api/chat/clear", {"key": args.key})
             elif args.command == "undo":
                 data = client(state, "/api/undo", {"fact_id": args.fact_id, "key": args.key, "expected_revision": getattr(args,"expect",None)})
             else:

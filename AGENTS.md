@@ -36,8 +36,8 @@ symmetric nonblocking links. Preserve unrequested links when replacing lists.
 Completing a prerequisite never starts its dependents; retiring it does not fulfill
 it. Task content keeps its creation language independently of the interface locale.
 
-Only the selected subscription harness/model may perform reasoning. Reconstruct
-continuity from profile facts and sourced excerpts; never import global histories,
+Only the selected subscription harness/model/effort may perform reasoning. Continuity
+is profile state plus the current conversation since `/clear`; never import global histories,
 activate credits, buy API usage or silently fall back after an auth/quota failure.
 The native scheduler performs known-data reminders and backups, never LLM turns.
 

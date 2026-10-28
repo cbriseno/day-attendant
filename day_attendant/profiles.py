@@ -2,11 +2,16 @@
 from datetime import datetime
 from pathlib import Path
 import os
+import re
 import sys
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .errors import AssistantError
+
+# Claude Code advertises a fixed set; Codex validates against each model's catalog.
+CLAUDE_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+DEFAULT_EFFORT = 'medium'
 
 
 def state_home(platform=None):
@@ -47,7 +52,7 @@ def new_profile(path, kind, zone=None, name=None):
         raise AssistantError('invalid_zone', 'Choose an available IANA time zone.') from error
     return {'id': str(uuid.uuid4()), 'kind': kind, 'name': name or Path(path).name,
             'timezone': zone, 'locale': 'en', 'harness': 'codex', 'model': None,
-            'created_at': datetime.now().astimezone().isoformat()}
+            'effort': None, 'created_at': datetime.now().astimezone().isoformat()}
 
 
 def default_policy():
@@ -120,7 +125,7 @@ def invalidate_pending(con,at,reason):
 def configure(app,values,key,expected_revision=None):
     """Authenticated typed settings; no model decides whether a preference is true."""
     from .service import encoded,fingerprint
-    allowed={'name','timezone','locale','harness','model','notification_policy','backup_directory'}
+    allowed={'name','timezone','locale','harness','model','effort','notification_policy','backup_directory'}
     if not isinstance(values,dict) or set(values)-allowed or not isinstance(key,str) or not 1<=len(key)<=200:
         raise AssistantError('invalid_settings','Unknown settings or invalid request key.')
     digest=fingerprint(values)
@@ -135,7 +140,7 @@ def configure(app,values,key,expected_revision=None):
         current=app.store.state_value('profile')
         if not current:raise AssistantError('profile_required','Initialize a managed profile first.')
         profile=dict(current)
-        for field in ('name','timezone','locale','harness','model'):
+        for field in ('name','timezone','locale','harness','model','effort'):
             if field in values:profile[field]=values[field]
         if not isinstance(profile['name'],str) or not 1<=len(profile['name'])<=100:raise AssistantError('invalid_settings','Use a short profile name.')
         try:ZoneInfo(profile['timezone'])
@@ -144,6 +149,10 @@ def configure(app,values,key,expected_revision=None):
         if profile['model'] is not None and (not isinstance(profile['model'],str) or not 1<=len(profile['model'])<=150 or any(c.isspace() for c in profile['model'])):
             raise AssistantError('invalid_settings','Use an exact model identifier or select the installed default.')
         if profile['harness']!=current['harness'] and 'model' not in values:profile['model']=None
+        if profile['harness']=='claude' and 'effort' not in values and profile.get('effort') not in (None,)+CLAUDE_EFFORTS:profile['effort']=None
+        effort=profile.get('effort')
+        if effort is not None and (not isinstance(effort,str) or not re.fullmatch(r'[a-z]{1,20}',effort) or profile['harness']=='claude' and effort not in CLAUDE_EFFORTS):
+            raise AssistantError('invalid_settings','Choose a reasoning level that the selected harness offers.')
         policy=app.store.state_value('notification_policy',default_policy())
         if 'notification_policy' in values:policy=validate_policy(values['notification_policy'])
         backup_directory=app.store.state_value('backup_directory')
@@ -151,7 +160,7 @@ def configure(app,values,key,expected_revision=None):
             from .archives import directory
             if not isinstance(values['backup_directory'],str) or not values['backup_directory']:raise AssistantError('invalid_settings','Use an explicit local backup directory.')
             backup_directory=str(directory(app,values['backup_directory']))
-        engine_changed=any(profile[k]!=current[k] for k in ('harness','model'))
+        engine_changed=any(profile.get(k)!=current.get(k) for k in ('harness','model','effort'))
         semantic_changed=engine_changed or profile['timezone']!=current['timezone']
         changed=profile!=current or policy!=app.store.state_value('notification_policy',default_policy()) or backup_directory!=app.store.state_value('backup_directory')
         revision=app.store.revision()

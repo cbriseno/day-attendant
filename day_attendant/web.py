@@ -54,10 +54,10 @@ class LocalServer(ThreadingHTTPServer):
             workspace=app.store.path/'agent-workspace';workspace.mkdir(mode=0o700,exist_ok=True)
             bridge=None
             try:
-                bridge=create_harness(profile['harness'],workspace,profile.get('model'))
+                bridge=create_harness(profile['harness'],workspace,profile.get('model'),profile.get('effort'))
                 with app.store.lock(),app.store.connect() as con:
                     current=app.store.state_value('profile')
-                    if app.store.epoch()!=epoch or current['harness']!=profile['harness'] or current.get('model')!=profile.get('model'):
+                    if app.store.epoch()!=epoch or any(current.get(k)!=profile.get(k) for k in ('harness','model','effort')):
                         bridge.close();return
                     if bridge.model and not current.get('model'):
                         current['model']=bridge.model;con.execute("INSERT OR REPLACE INTO state VALUES('profile',?)",(encoded(current),))
@@ -134,7 +134,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(403,{'error':{'code':'origin_forbidden','message':'The request must originate from this local application.'}});return
         try:
             size=int(self.headers.get('Content-Length','0'))
-            if not 0<size<=(15*1024*1024 if self.path=='/api/attachments' else 65536):raise ValueError('size')
+            # Authenticated loopback only; message and image sizes are not product-capped.
+            if size<=0:raise ValueError('size')
             body=json.loads(self.rfile.read(size))
             if not isinstance(body,dict):raise ValueError('object')
         except (ValueError,TypeError):
@@ -168,6 +169,9 @@ class Handler(BaseHTTPRequestHandler):
                 if set(body)-{'text','key','attachments','capture_only'}:raise ValueError('fields')
                 result=self.server.chat.submit(body['text'],body['key'],body.get('attachments'),body.get('capture_only',False))
                 if result['status']=='pending':self.server.pool.submit(self.server.chat.run,body['key'])
+            elif self.path=='/api/chat/clear':
+                if set(body)!={'key'}:raise ValueError('fields')
+                result=self.server.chat.clear(body['key'])
             elif self.path=='/api/chat/retry':
                 if set(body)!={'key'}:raise ValueError('fields')
                 result=self.server.chat.retry(body['key'])
