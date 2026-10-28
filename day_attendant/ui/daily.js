@@ -13,6 +13,7 @@ function dialog(id,title,body,footer){
 function fail(id,error){$(id+'-error').hidden=false;$(id+'-error').textContent=error.message}
 async function formAction(id,fn){$(id+'-error').hidden=true;const buttons=[...$(id).querySelectorAll('button[type=submit]')];buttons.forEach(b=>b.disabled=true);try{await fn()}catch(e){fail(id,e)}finally{buttons.forEach(b=>b.disabled=false)}}
 function requiredTime(id){const raw=$(id).value;if(!raw)return null;const date=ui.parseLocal(raw);if(!Number.isFinite(date.getTime())||ui.localValue(date)!==raw||ui.ambiguous(date))throw Error(text('Choose an unambiguous local date and time.','Elige una fecha y hora local inequívoca.'));return date.toISOString()}
+function storedTime(id,instant){$(id).value=instant?ui.localValue(new Date(instant)):'';const opening=$(id).value;return ()=>$(id).value===opening?instant||null:requiredTime(id)}
 function submit(label){return `<button type="submit" class="btn primary">${esc(label)}</button>`}
 function open(el,origin){ui.openDialog(el,origin);el.querySelector('input,select,button')?.focus()}
 let selected=null,detailRevision=null,eventId=null,captureRevision=null,settingsRevision=null,lastProfile=null,lastDailyDigest='',lastDiagnostics='',lastCalendar='',selectedImages=[];
@@ -28,8 +29,8 @@ function openCapture(origin,event=null){
  const d=buildCapture();eventId=event?.uuid||null;captureRevision=flow.snapshot().revision;$('capture-title').value=event?.title||'';
  $('capture-kind').value=event?'event':'task';$('capture-kind').disabled=!!event;
  const kind=()=>{const isEvent=$('capture-kind').value==='event';$('event-fields').hidden=!isEvent;$('capture-due').closest('label').hidden=isEvent;$('capture-priority-field').hidden=isEvent};$('capture-kind').onchange=kind;kind();
- if(event){$('capture-start').value=ui.localValue(new Date(event.start_at));$('capture-end').value=ui.localValue(new Date(event.end_at));d.querySelector('details').hidden=true}
- d.querySelector('form').onsubmit=e=>{e.preventDefault();formAction(d.id,async()=>{const title=$('capture-title').value.trim();if(!title)throw Error(text('Enter a title.','Escribe un título.'));const isEvent=$('capture-kind').value==='event';let payload={title};if(isEvent){payload.start=requiredTime('capture-start');payload.end=requiredTime('capture-end');if(!payload.start||!payload.end)throw Error(text('Choose the start and end.','Elige el inicio y el fin.'));if(eventId)payload.uuid=eventId}else{payload.priority=$('capture-priority').value;payload.due=requiredTime('capture-due')}
+ const start=storedTime('capture-start',event?.start_at),end=storedTime('capture-end',event?.end_at);if(event)d.querySelector('details').hidden=true;
+ d.querySelector('form').onsubmit=e=>{e.preventDefault();formAction(d.id,async()=>{const title=$('capture-title').value.trim();if(!title)throw Error(text('Enter a title.','Escribe un título.'));const isEvent=$('capture-kind').value==='event';let payload={title};if(isEvent){payload.start=start();payload.end=end();if(!payload.start||!payload.end)throw Error(text('Choose the start and end.','Elige el inicio y el fin.'));if(eventId)payload.uuid=eventId}else{payload.priority=$('capture-priority').value;payload.due=requiredTime('capture-due')}
  if(!eventId){payload.source=$('capture-source').value;for(const [name,id] of [['person','capture-person'],['reference','capture-reference']])if($(id).value.trim())payload[name]=$(id).value.trim();const observed=requiredTime('capture-observed');if(observed)payload.observed_at=observed}
  await flow.request(eventId?'event_update':isEvent?'event_add':'task_add',payload,undefined,captureRevision);d.close('saved')})};open(d,origin);
 }
@@ -54,11 +55,12 @@ function editCard(taskId,origin){
  const state=flow.snapshot(),t=state.tasks.find(x=>x.id===taskId);if(!t)return;
  const id='card-dialog';$(id)?.remove();const d=dialog(id,text('Edit responsibility','Editar responsabilidad'),`<div class="daily-grid">${field('card-title','Title','Título','text','maxlength="2000"')}<label class="field"><span>${tr('priority')}</span><select id="card-priority"><option value="high">${tr('priority_high')}</option><option value="medium">${tr('priority_medium')}</option><option value="low">${tr('priority_low')}</option></select></label>${field('card-due','Deadline (optional)','Vencimiento (opcional)','datetime-local')}<label class="field wide"><span>${text('Where I left off','Dónde me quedé')}</span><textarea id="card-context" rows="3" maxlength="2000"></textarea></label><label class="field wide"><span>${text('Next step','Siguiente paso')}</span><textarea id="card-next" rows="2" maxlength="2000"></textarea></label><label class="context-checkbox wide"><input id="card-awaiting" type="checkbox">${text('Waiting for a reply or prerequisite outside my control','Espero respuesta o un requisito fuera de mi control')}</label></div>`,submit(text('Save','Guardar')));
  $('card-title').value=t.title;$('card-priority').value=t.priority;$('card-due').value=t.due?ui.localValue(new Date(t.due)):'';$('card-context').value=t.context;$('card-next').value=t.next;$('card-awaiting').checked=t.awaiting;
+ const openingDue=$('card-due').value;
  const revision=state.revision;d.querySelector('form').onsubmit=e=>{e.preventDefault();formAction(id,async()=>{
- const title=$('card-title').value.trim(),priority=$('card-priority').value,due=requiredTime('card-due');if(!title)throw Error(text('Enter a title.','Escribe un título.'));
+ const title=$('card-title').value.trim(),priority=$('card-priority').value;if(!title)throw Error(text('Enter a title.','Escribe un título.'));
  const payload={uuid:t.id};
  if(title!==t.title)payload.title=title;if(priority!==t.priority)payload.priority=priority;
- if($('card-due').value!==(t.due?ui.localValue(new Date(t.due)):''))payload.due=due;
+ if($('card-due').value!==openingDue)payload.due=requiredTime('card-due');
  for(const [name,id] of [['context','card-context'],['next','card-next']])if($(id).value!==t[name])payload[name]=$(id).value;
  if($('card-awaiting').checked!==t.awaiting)payload.awaiting=$('card-awaiting').checked;
  if(Object.keys(payload).length>1)await flow.request('task_update',payload,undefined,revision);
@@ -73,14 +75,14 @@ function openSettings(origin){
  const state=flow.snapshot(),d=buildSettings(),p=state.profile,n=state.notification_policy;settingsRevision=state.revision;
  $('setting-name').value=p.name;$('setting-zone').value=p.timezone;$('setting-harness').value=p.harness;$('setting-model').value=p.model||'';
  $('policy-enabled').checked=n.enabled;for(const item of d.querySelectorAll('[data-day]'))item.checked=n.weekdays.includes(Number(item.dataset.day));
- for(const [id,key] of [['start','start'],['end','end'],['quiet-start','quietStart'],['quiet-end','quietEnd'],['interval','intervalMinutes'],['repeat','unchangedRepeatMinutes'],['budget','dailyBudget']])$('policy-'+id).value=n[key];$('policy-pause').value=n.pausedUntil?ui.localValue(new Date(n.pausedUntil)):'';
+ for(const [id,key] of [['start','start'],['end','end'],['quiet-start','quietStart'],['quiet-end','quietEnd'],['interval','intervalMinutes'],['repeat','unchangedRepeatMinutes'],['budget','dailyBudget']])$('policy-'+id).value=n[key];const pausedUntil=storedTime('policy-pause',n.pausedUntil);
  const info=state.operations_status||{};$('operations-info').textContent=text('Scheduler: ','Programador: ')+(info.scheduler?.installed?info.scheduler.backend:text('not installed','sin instalar'))+' · '+text('Last check: ','Última revisión: ')+(info.last_tick?ui.full(info.last_tick.at)+' · '+info.last_tick.status:text('none','ninguna'));
  $('continuity-info').textContent=text('Referenced human messages: ','Mensajes humanos referenciados: ')+(state.continuity_summary?.excerpts?.length||0);
  const loadBackups=()=>safely(async()=>{const list=await api('/api/backups');$('backup-list').replaceChildren();for(const b of list.backups.slice(0,8)){const row=document.createElement('p');row.textContent=(b.valid?ui.full(b.captured_at)+' · '+b.category:text('Invalid archive','Archivo inválido'))+' · '+b.path;$('backup-list').append(row)}});
  $('backup-create').onclick=()=>formAction(d.id,async()=>{$('backup-create').disabled=true;try{await deliver('/api/backups',{});await loadBackups();notice(text('Verified backup created.','Respaldo verificado creado.'))}finally{$('backup-create').disabled=false}});
  $('diagnostics-open').onclick=e=>showDiagnostics(e.currentTarget);loadBackups();
  d.querySelector('form').onsubmit=e=>{e.preventDefault();formAction(d.id,async()=>{const harness=$('setting-harness').value,model=$('setting-model').value.trim()||null;
- const policy={...n,enabled:$('policy-enabled').checked,weekdays:[...d.querySelectorAll('[data-day]:checked')].map(x=>Number(x.dataset.day)),start:$('policy-start').value,end:$('policy-end').value,quietStart:$('policy-quiet-start').value,quietEnd:$('policy-quiet-end').value,intervalMinutes:Number($('policy-interval').value),unchangedRepeatMinutes:Number($('policy-repeat').value),dailyBudget:Number($('policy-budget').value),pausedUntil:requiredTime('policy-pause'),technicalDefault:false};
+ const policy={...n,enabled:$('policy-enabled').checked,weekdays:[...d.querySelectorAll('[data-day]:checked')].map(x=>Number(x.dataset.day)),start:$('policy-start').value,end:$('policy-end').value,quietStart:$('policy-quiet-start').value,quietEnd:$('policy-quiet-end').value,intervalMinutes:Number($('policy-interval').value),unchangedRepeatMinutes:Number($('policy-repeat').value),dailyBudget:Number($('policy-budget').value),pausedUntil:pausedUntil(),technicalDefault:false};
  const values={name:$('setting-name').value.trim(),timezone:$('setting-zone').value.trim(),notification_policy:policy};if(harness!==p.harness||model!==p.model){values.harness=harness;values.model=harness!==p.harness&&model===p.model?null:model}
  await deliver('/api/settings',{values},settingsRevision);d.close('saved');await flow.refresh()})};open(d,origin);
 }

@@ -8,10 +8,12 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const group=process.argv[3]||'all';
+assert.ok(['all','details','dates'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2026-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
-const requests=[];
+const requests=[],settings=[];
 const server=createServer(async(req,res)=>{
  try{
   if(req.url.startsWith('/api/')){
@@ -24,13 +26,19 @@ const server=createServer(async(req,res)=>{
     if(body.action==='dependency_update')t.dependsOn=p.dependsOn;
     if(body.action==='related_update')t.relatedTo=p.relatedTo;
     if(body.action==='task_update')for(const key of ['title','priority','due','context','next','awaiting'])if(key in p)t[key]=p[key];
+    const nextState={front_activate:'active',front_todo:'todo',task_done:'done',front_retire:'retired',task_reopen:'todo'}[body.action];
+    if(nextState)t.state=nextState;
+    if(body.action==='context_update')Object.assign(state.context,p);
     if(body.action==='event_update')Object.assign(state.calendar_events.find(e=>e.uuid===p.uuid),{title:p.title,start_at:p.start,end_at:p.end});
     if(body.action==='event_cancel')state.calendar_events=state.calendar_events.filter(e=>e.uuid!==p.uuid);
     state.revision++;
     data={id:randomUUID(),key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[]};
    }else if(req.url==='/api/settings'){
+    settings.push(body);
     if(body.expected_revision!==undefined&&body.expected_revision!==state.revision){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{message:'State changed'}}));return}
-    if(body.values?.locale)state.profile.locale=body.values.locale;
+    const {notification_policy,...profileValues}=body.values||{};Object.assign(state.profile,profileValues);
+    if(profileValues.timezone)state.timezone=profileValues.timezone;
+    if(notification_policy)state.notification_policy=notification_policy;
     data=state.profile;
    }else if(req.url==='/api/backups')data={backups:[]};
    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:true,data}));return;
@@ -68,6 +76,84 @@ try{
  await rpc('Page.navigate',{url:'http://127.0.0.1:'+server.address().port},sessionId);
  await wait('globalThis.dayDaily && daySnapshot().profile');
 
+ if(group==='all'||group==='details'){
+  for(const [status,control,action,label] of [
+   ['todo','detail-focus','front_activate','Start'],['snoozed','detail-focus','front_activate','Resume'],
+   ['done','detail-focus','task_reopen','Reopen'],['retired','detail-focus','task_reopen','Reopen'],
+   ['active','detail-done','task_done','Complete'],['todo','confirm-retire','front_retire','Yes, retire']
+  ]){
+   target.state=status;state.revision++;await refresh();await detail();
+   if(control==='confirm-retire')await click('#detail-retire');
+   assert.equal(await evaluate(`document.getElementById(${JSON.stringify(control)}).textContent.trim()`),label);
+   await fill('estimate-input','17');const opening=state.revision,before=requests.length;
+   target.state=['done','retired'].includes(status)?'todo':'done';state.revision++;await refresh();
+   const externalState=target.state;await evaluate("dayUI.notice('')");await click('#'+control);await wait(`daySnapshot().revision>=${state.revision}`);
+   await wait(`document.getElementById('status').textContent!=='' || !document.getElementById('detail-dialog').open`);
+   const sent=requests[before];assert.ok(sent,label+' must submit');
+   assert.equal(sent.action,action,label+' keeps its displayed action');assert.deepEqual(sent.payload,{uuid:target.id});
+   assert.equal(sent.expected_revision,opening,label+' keeps its opening revision');assert.equal(target.state,externalState);
+   assert.equal(await evaluate("document.getElementById('detail-dialog').open"),true);
+   assert.equal(await evaluate("document.getElementById('estimate-input').value"),'17');
+   assert.equal(await evaluate("document.getElementById('estimate-error').hidden"),false);
+   assert.match(await evaluate("document.getElementById('estimate-error').textContent"),/change/i);await close();
+   target.state=status;state.revision++;await refresh();await detail();
+   if(control==='confirm-retire')await click('#detail-retire');
+   await click('#'+control);await saved('detail-dialog');assert.equal(requests.at(-1).action,action);
+  }
+  target.state='active';state.revision++;await refresh();const opening=state.revision;
+  target.state='done';state.revision++;
+  await evaluate("dayUI.notice('')");await click(`[data-id="${target.id}"][data-action="todo"]`);
+  await wait("document.getElementById('status').textContent!==''");
+  assert.equal(requests.at(-1).action,'front_todo');assert.equal(requests.at(-1).expected_revision,opening);assert.equal(target.state,'done');
+  target.state='active';state.revision++;await refresh();const current=state.revision;
+  await click(`[data-id="${target.id}"][data-action="todo"]`);await wait(`daySnapshot().tasks.find(t=>t.id===${JSON.stringify(target.id)}).state==='todo'`);
+  assert.equal(requests.at(-1).expected_revision,current);assert.equal(target.state,'todo');
+  target.state='todo';state.revision++;await refresh();
+  console.log('Details action regressions passed');
+ }
+ if(group==='all'||group==='dates'){
+  for(const instant of ['2026-11-01T07:30:21Z','2026-11-01T08:30:21Z','2026-11-01T10:30:21Z']){
+   target.due=instant;state.revision++;await refresh();await detail();await click('#edit-card');
+   const before=requests.length;await fill('card-title','Title with '+instant);await submit('card-dialog');await saved('card-dialog');
+   assert.equal(requests.length,before+1);assert.equal(requests.at(-1).payload.title,'Title with '+instant);
+   assert.equal('due' in requests.at(-1).payload,false);assert.equal(target.due,instant);
+   const start=instant.replace(':21Z',':45Z'),end=instant.replace(':30:21Z',':50:59Z');
+   const event={uuid:randomUUID(),title:'Original event',start_at:start,end_at:end};
+   state.calendar_events=[event];state.revision++;await refresh();await click('#calendar-area .link-button');
+   await fill('capture-title','Only event title');await submit('capture-dialog');await saved('capture-dialog');
+   assert.equal(event.start_at,start);assert.equal(event.end_at,end);
+   assert.equal(requests.at(-1).payload.start,start);assert.equal(requests.at(-1).payload.end,end);
+   state.notification_policy.pausedUntil=instant;state.revision++;await refresh();await click('#settings-open');
+   await fill('setting-name','Name with '+instant);await submit('settings-dialog');await saved('settings-dialog');
+   assert.equal(settings.at(-1).values.notification_policy.pausedUntil,instant);assert.equal(state.profile.name,'Name with '+instant);
+   state.context={availableMinutes:20,availableUntil:instant,rest:false};state.revision++;await refresh();await click('#context-open');
+   await click('#context-rest');await submit('context-dialog');await saved('context-dialog');
+   assert.equal(requests.at(-1).payload.availableUntil,instant);assert.equal(state.context.availableUntil,instant);assert.equal(state.context.rest,true);
+   await click('#settings-open');await fill('setting-zone','UTC');await submit('settings-dialog');await saved('settings-dialog');
+   assert.equal(state.notification_policy.pausedUntil,instant);
+   state.timezone='America/Edmonton';state.profile.timezone=state.timezone;state.revision++;await refresh();
+  }
+  for(const invalid of ['2026-11-01T01:45','2026-03-08T02:30']){
+   await detail();await click('#edit-card');await fill('card-title','Draft retained');await fill('card-due',invalid);
+   let before=requests.length;await submit('card-dialog');await failed('card-dialog');assert.equal(requests.length,before);
+   assert.equal(await evaluate("document.getElementById('card-title').value"),'Draft retained');await close();
+   for(const id of ['capture-start','capture-end']){
+    await click('#calendar-area .link-button');await fill('capture-title','Draft event');await fill(id,invalid);
+    before=requests.length;await submit('capture-dialog');await failed('capture-dialog');assert.equal(requests.length,before);
+    assert.equal(await evaluate("document.getElementById('capture-title').value"),'Draft event');await close();
+   }
+   await click('#settings-open');await fill('setting-name','Draft profile');await fill('policy-pause',invalid);
+   before=settings.length;await submit('settings-dialog');await failed('settings-dialog');assert.equal(settings.length,before);
+   assert.equal(await evaluate("document.getElementById('setting-name').value"),'Draft profile');await close();
+   await click('#context-open');await fill('context-until',invalid);before=requests.length;await submit('context-dialog');
+   await wait("!document.getElementById('context-error').hidden");assert.equal(requests.length,before);
+   assert.equal(await evaluate("document.getElementById('context-until').value"),invalid);await close();
+  }
+  target.due=null;target.title='Responsabilidad original';state.calendar_events=[];state.notification_policy.pausedUntil=null;
+  state.context={availableMinutes:null,availableUntil:null,rest:false};state.revision++;await refresh();
+  console.log('Stored date regressions passed');
+ }
+ if(group==='all'){
  for(const [action,control,key] of [['dependency_update','edit-dependencies','dependsOn'],['related_update','edit-related','relatedTo']]){
   await detail();target[key]=[a.id];state.revision++;await refresh();await click('#'+control);
   assert.deepEqual(await evaluate("[...document.querySelectorAll('#links-dialog input:checked')].map(e=>e.value)"),[a.id]);
@@ -155,7 +241,8 @@ try{
   }
  }
  console.log('Daily UI regressions passed: snapshot revisions, capture outcomes, dates, calendar and localization');
+ }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');await new Promise(resolve=>chrome.exitCode!==null?resolve():chrome.once('exit',resolve));
- await new Promise(resolve=>server.close(resolve));await rm(profile,{recursive:true,force:true});
+ await new Promise(resolve=>server.close(resolve));await rm(profile,{recursive:true,force:true,maxRetries:5,retryDelay:100});
 }

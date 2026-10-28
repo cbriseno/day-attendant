@@ -431,6 +431,48 @@ print(lifecycle.cron_block(app,{'PATH':''}).splitlines()[1].split(' ',5)[5])
             self.assertIsNotNone(self.app.store.state_value('last_backup'))
             self.assertFalse(lifecycle.status(self.app)['running'])
 
+    def test_details_actions_reject_stale_opening_revision_without_native_effects(self):
+        for index, (status, action) in enumerate((('todo', 'front_activate'), ('snoozed', 'front_activate'),
+                ('done', 'task_reopen'), ('retired', 'task_reopen'), ('active', 'task_done'),
+                ('todo', 'front_retire'), ('active', 'front_todo'))):
+            with self.subTest(status=status, action=action):
+                uid = self.add('Snapshot action ' + str(index))
+                if status != 'todo':
+                    setup = {'snoozed': 'task_snooze', 'done': 'task_done',
+                             'retired': 'front_retire', 'active': 'front_activate'}[status]
+                    self.apply(setup, {'uuid': uid, **({'until': '2026-11-01T08:30:21Z'} if status == 'snoozed' else {})})
+                opening = self.board.snapshot()['revision']
+                self.apply('task_reopen' if status in ('done', 'retired') else 'task_done', {'uuid': uid})
+                before = self.board.snapshot()
+                with self.assertRaises(AssistantError) as error:
+                    self.board.request(action, {'uuid': uid}, 'stale-details-' + str(index), expected_revision=opening)
+                self.assertEqual(error.exception.code, 'stale_revision')
+                after = self.board.snapshot()
+                for field in ('revision', 'tasks', 'proposals'):
+                    self.assertEqual(before[field], after[field])
+
+    def test_unrelated_edits_preserve_resolved_instants_in_native_stores(self):
+        for hour in ('07', '08', '10'):
+            with self.subTest(utc_hour=hour):
+                instant = '2026-11-01T' + hour + ':30:21Z'
+                uid = self.apply('task_add', {'title': 'Original', 'due': instant})['result']['uuid']
+                self.apply('task_update', {'uuid': uid, 'title': 'Title only'})
+                task = next(t for t in self.board.snapshot()['tasks'] if t['id'] == uid)
+                self.assertEqual(task['title'], 'Title only'); self.assertEqual(task['due'], instant)
+                start, end = instant.replace(':21Z', ':45Z'), instant.replace(':30:21Z', ':50:59Z')
+                event = self.apply('event_add', {'title': 'Original event', 'start': start, 'end': end})['result']['uuid']
+                self.apply('event_update', {'uuid': event, 'title': 'Event title only', 'start': start, 'end': end})
+                saved = next(e for e in self.board.snapshot()['calendar_events'] if e['uuid'] == event)
+                self.assertEqual((saved['title'], saved['start_at'], saved['end_at']), ('Event title only', start, end))
+                policy = dict(self.board.snapshot()['notification_policy'], pausedUntil=instant)
+                configure(self.app, {'notification_policy': policy}, 'pause-' + hour)
+                configure(self.app, {'name': 'Name only ' + hour, 'notification_policy': policy}, 'name-' + hour)
+                self.assertEqual(self.board.snapshot()['notification_policy']['pausedUntil'], instant)
+                self.apply('context_update', {'availableMinutes': 20, 'availableUntil': instant, 'rest': False})
+                self.apply('context_update', {'availableMinutes': 20, 'availableUntil': instant, 'rest': True})
+                self.assertEqual(self.board.snapshot()['context']['availableUntil'], instant)
+                self.assertTrue(self.board.snapshot()['context']['rest'])
+
     def test_daily_ui_executable_regressions(self):
         node = shutil.which('node')
         chrome = shutil.which('google-chrome') or shutil.which('chromium')
