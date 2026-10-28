@@ -29,6 +29,18 @@ profile's identified native job. It preserves tasks, backups and unrelated jobs.
 No scheduling adapter promises a popup while the machine is physically suspended.
 The next runnable tick reevaluates current conditions instead of replaying missed ticks.
 
+## Editing and local dates
+
+Task actions in Details and editor submissions use the displayed task and opening
+revision. A stale submission is rejected and the dialog stays open; reopen it to
+compare current state before submitting again.
+
+Unchanged task deadlines, calendar bounds, reminder pauses and availability times
+retain their exact stored instants, including seconds and the resolved occurrence
+of a repeated hour. Editing other fields or the profile timezone does not
+reinterpret them. Changed local dates use the profile timezone; the browser rejects
+missing or repeated local times and retains the draft for correction.
+
 ## Agent contract
 
 ```sh

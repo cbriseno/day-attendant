@@ -1,4 +1,4 @@
-"""Explicitly started loopback UI for a fixed synthetic state directory."""
+"""Explicitly started loopback UI for a selected personal or synthetic profile."""
 from concurrent.futures import ThreadPoolExecutor
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

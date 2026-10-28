@@ -1,8 +1,8 @@
-# Day Attendant: connected Linux pilot
+# Day Attendant: connected Linux pilot (historical)
 
-The approved interface is connected to real Codex app-server stdio, Taskwarrior
-3.5.0 and SQLite. Use an explicitly selected synthetic workspace. This release
-does not migrate personal data, install a scheduler or coordinate agent SDLC work.
+These notes describe the synthetic-only pilot at `8c9701d`. For current setup and
+supported capabilities, see the [README](../README.md); for operating contracts,
+see [daily operation](daily-operation.md).
 
 ## Language and access
 
@@ -51,7 +51,5 @@ mutation, estimate correction, reevaluation, cancellation, explicit continuation
 snooze preserving due dates, undo and legitimate rest.
 
 The model is probabilistic and these are bounded synthetic observations. They do
-not validate psychological outcomes or perfect risk detection. Task dependencies
-are recognized by the domain, but this UI does not yet create or visualize them.
-macOS deployment, production backup/restore, synchronization and unattended
-scheduling remain outside this pilot.
+not validate psychological outcomes or perfect risk detection. Current coverage
+and remaining platform checks are documented in [daily validation](daily-validation.md).

@@ -1,16 +1,17 @@
-# Validation commands
+# Linux validation commands
 
 Run from the checkout with Python 3.11+ and Taskwarrior 3.5.0:
 
 ```sh
-DAY_ATTENDANT_TASK_BIN="$PWD/.runtime/taskwarrior/bin/task" \
-  python3 -B -m unittest discover -s tests -q
-python3 -B scripts/test_system.py
+export DAY_ATTENDANT_TASK_BIN=/absolute/path/to/approved/task
+python3 -B -m unittest discover -s tests -q
+/usr/bin/python3 -B scripts/test_system.py
 ```
 
-System checks require `dbus-run-session`, `notify-send` and Python GI (Gio/GLib).
-They use temporary state and a private notification bus. Real-model checks require
-the existing authenticated Codex CLI; controlled tests require no model access.
+System checks require `dbus-run-session`, `notify-send` and GI (Gio/GLib) in the
+selected system Python. They use temporary state and a private notification bus.
+Controlled tests require no model access. For the separate subscription-model and
+browser evidence, see [daily validation](daily-validation.md).
 
 The connected browser driver uses an explicitly owned isolated Chrome CDP session.
 It must receive a synthetic state directory and an output path. Do not aim it at

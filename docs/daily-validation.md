@@ -7,7 +7,7 @@ profile. Historical pilot evidence is retained without relabeling it as this rel
 
 ## Local Linux evidence
 
-On 2026-10-28, the full integration discovery ran **124 cases**: 110 executed and
+On 2026-10-28, the pre-gate integration discovery ran **124 cases**: 110 executed and
 passed, while the 14 private-D-Bus scenarios intentionally skipped in ordinary discovery.
 Those same 14 then executed and passed on the isolated notification bus: **124 distinct
 executed/passing cases in total**, not 138. New source changes require relevant reruns.
@@ -101,3 +101,10 @@ effects and calendar horizons. Ambiguous requests without a fold remain rejected
 Browser cases check blocker reasons and disabled controls after pending-badge and
 locale renders, unchanged-poll DOM stability, and localized provenance labels with
 unchanged stored values.
+
+Browser and native-store cases also cover every Details action against an externally
+changed opening revision, with no replacement action or native effect. Unrelated
+edits preserve stored date seconds and resolved repeated-hour instants across task,
+calendar, reminder-pause and availability fields; changed ambiguous inputs retain
+their drafts and fail before sending a request. These coverage additions do not
+extend the pre-gate execution totals above.
