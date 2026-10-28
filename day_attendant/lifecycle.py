@@ -16,10 +16,9 @@ from .profiles import state_home
 from .service import encoded
 from .timeutil import parse
 
-SCRIPT=Path(__file__).resolve().parent.parent/'day-attendant.py'
-
-
-def argv(app,*args):return [sys.executable,'-B',str(SCRIPT),'--state',str(app.store.path),'--task-bin',str(app.tasks.binary),*args]
+def argv(app,*args):
+    launcher="import runpy,sys;sys.path.insert(0,"+repr(str(Path(__file__).resolve().parent.parent))+");runpy.run_module('day_attendant',run_name='__main__')"
+    return [sys.executable,'-B','-c',launcher,'--state',str(app.store.path),'--task-bin',str(app.tasks.binary),*args]
 
 def receipt(app):
     try:
@@ -120,56 +119,62 @@ def without_block(text,identity):
 def scheduler(app,operation):
     if operation not in ('install','uninstall','status'):raise AssistantError('invalid_arguments','Unknown scheduler operation.')
     if operation=='status':return app.store.state_value('scheduler') or {'installed':False}
-    caps=capabilities();identity=app.store.state_value('profile')['id'];environment=scheduler_environment()
+    caps=capabilities();environment=scheduler_environment()
     backend='launchd' if sys.platform=='darwin' else 'systemd-user' if caps['user_systemd'] else 'cron' if caps['crontab'] else None
-    previous=app.store.state_value('scheduler')
-    if operation=='uninstall' and previous:backend=previous['backend']
-    if not backend:raise AssistantError('scheduler_unavailable','No supported native scheduler is available. Manual tick and service commands remain usable.')
     scheduler_home=state_home();scheduler_home.mkdir(parents=True,exist_ok=True,mode=0o700)
     with exclusive(scheduler_home/'scheduler-edit.lock',timeout=5):
-        log=app.store.path/'scheduler.log'
-        fd=os.open(log,os.O_CREAT|os.O_APPEND|os.O_WRONLY,0o600);os.close(fd);log.chmod(0o600)
-        label='local.day-attendant.'+identity;paths=[]
-        if backend=='cron':
-            binary=caps['crontab'] or shutil.which('crontab')
-            current=run_checked([binary,'-l'],allow_missing=True)
-            if current.returncode and 'no crontab' not in current.stderr.lower():raise AssistantError('scheduler_unavailable','Existing crontab could not be read; it was preserved.')
-            cleaned=without_block(current.stdout,identity)
-            updated=cleaned
-            if operation=='install':updated=cleaned+('' if not cleaned or cleaned.endswith('\n') else '\n')+cron_block(app,environment)
-            if updated!=current.stdout:
-                fresh=run_checked([binary,'-l'],allow_missing=True)
-                if fresh.stdout!=current.stdout or fresh.returncode!=current.returncode:raise AssistantError('scheduler_conflict','The crontab changed while preparing this operation. Retry; no jobs were overwritten.')
-                run_checked([binary,'-'],input=updated)
-            check=run_checked([binary,'-l'],allow_missing=True).stdout
-            if check!=updated:raise AssistantError('scheduler_verification_failed','The installed crontab differs from the requested content; inspect scheduler status.')
-        elif backend=='launchd':
-            folder=Path.home()/'Library/LaunchAgents';folder.mkdir(parents=True,exist_ok=True)
-            path=folder/(label+'.plist');paths=[str(path)];domain='gui/'+str(os.getuid())
-            run_checked(['launchctl','bootout',domain+'/'+label],allow_missing=True)
-            if operation=='install':
-                payload={'Label':label,'ProgramArguments':argv(app,'tick'),'StartInterval':60,'RunAtLoad':True,
-                         'EnvironmentVariables':environment,'StandardOutPath':str(app.store.path/'scheduler.log'),'StandardErrorPath':str(app.store.path/'scheduler.log')}
-                fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
-                with os.fdopen(fd,'wb') as stream:plistlib.dump(payload,stream)
-                run_checked(['launchctl','bootstrap',domain,str(path)])
-            else:path.unlink(missing_ok=True)
-        else:
-            folder=Path.home()/'.config/systemd/user';folder.mkdir(parents=True,exist_ok=True)
-            service=folder/(label+'.service');timer=folder/(label+'.timer');paths=[str(service),str(timer)]
-            run_checked(['systemctl','--user','disable','--now',timer.name],allow_missing=True)
-            if operation=='install':
-                quote=lambda value:'"'+str(value).replace('\\','\\\\').replace('"','\\"').replace('%','%%')+'"'
-                service.write_text('[Unit]\nDescription=Day Attendant known-data reminders\n[Service]\nType=oneshot\nExecStart='+ ' '.join(quote(x) for x in argv(app,'tick'))+'\n'+''.join('Environment='+quote(k+'='+v)+'\n' for k,v in environment.items()))
-                timer.write_text('[Unit]\nDescription=Day Attendant reminder tick\n[Timer]\nOnBootSec=1min\nOnUnitActiveSec=1min\nPersistent=true\n[Install]\nWantedBy=timers.target\n')
-                service.chmod(0o600);timer.chmod(0o600);run_checked(['systemctl','--user','daemon-reload']);run_checked(['systemctl','--user','enable','--now',timer.name])
-            else:
-                service.unlink(missing_ok=True);timer.unlink(missing_ok=True);run_checked(['systemctl','--user','daemon-reload'])
-        record={'installed':operation=='install','backend':backend,'profile_id':identity,'label':label,'paths':paths,'at':app.now(),
-                'policy':'Known-data reminders and daily backup only; no model requests; reevaluate when runnable, no suspend wake guarantee.'}
-        with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('scheduler',?)",(encoded(record),))
-        return record
+        previous=app.store.state_value('scheduler')
+        if operation=='uninstall' and previous:backend=previous['backend']
+        if not backend:raise AssistantError('scheduler_unavailable','No supported native scheduler is available. Manual tick and service commands remain usable.')
+        if operation=='install' and previous and previous['installed'] and previous['backend']!=backend:
+            _scheduler_edit(app,'uninstall',previous['backend'],caps,environment)
+        return _scheduler_edit(app,operation,backend,caps,environment)
 
+
+def _scheduler_edit(app,operation,backend,caps,environment):
+    identity=app.store.state_value('profile')['id']
+    log=app.store.path/'scheduler.log'
+    fd=os.open(log,os.O_CREAT|os.O_APPEND|os.O_WRONLY,0o600);os.close(fd);log.chmod(0o600)
+    label='local.day-attendant.'+identity;paths=[]
+    if backend=='cron':
+        binary=caps['crontab'] or shutil.which('crontab')
+        current=run_checked([binary,'-l'],allow_missing=True)
+        if current.returncode and 'no crontab' not in current.stderr.lower():raise AssistantError('scheduler_unavailable','Existing crontab could not be read; it was preserved.')
+        cleaned=without_block(current.stdout,identity)
+        updated=cleaned
+        if operation=='install':updated=cleaned+('' if not cleaned or cleaned.endswith('\n') else '\n')+cron_block(app,environment)
+        if updated!=current.stdout:
+            fresh=run_checked([binary,'-l'],allow_missing=True)
+            if fresh.stdout!=current.stdout or fresh.returncode!=current.returncode:raise AssistantError('scheduler_conflict','The crontab changed while preparing this operation. Retry; no jobs were overwritten.')
+            run_checked([binary,'-'],input=updated)
+        check=run_checked([binary,'-l'],allow_missing=True).stdout
+        if check!=updated:raise AssistantError('scheduler_verification_failed','The installed crontab differs from the requested content; inspect scheduler status.')
+    elif backend=='launchd':
+        folder=Path.home()/'Library/LaunchAgents';folder.mkdir(parents=True,exist_ok=True)
+        path=folder/(label+'.plist');paths=[str(path)];domain='gui/'+str(os.getuid())
+        run_checked(['launchctl','bootout',domain+'/'+label],allow_missing=True)
+        if operation=='install':
+            payload={'Label':label,'ProgramArguments':argv(app,'tick'),'StartInterval':60,'RunAtLoad':True,
+                     'EnvironmentVariables':environment,'StandardOutPath':str(app.store.path/'scheduler.log'),'StandardErrorPath':str(app.store.path/'scheduler.log')}
+            fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+            with os.fdopen(fd,'wb') as stream:plistlib.dump(payload,stream)
+            run_checked(['launchctl','bootstrap',domain,str(path)])
+        else:path.unlink(missing_ok=True)
+    else:
+        folder=Path.home()/'.config/systemd/user';folder.mkdir(parents=True,exist_ok=True)
+        service=folder/(label+'.service');timer=folder/(label+'.timer');paths=[str(service),str(timer)]
+        run_checked(['systemctl','--user','disable','--now',timer.name],allow_missing=not timer.exists())
+        if operation=='install':
+            quote=lambda value:'"'+str(value).replace('\\','\\\\').replace('"','\\"').replace('%','%%')+'"'
+            service.write_text('[Unit]\nDescription=Day Attendant known-data reminders\n[Service]\nType=oneshot\nExecStart='+ ' '.join(quote(x) for x in argv(app,'tick'))+'\n'+''.join('Environment='+quote(k+'='+v)+'\n' for k,v in environment.items()))
+            timer.write_text('[Unit]\nDescription=Day Attendant reminder tick\n[Timer]\nOnBootSec=1min\nOnUnitActiveSec=1min\nPersistent=true\n[Install]\nWantedBy=timers.target\n')
+            service.chmod(0o600);timer.chmod(0o600);run_checked(['systemctl','--user','daemon-reload']);run_checked(['systemctl','--user','enable','--now',timer.name])
+        else:
+            service.unlink(missing_ok=True);timer.unlink(missing_ok=True);run_checked(['systemctl','--user','daemon-reload'])
+    record={'installed':operation=='install','backend':backend,'profile_id':identity,'label':label,'paths':paths,'at':app.now(),
+            'policy':'Known-data reminders and daily backup only; no model requests; reevaluate when runnable, no suspend wake guarantee.'}
+    with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('scheduler',?)",(encoded(record),))
+    return record
 
 def tick(app):
     """One bounded native scheduling invocation. No harness imports or model calls."""
@@ -187,12 +192,18 @@ def tick(app):
             if elapsed<0:return {'skipped':'clock_moved_back','last_tick':previous}
         record={'at':app.now(),'status':'running','model_called':False}
         with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('last_tick',?)",(encoded(record),))
+        record['status']='completed'
+        try:record['delivery']=app.notify()
+        except AssistantError as error:
+            record.update(status='failed',error={'code':error.code,'message':str(error)})
+            record['delivery']={'error':record['error']}
         try:
-            result=app.notify();record.update(status='completed',delivery=result)
             last=app.store.state_value('last_backup');zone=ZoneInfo(app.store.state_value('timezone','UTC'))
             if not last or parse(last['captured_at']).astimezone(zone).date()<now.astimezone(zone).date():
                 record['backup']=snapshot(app,category='daily',key='daily:'+now.astimezone(zone).date().isoformat())
-        except AssistantError as error:record.update(status='failed',error={'code':error.code,'message':str(error)})
+        except AssistantError as error:
+            failure={'code':error.code,'message':str(error)}
+            record.update(status='failed',backup={'error':failure});record.setdefault('error',failure)
         finally:
             with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('last_tick',?)",(encoded(record),))
         return record

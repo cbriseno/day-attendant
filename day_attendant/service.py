@@ -97,6 +97,7 @@ class Assistant:
             raise AssistantError("recovery_required", "Run recover before reading a coherent state.", {"operations": pending})
 
     def _recover(self):
+        self.store.assert_writable()
         with self.store.connect() as con:
             rows = [dict(r) for r in con.execute("SELECT * FROM operations WHERE status IN ('prepared','applying') ORDER BY rowid")]
         for row in rows:
@@ -188,7 +189,7 @@ class Assistant:
                     raise AssistantError("invalid_restore", "The inverse exceeds the fields of that decision.")
                 if changes.get('start',row.get('start')) and changes.get('status',row['status'])=='pending':
                     by_id={item['uuid']:item for item in self.tasks.rows()}
-                    if self.blockers(row,by_id):
+                    if self.blockers(dict(row,depends=changes.get('depends',row.get('depends')) or []),by_id):
                         raise AssistantError('not_actionable','The inverse cannot activate a responsibility whose dependencies are now pending.')
                 if 'depends' in changes:self.validate_dependencies(row['uuid'],changes['depends'] or [])
             elif action=='dependency_update':
@@ -389,6 +390,7 @@ class Assistant:
         if not observations['matching']:raise AssistantError('external_conflict','A prerequisite or reviewed native participant changed after admission; no additional effect was authorized.',observations)
 
     def _apply(self, key, plan):
+        self.store.assert_writable()
         try:
             if self.store.state_value("connected", False):
                 with self.store.connect() as con:
@@ -706,4 +708,4 @@ class Assistant:
             return {"version": self.tasks.version(), "state": str(self.store.path), "integrity": integrity,
                     "revision": self.store.revision(), "operations": self.store.unresolved(),
                     "notices_requiring_attention": notices, "capabilities": caps,
-                    "config": self.store.config(), "scheduler_installed_by_this_app": bool(self.store.state_value("scheduler")), "scheduler":self.store.state_value("scheduler"), "last_tick":self.store.state_value("last_tick"), "last_backup":self.store.state_value("last_backup"), "notification_policy":self.store.state_value("notification_policy"), "maintenance":self.store.state_value("maintenance")}
+                    "config": self.store.config(), "scheduler_installed_by_this_app": bool((self.store.state_value("scheduler") or {}).get('installed')), "scheduler":self.store.state_value("scheduler"), "last_tick":self.store.state_value("last_tick"), "last_backup":self.store.state_value("last_backup"), "notification_policy":self.store.state_value("notification_policy"), "maintenance":self.store.state_value("maintenance")}

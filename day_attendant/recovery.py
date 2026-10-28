@@ -23,16 +23,15 @@ def _inspect(app,key):
 
 def resolve(app,key,resolution,precondition,backup_directory=None):
     if resolution not in ('complete','keep_observed'):raise AssistantError('invalid_resolution','Choose complete or keep_observed.')
-    before=inspect(app,key)
-    if before['closed']:return before
-    if before['precondition']!=precondition:raise AssistantError('stale_recovery','Observed data changed. Inspect the operation again.')
-    if resolution=='complete' and not before['can_complete']:raise AssistantError('recovery_conflict','The operation cannot complete without overwriting an external change. Review keep_observed instead.')
+    with app.store.lock():
+        app.store.assert_writable();before=_checked_observation(app,key,resolution,precondition)
+        if before['closed']:return before
+        if resolution=='complete' and not before['can_complete']:raise AssistantError('recovery_conflict','The operation cannot complete without overwriting an external change. Review keep_observed instead.')
     from .archives import snapshot
     backup=snapshot(app,destination=backup_directory,category='reconciliation')
     with app.store.lock():
-        app.store.assert_writable();current=_inspect(app,key)
-        if current['closed']:return dict(current,backup=backup)
-        if current['precondition']!=precondition:raise AssistantError('stale_recovery','Data changed during the backup; no reconciliation was applied.')
+        app.store.assert_writable();current=_checked_observation(app,key,resolution,precondition)
+        if current['closed']:return current
         with app.store.connect() as con:
             if resolution=='complete':con.execute("UPDATE operations SET status='prepared',error=NULL WHERE key=?",(key,))
             else:
@@ -46,3 +45,15 @@ def resolve(app,key,resolution,precondition,backup_directory=None):
             remaining=app._recover()
             if remaining:raise AssistantError('recovery_conflict','Reconciliation did not finish; the backup and audit were preserved.',{'operations':remaining})
         return dict(_inspect(app,key),backup=backup,resolution=resolution)
+
+
+def _checked_observation(app,key,resolution,precondition):
+    current=_inspect(app,key)
+    if current['closed']:
+        with app.store.connect() as con:records=con.execute('SELECT observed,backup FROM reconciliations WHERE operation_key=? AND resolution=? ORDER BY id DESC',(key,resolution)).fetchall()
+        for record in records:
+            if json.loads(record['observed'])['precondition']==precondition:
+                return dict(current,backup=json.loads(record['backup']),resolution=resolution)
+        raise AssistantError('stale_recovery','The operation closed without this reconciliation. Inspect it again.')
+    if current['precondition']!=precondition:raise AssistantError('stale_recovery','Observed data changed. Inspect the operation again.')
+    return current

@@ -71,3 +71,25 @@ prove that environment. No live device synchronization, mailbox/Teams integratio
 clinical intervention, perfect risk detection, popup delivery while suspended or
 proof of human reading is claimed. The app uses declared facts and bounded context;
 it does not infer inactivity simply because no progress was recorded.
+
+## Daily readiness regression coverage
+
+`tests/test_review_regressions.py` exercises the package's module launcher from an
+arbitrary directory, service start/stop and the generated cron command without a
+checkout entrypoint. It stages the distributable package tree; it does not replace
+the separate package installation gate. Scheduler adapter tests cover switching
+between cron and systemd, preserving unrelated jobs, failed replacement, repeated
+uninstall and the doctor's actual installed flag. These use controlled scheduler
+commands and do not install personal jobs or establish physical Mac evidence.
+
+Native-store cases cover independent delivery/backup failures, dependency Undo in
+both directions, eight capture outcomes plus a ninth unresolved item, public CLI
+recovery during live maintenance, keep-observed waiting on transport, stale closing
+actors before and after backup, successful recovery and both reconciliation retries.
+
+The same focused test invokes `scripts/test_daily_regressions.mjs` in an isolated
+headless Chrome with controlled HTTP responses and no model. It executes the actual
+UI scripts to check editor snapshots and stale submissions, persistent capture
+questions and changing receipts, every date-field family in a profile zone different
+from the browser, calendar expiry/zone changes and access past twelve commitments,
+and localized completed/retired details without translating card content.
