@@ -11,7 +11,10 @@ from .errors import AssistantError
 def canonical(row):
     if row is None:
         return None
-    return {k: v for k, v in row.items() if k not in ("id", "urgency", "modified")}
+    result={k:v for k,v in row.items() if k not in ('id','urgency','modified')}
+    if result.get('depends'):result['depends']=sorted(result['depends'])
+    else:result.pop('depends',None)
+    return result
 
 
 class Taskwarrior:
@@ -35,7 +38,7 @@ class Taskwarrior:
         env = os.environ.copy()
         env.update(TASKRC=str(self.rc), TASKDATA=str(self.home / "data"))
         try:
-            result = subprocess.run([self.binary, "rc.confirmation=off", "rc.verbose=nothing", *args],
+            result = subprocess.run([self.binary, "rc.confirmation=off", "rc.verbose=nothing", "rc.hooks=off", *args],
                                     input=input_text, capture_output=True, text=True, env=env, timeout=15,
                                     **({"umask": 0o077} if os.name != "nt" else {}))
         except subprocess.TimeoutExpired as error:
@@ -68,4 +71,12 @@ class Taskwarrior:
         self.command("import", "-", input_text=json.dumps([row]))
 
     def patch(self, uid, changes):
-        self.command(uid, "modify", *(f"{k}:{v if v is not None else ''}" for k, v in changes.items()))
+        args=[]
+        for key,value in changes.items():
+            if key=='depends':
+                current=set((self.get(uid) or {}).get('depends',[]))
+                wanted=set(value.split(',') if isinstance(value,str) and value else value or [])
+                entries=['-'+u for u in sorted(current-wanted)]+sorted(wanted-current)
+                if entries:args.append('depends:'+','.join(entries))
+            else:args.append(f"{key}:{value if value is not None else ''}")
+        if args:self.command(uid,'modify',*args)

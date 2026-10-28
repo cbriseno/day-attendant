@@ -1,6 +1,5 @@
 """Explicitly started loopback UI for a fixed synthetic state directory."""
 from concurrent.futures import ThreadPoolExecutor
-import fcntl
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
@@ -16,11 +15,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .codexbridge import CodexBridge
+from .harnesses import create_harness
 from .connected import Connected
 from .conversation import Conversation
 from .errors import AssistantError
 from .service import Assistant, encoded
+from .platforms import exclusive
+from .profiles import configure
 
 ASSETS = Path(__file__).resolve().parent / "ui"
 
@@ -33,6 +34,7 @@ class LocalServer(ThreadingHTTPServer):
         self.chat=Conversation(self.board)
         self.pool=ThreadPoolExecutor(max_workers=3,thread_name_prefix="day-request")
         self.token=secrets.token_urlsafe(32)
+        self.harness_lock=threading.Lock()
         super().__init__(("127.0.0.1",port),Handler)
         self.origin=f"http://127.0.0.1:{self.server_port}"
 
@@ -43,6 +45,27 @@ class LocalServer(ThreadingHTTPServer):
     def server_close(self):
         super().server_close()
         self.pool.shutdown(wait=False,cancel_futures=True)
+
+    def configure_harness(self):
+        with self.harness_lock:
+            app=self.board.app;profile=app.store.state_value('profile');epoch=app.store.epoch()
+            old=self.board.bridge;self.board.bridge=None
+            if old:old.close()
+            workspace=app.store.path/'agent-workspace';workspace.mkdir(mode=0o700,exist_ok=True)
+            bridge=None
+            try:
+                bridge=create_harness(profile['harness'],workspace,profile.get('model'))
+                with app.store.lock(),app.store.connect() as con:
+                    current=app.store.state_value('profile')
+                    if app.store.epoch()!=epoch or current['harness']!=profile['harness'] or current.get('model')!=profile.get('model'):
+                        bridge.close();return
+                    if bridge.model and not current.get('model'):
+                        current['model']=bridge.model;con.execute("INSERT OR REPLACE INTO state VALUES('profile',?)",(encoded(current),))
+                    con.execute("DELETE FROM state WHERE key='agent_startup_error'")
+                self.board.bridge=bridge
+            except (AssistantError,OSError,ValueError) as error:
+                if bridge:bridge.close()
+                with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('agent_startup_error',?)",(encoded(str(error)[:400]),))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -83,12 +106,24 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200,(ASSETS/'index.html').read_bytes(),'text/html; charset=utf-8');return
         if self.path=='/favicon.ico':
             self.reply(204,b'', 'image/x-icon');return
-        if self.path in ('/interface.js','/locales.js'):
+        if self.path in ('/interface.js','/locales.js','/daily.js'):
             self.reply(200,(ASSETS/self.path[1:]).read_bytes(),'text/javascript; charset=utf-8');return
         if not self.authenticated():
             self.reply(401,{'error':{'code':'session_required','message':'Open the local link for this session.'}});return
-        if self.path=='/api/state':
-            try:self.reply(200,{'data':self.server.board.snapshot()})
+        if match:=re.fullmatch(r'/api/attachments/([a-f0-9-]+)',self.path):
+            try:
+                from .attachments import load
+                data,mime=load(self.server.board.app,match[1]);self.reply(200,data,mime)
+            except AssistantError as error:self.reply(404,{'error':{'code':error.code,'message':str(error)}})
+            return
+        if self.path in ('/api/state','/api/doctor','/api/backups'):
+            try:
+                if self.path=='/api/doctor':data=self.server.board.app.doctor()
+                elif self.path=='/api/backups':
+                    from .archives import list_backups
+                    data=list_backups(self.server.board.app)
+                else:data=self.server.board.snapshot()
+                self.reply(200,{'data':data})
             except AssistantError as error:self.reply(409,{'error':{'code':error.code,'message':str(error)}})
             return
         self.reply(404,{'error':{'code':'not_found','message':'Route unavailable.'}})
@@ -99,7 +134,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(403,{'error':{'code':'origin_forbidden','message':'The request must originate from this local application.'}});return
         try:
             size=int(self.headers.get('Content-Length','0'))
-            if not 0<size<=65536:raise ValueError('size')
+            if not 0<size<=(15*1024*1024 if self.path=='/api/attachments' else 65536):raise ValueError('size')
             body=json.loads(self.rfile.read(size))
             if not isinstance(body,dict):raise ValueError('object')
         except (ValueError,TypeError):
@@ -113,7 +148,11 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(401,{'error':{'code':'session_required','message':'Reopen the session link.'}});return
         board=self.server.board
         try:
-            if self.path=='/api/proposals':
+            if self.path=='/api/attachments':
+                if set(body)!={'name','mime','base64','key'}:raise ValueError('fields')
+                from .attachments import save
+                result=save(board.app,body['name'],body['mime'],body['base64'],body['key'])
+            elif self.path=='/api/proposals':
                 if set(body)-{'action','payload','key','expected_revision'}:raise ValueError('fields')
                 result=board.request(body['action'],body['payload'],body['key'],origin='cli' if self.headers.get('Authorization','').startswith('Bearer ') else 'ui',expected_revision=body.get('expected_revision'))
                 self.server.schedule(result)
@@ -126,13 +165,32 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path=='/api/undo':
                 result=board.undo(int(body['fact_id']),body['key'],body.get('expected_revision'));self.server.schedule(result)
             elif self.path=='/api/chat':
-                if set(body)-{'text','key'}:raise ValueError('fields')
-                result=self.server.chat.submit(body['text'],body['key'])
+                if set(body)-{'text','key','attachments','capture_only'}:raise ValueError('fields')
+                result=self.server.chat.submit(body['text'],body['key'],body.get('attachments'),body.get('capture_only',False))
                 if result['status']=='pending':self.server.pool.submit(self.server.chat.run,body['key'])
             elif self.path=='/api/chat/retry':
                 if set(body)!={'key'}:raise ValueError('fields')
                 result=self.server.chat.retry(body['key'])
                 if result['status']=='pending':self.server.pool.submit(self.server.chat.run,body['key'])
+            elif self.path=='/api/settings':
+                if set(body)-{'values','key','expected_revision'}:raise ValueError('fields')
+                result=configure(board.app,body['values'],body['key'],body.get('expected_revision'))
+                if result['engine_changed']:self.server.pool.submit(self.server.configure_harness)
+            elif self.path=='/api/backups':
+                if set(body)-{'key'}:raise ValueError('fields')
+                from .archives import snapshot
+                result=snapshot(board.app,key=body.get('key'))
+            elif self.path=='/api/recovery/inspect':
+                if set(body)!={'operation_key'}:raise ValueError('fields')
+                from .recovery import inspect
+                result=inspect(board.app,body['operation_key'])
+            elif self.path=='/api/recovery/resolve':
+                if set(body)!={'operation_key','resolution','precondition'}:raise ValueError('fields')
+                from .recovery import resolve
+                result=resolve(board.app,body['operation_key'],body['resolution'],body['precondition'])
+            elif self.path=='/api/shutdown':
+                result={'stopping':True}
+                threading.Thread(target=self.server.shutdown,daemon=True).start()
             else:
                 self.reply(404,{'error':{'code':'not_found','message':'Route unavailable.'}});return
             self.reply(200,{'data':result})
@@ -140,63 +198,58 @@ class Handler(BaseHTTPRequestHandler):
         except (KeyError,ValueError,TypeError,AttributeError):self.reply(400,{'error':{'code':'invalid_request','message':'Invalid action or fields.'}})
 
 
-def serve(state,task_bin=None,port=0,zone='America/Edmonton'):
+def preflight(state):
     selected=Path(state).expanduser().resolve()
     if selected.exists() and any(selected.iterdir()):
         database=selected/'assistant.sqlite3'
         try:
             with sqlite3.connect(database.as_uri()+'?mode=ro',uri=True) as con:
+                profile=con.execute("SELECT value FROM state WHERE key='profile'").fetchone()
                 marker=con.execute("SELECT value FROM state WHERE key='synthetic_bootstrap'").fetchone()
-                owned=bool(marker and json.loads(marker[0]) is True)
-        except (sqlite3.Error,ValueError):owned=False
-        if not owned:
-            raise AssistantError('synthetic_state_required','Use a new empty synthetic workspace; existing unmarked state is not opened or migrated.')
-    try:ZoneInfo(zone)
-    except ZoneInfoNotFoundError as error:raise AssistantError('invalid_zone','Invalid time zone.') from error
-    app=Assistant(state,task_bin)
-    lifetime=(app.store.path/'server.lock').open('a')
-    try:fcntl.flock(lifetime,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    except BlockingIOError as error:raise AssistantError('server_running','This workspace already has an active service.') from error
-    board=Connected(app)
-    board.initialize()
-    board.startup()
-    with app.store.lock(),app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('timezone',?)",(encoded(zone),))
-    workspace=app.store.path/'agent-workspace';workspace.mkdir(mode=0o700,exist_ok=True)
-    bridge=None
-    try:
-        try:
-            selected_model=app.store.state_value('agent_model')
-            bridge=CodexBridge(workspace,model=selected_model)
-            with app.store.lock(),app.store.connect() as con:
-                con.execute("INSERT OR REPLACE INTO state VALUES('agent_model',?)",(encoded(bridge.model),))
-                con.execute("DELETE FROM state WHERE key='agent_startup_error'")
-        except (AssistantError,OSError,ValueError) as error:
-            with app.store.lock(),app.store.connect() as con:
-                con.execute("INSERT OR REPLACE INTO state VALUES('agent_startup_error',?)",(encoded(str(error)[:400]),))
-            bridge=None
-        server=LocalServer(app,bridge,port)
+                owned=bool(profile and json.loads(profile[0]).get('kind') in ('personal','synthetic') or marker and json.loads(marker[0]) is True)
+        except (sqlite3.Error,ValueError,TypeError,AttributeError):owned=False
+        if not owned:raise AssistantError('synthetic_state_required','Use an empty directory or an initialized Day Attendant profile; unmarked data is not opened or migrated.')
+    return selected
+
+
+def initialize_profile(state,task_bin=None,kind='personal',zone=None,name=None):
+    selected=preflight(state)
+    app=Assistant(selected,task_bin)
+    Connected(app).initialize(kind=kind,zone=zone,name=name)
+    return app
+
+
+def serve(state,task_bin=None,port=0,zone=None,kind=None,supervised=False):
+    selected=preflight(state)
+    app=Assistant(selected,task_bin)
+    # Lifetime ownership uses the platform lock adapter on both Linux and macOS.
+    with exclusive(app.store.path/'server.lock',timeout=0):
+        board=Connected(app)
+        profile=app.store.state_value('profile')
+        selected_kind=kind or (profile or {}).get('kind') or ('synthetic' if app.store.state_value('synthetic_bootstrap',False) else 'personal')
+        board.initialize(kind=selected_kind,zone=zone)
+        board.startup()
+        server=LocalServer(app,None,port)
         receipt=app.store.path/'ui-server.json'
-        fd=os.open(receipt,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
-        with os.fdopen(fd,'w') as f:json.dump({'origin':server.origin,'token':server.token,'pid':os.getpid()},f)
-        print(server.origin+'/#session='+server.token,flush=True)
-        def stop(signum,frame):
-            threading.Thread(target=server.shutdown,daemon=True).start()
-        original=signal.signal(signal.SIGTERM,stop)
-        try:server.serve_forever(poll_interval=0.2)
-        except KeyboardInterrupt:pass
+        try:
+            server.configure_harness()
+            fd=os.open(receipt,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+            with os.fdopen(fd,'w') as f:json.dump({'origin':server.origin,'token':server.token,'pid':os.getpid(),'profile_id':app.store.state_value('profile')['id']},f)
+            print(server.origin if supervised else server.origin+'/#session='+server.token,flush=True)
+            def stop(signum,frame):threading.Thread(target=server.shutdown,daemon=True).start()
+            original=signal.signal(signal.SIGTERM,stop)
+            try:server.serve_forever(poll_interval=.2)
+            except KeyboardInterrupt:pass
+            finally:signal.signal(signal.SIGTERM,original)
         finally:
-            signal.signal(signal.SIGTERM,original)
-            server.server_close()
-            receipt.unlink(missing_ok=True)
-    finally:
-        if bridge:bridge.close()
-        lifetime.close()
+            if server.board.bridge:server.board.bridge.close()
+            server.server_close();receipt.unlink(missing_ok=True)
 
 
 def client(state,path='/api/state',data=None):
     receipt=Path(state).expanduser().resolve()/'ui-server.json'
     try:connection=json.loads(receipt.read_text())
-    except (OSError,ValueError) as error:raise AssistantError('server_unavailable','Start web --state WORKSPACE --synthetic to operate the connected workspace.') from error
+    except (OSError,ValueError) as error:raise AssistantError('server_unavailable','Start the local service for this profile before using its connected commands.') from error
     if not re.fullmatch(r'http://127\.0\.0\.1:[0-9]+',connection.get('origin','')):
         raise AssistantError('invalid_server_receipt','Invalid local service receipt.')
     request=Request(connection['origin']+path,data=encoded(data).encode() if data is not None else None,
@@ -205,5 +258,5 @@ def client(state,path='/api/state',data=None):
         with urlopen(request,timeout=20) as response:return json.load(response)['data']
     except HTTPError as error:
         detail=json.load(error).get('error',{})
-        raise AssistantError(detail.get('code','server_error'),detail.get('message','Local service error.')) from error
+        raise AssistantError(detail.get('code','server_error'),detail.get('message','Local service error.'),detail.get('details')) from error
     except (URLError,OSError) as error:raise AssistantError('server_unavailable','The local service is unavailable.') from error

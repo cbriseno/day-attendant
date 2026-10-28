@@ -32,8 +32,8 @@ import sys
 from unittest.mock import patch
 from day_attendant.errors import AssistantError
 from day_attendant.web import serve
-with patch('day_attendant.web.CodexBridge',side_effect=AssistantError('agent_auth_required','Controlled unavailable account')):
-    serve(sys.argv[1])
+with patch('day_attendant.web.create_harness',side_effect=AssistantError('agent_auth_required','Controlled unavailable account')):
+    serve(sys.argv[1],kind='synthetic')
 """
             process=subprocess.Popen([sys.executable,'-B','-c',script,state],cwd=Path(__file__).resolve().parent.parent,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
             try:

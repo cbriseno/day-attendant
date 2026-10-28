@@ -11,7 +11,8 @@ from test_connected import ReviewFixture
 
 
 class ChatFixture(ReviewFixture):
-    def __init__(self,output):self.output=output;self.calls=0
+    def __init__(self,output):
+        self.output=dict(output,additionalIntents=output.get('additionalIntents',[]),unprocessed=output.get('unprocessed',[]));self.calls=0
     def turn(self,thread,prompt,schema,**kwargs):
         self.calls+=1
         if 'intent' not in schema['properties']:return super().turn(thread,prompt,schema,**kwargs)
@@ -56,18 +57,19 @@ class ConversationTests(unittest.TestCase):
 
     def test_retry_reuses_durable_proposal_after_message_failure(self):
         text='Add a task titled Check the report.';fixture,chat=self.fixture(text,'task_add',title='Check the report',priority='medium')
-        original=self.board.request
+        original=self.board.request_many
         def fail_after_proposal(*args,**kwargs):
             original(*args,**kwargs)
             raise AssistantError('controlled_failure','Reply failed after proposal persistence.')
-        self.board.request=fail_after_proposal
-        chat.submit(text,'retry-safe');chat.run('retry-safe');self.board.request=original
+        self.board.request_many=fail_after_proposal
+        chat.submit(text,'retry-safe');chat.run('retry-safe');self.board.request_many=original
         self.assertEqual(fixture.calls,1);self.assertEqual(len(self.app.tasks.rows()),4)
         result=chat.retry('retry-safe');self.assertEqual(result['status'],'completed');self.assertEqual(fixture.calls,1)
         with self.app.store.connect() as con:
             proposals=con.execute('SELECT id FROM proposals').fetchall()
             self.assertEqual(len(proposals),1)
-        self.board.evaluate(proposals[0][0])
+        self.assertEqual(self.board.proposal(proposals[0][0])['phase'],'unavailable')
+        self.board.retry(proposals[0][0]);self.board.evaluate(proposals[0][0])
         self.assertEqual(sum(t['description']=='Check the report' for t in self.app.tasks.rows()),1)
 
     def test_chat_declaration_expansion_requires_scope_review(self):

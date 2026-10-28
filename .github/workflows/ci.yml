@@ -1,0 +1,49 @@
+name: Validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  core:
+    name: Core (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v3
+        id: setup
+        with:
+          environment-name: day-ci
+          create-args: >-
+            python=3.11
+            taskwarrior=3.5.0
+            -c conda-forge
+          init-shell: none
+          cache-environment: true
+      - name: Native store and protocol contracts
+        shell: micromamba-shell {0}
+        run: |
+          export DAY_ATTENDANT_TASK_BIN="$(command -v task)"
+          python -B -m unittest discover -s tests -q
+      - name: UI syntax
+        run: |
+          node --check day_attendant/ui/interface.js
+          node --check day_attendant/ui/daily.js
+          node --check day_attendant/ui/locales.js
+      - name: Linux private notification bus
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libnotify-bin python3-gi dbus-daemon
+          export DAY_ATTENDANT_TASK_BIN="${{ steps.setup.outputs.environment-path }}/bin/task"
+          /usr/bin/python3 -B scripts/test_system.py

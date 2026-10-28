@@ -46,7 +46,7 @@ globalThis.dayTranslations = {
     "keep_my_decision": "Keep my decision",
     "data_review_action_retry_retry": "\" data-review-action=\"retry\">Retry</button>",
     "data_review_action_without_apply_without_a_c": "\" data-review-action=\"without\">Apply without a complete review</button>",
-    "codex_contextual_review": "</span></span></summary><div class=\"decision-body\"><p class=\"small muted\">Codex · contextual review</p>",
+    "codex_contextual_review": "</span></span></summary><div class=\"decision-body\"><p class=\"small muted\">Assistant · contextual review</p>",
     "this_is_not_an_approval_retry_leave_it_pendi": "<p class=\"decision-alternative\">This is not an approval. Retry, leave it pending or explicitly continue with the available information.</p>",
     "change_undone": "Change undone",
     "contextual_review_incomplete": " · contextual review incomplete",
@@ -207,7 +207,7 @@ globalThis.dayTranslations = {
     "keep_my_decision": "Mantener mi decisión",
     "data_review_action_retry_retry": "\" data-review-action=\"retry\">Reintentar</button>",
     "data_review_action_without_apply_without_a_c": "\" data-review-action=\"without\">Aplicar sin revisión completa</button>",
-    "codex_contextual_review": "</span></span></summary><div class=\"decision-body\"><p class=\"small muted\">Codex · revisión contextual</p>",
+    "codex_contextual_review": "</span></span></summary><div class=\"decision-body\"><p class=\"small muted\">Asistente · revisión contextual</p>",
     "this_is_not_an_approval_retry_leave_it_pendi": "<p class=\"decision-alternative\">Esto no equivale a una aprobación. Puedes reintentar, dejarlo pendiente o continuar expresamente con la información disponible.</p>",
     "change_undone": "Cambio deshecho",
     "contextual_review_incomplete": " · revisión contextual incompleta",
@@ -323,3 +323,18 @@ globalThis.dayTranslations = {
     "priority_low": "Baja"
   }
 };
+
+Object.assign(globalThis.dayTranslations.en,{
+ review_again:'Review again',adjust:'Adjust',declared_context_for_this_profile:'Declared context for this profile',
+ dependency_update:'Prerequisites',related_update:'Related responsibilities',provenance_update:'Source',event_add:'New commitment',event_update:'Edit commitment',event_cancel:'Cancel commitment',
+ phase_applied:'Saved',phase_unchanged:'Unchanged',phase_review:'Needs review',phase_unavailable:'Review incomplete',phase_stale:'Context changed',phase_evaluating:'Reviewing',phase_canceled:'Canceled',phase_invalid:'Invalid',phase_superseded:'Replaced'
+});
+Object.assign(globalThis.dayTranslations.es,{
+ review_again:'Volver a revisar',adjust:'Ajustar',declared_context_for_this_profile:'Contexto declarado para este perfil',
+ dependency_update:'Requisitos',related_update:'Responsabilidades relacionadas',provenance_update:'Origen',event_add:'Nuevo compromiso',event_update:'Editar compromiso',event_cancel:'Cancelar compromiso',
+ phase_applied:'Guardado',phase_unchanged:'Sin cambios',phase_review:'Requiere revisión',phase_unavailable:'Revisión incompleta',phase_stale:'Cambió el contexto',phase_evaluating:'Revisando',phase_canceled:'Cancelado',phase_invalid:'Inválido',phase_superseded:'Reemplazado'
+});
+
+globalThis.dayTranslations.en.reopen="Reopen";globalThis.dayTranslations.es.reopen="Reabrir";
+
+globalThis.dayTranslations.en.agent_temporarily_unavailable="The selected assistant is unavailable. Known-data reminders still work.";globalThis.dayTranslations.es.agent_temporarily_unavailable="El asistente seleccionado no está disponible. Los recordatorios de datos guardados siguen funcionando.";
