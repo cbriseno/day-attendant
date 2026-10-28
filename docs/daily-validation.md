@@ -93,3 +93,11 @@ UI scripts to check editor snapshots and stale submissions, persistent capture
 questions and changing receipts, every date-field family in a profile zone different
 from the browser, calendar expiry/zone changes and access past twelve commitments,
 and localized completed/retired details without translating card content.
+
+Additional focused cases cover reviews whose proposed prerequisite reopens while
+the model is responding, both sides of a prerequisite replacement, admission after
+an external prerequisite change, and explicit fold 0/1 through native temporal
+effects and calendar horizons. Ambiguous requests without a fold remain rejected.
+Browser cases check blocker reasons and disabled controls after pending-badge and
+locale renders, unchanged-poll DOM stability, and localized provenance labels with
+unchanged stored values.

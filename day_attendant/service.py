@@ -167,7 +167,7 @@ class Assistant:
                    "priority": PRIORITIES[p.get("priority", "medium")]}
             if p.get("due"):
                 row["due"] = wire(instant(p["due"], p.get("zone"), p.get("fold")))
-            observed = instant(p["observed_at"], p.get("zone")) if p.get("observed_at") else None
+            observed = instant(p["observed_at"], p.get("zone"), p.get("fold")) if p.get("observed_at") else None
             if observed and parse(observed) > self.clock():
                 raise AssistantError("future_observation", "Observation time cannot be in the future.")
             plan["steps"].append({"uuid": uid, "before": None, "after": row, "create": row})
@@ -341,7 +341,10 @@ class Assistant:
                 raise AssistantError("invalid_event", "An event needs a title and an end after its start.")
             uid = str(uuid.uuid4())
             plan["effect"] = {"event_add": [uid, p["title"].strip(), start, end, p.get("zone"), p["start"]]}
-            if self.store.state_value('connected',False):plan['effect']['event_meta']=[uid,{k:p[k] for k in ('source','person','reference','observed_at') if k in p}|{'captured_at':now}]
+            if self.store.state_value('connected',False):
+                metadata={k:p[k] for k in ('source','person','reference','observed_at') if k in p}
+                if metadata.get('observed_at'):metadata['observed_at']=instant(metadata['observed_at'],p.get('zone') or self.store.state_value('timezone'),p.get('fold'))
+                plan['effect']['event_meta']=[uid,metadata|{'captured_at':now}]
             plan["result"] = {"uuid": uid}
         elif action=='event_update':
             uid=self.validate_uuid(p['uuid'])

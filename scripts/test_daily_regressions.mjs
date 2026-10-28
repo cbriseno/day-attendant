@@ -93,6 +93,36 @@ try{
  state.messages.push({id:3,key:'question',role:'assistant',text:'Please clarify.',status:'completed',data:JSON.stringify({proposal_ids:[],unprocessed:['Unscheduled request'],uncertainties:['Who is the person?']})});await refresh();
  assert.match(await evaluate("document.getElementById('messages').textContent"),/Unscheduled request.*Who is the person/s);
 
+ const captureProposals=state.proposals;
+ state.proposals=[{id:randomUUID(),intent:{action:'task_update',payload:{uuid:target.id,title:'Pending title'}},phase:'unavailable',generation:0,facts:[]}];
+ target.dependsOn=[a.id];target.blocked=true;target.blockedBy=[a.id];
+ target.source='chat';target.person='Ana';target.reference='Referencia literal';
+ const cardSelector=`[data-task-id="${target.id}"]`;
+ const cardState=()=>evaluate(`(()=>{const card=document.querySelector(${JSON.stringify(cardSelector)});return {reason:card.querySelector('.blocked-label')?.textContent,actionDisabled:card.querySelector('.state-action').disabled,snoozeDisabled:card.querySelector('[data-action=snooze]').disabled,pendingDisabled:card.querySelector('[data-action=pending]').disabled,detailDisabled:card.querySelector('[data-action=detail]').disabled}})()`);
+ for(const mode of ['todo','active','snoozed']){
+  target.state=mode;target.until=mode==='snoozed'?'2026-10-29T12:00:00Z':null;await refresh();
+  const expected={reason:'Blocked · '+a.title,actionDisabled:mode==='todo',snoozeDisabled:false,pendingDisabled:false,detailDisabled:false};
+  assert.deepEqual(await cardState(),expected);
+  await evaluate(`globalThis.previousCard=document.querySelector(${JSON.stringify(cardSelector)})`);
+  await click(cardSelector+' [data-action=pending]');
+  assert.equal(await evaluate(`previousCard===document.querySelector(${JSON.stringify(cardSelector)})`),false);
+  assert.deepEqual(await cardState(),expected);
+  await fill('locale-choice','es');await refresh();assert.deepEqual(await cardState(),{...expected,reason:'Bloqueada · '+a.title});
+  await fill('locale-choice','en');await refresh();assert.deepEqual(await cardState(),expected);
+ }
+ target.state='todo';target.until=null;state.readOnly=true;await refresh();
+ const readOnlyCard={reason:'Blocked · '+a.title,actionDisabled:true,snoozeDisabled:true,pendingDisabled:true,detailDisabled:false};
+ assert.deepEqual(await cardState(),readOnlyCard);
+ assert.equal(await evaluate("document.getElementById('capture-open').disabled && document.getElementById('send-message').disabled"),true);
+ await fill('locale-choice','es');await refresh();assert.deepEqual(await cardState(),{...readOnlyCard,reason:'Bloqueada · '+a.title});
+ await fill('locale-choice','en');await refresh();assert.deepEqual(await cardState(),readOnlyCard);
+ await evaluate(`globalThis.previousCard=document.querySelector(${JSON.stringify(cardSelector)});globalThis.boardMutations=0;globalThis.boardObserver=new MutationObserver(records=>boardMutations+=records.length);boardObserver.observe(document.getElementById('board'),{subtree:true,childList:true,attributes:true,characterData:true})`);
+ await refresh();await refresh();
+ assert.equal(await evaluate('boardMutations'),0);assert.equal(await evaluate(`previousCard===document.querySelector(${JSON.stringify(cardSelector)})`),true);
+ await evaluate('boardObserver.disconnect()');
+ state.readOnly=false;target.blocked=false;target.blockedBy=[];state.proposals=captureProposals;await refresh();
+ assert.equal(await evaluate(`document.querySelector(${JSON.stringify(cardSelector+' .blocked-label')})===null && !document.querySelector(${JSON.stringify(cardSelector+' .state-action')}).disabled`),true);
+
  state.calendar_events=Array.from({length:13},(_,i)=>({uuid:randomUUID(),title:'Commitment '+(i+1),start_at:'2026-10-28T11:00:00Z',end_at:i===0?'2026-10-28T12:00:10Z':'2026-10-29T13:00:00Z'}));await refresh();
  assert.equal(await evaluate("document.querySelectorAll('#calendar-area .daily-row').length"),13);
  const oldTime=await evaluate("document.querySelector('#calendar-area .daily-row p').textContent");state.timezone='UTC';state.profile.timezone='UTC';await refresh();assert.notEqual(await evaluate("document.querySelector('#calendar-area .daily-row p').textContent"),oldTime);
@@ -119,7 +149,9 @@ try{
   await fill('locale-choice',locale);
   for(const status of ['done','retired']){
    target.state=status;await refresh();await detail();const label=await evaluate("document.querySelector('#detail-data dd').textContent");assert.equal(label,locale==='en'?(status==='done'?'Completed':'Retired'):(status==='done'?'Terminada':'Retirada'));
-   assert.equal(await evaluate("document.getElementById('detail-title').textContent"),'Requested replacement');await close();
+   assert.equal(await evaluate("document.getElementById('detail-title').textContent"),'Requested replacement');
+   assert.deepEqual(await evaluate("[...document.querySelectorAll('#detail-extras .detail-grid dt')].slice(0,3).map(e=>e.textContent)"),locale==='en'?['Source','Person','Reference']:['Origen','Persona','Referencia']);
+   assert.deepEqual(await evaluate("[...document.querySelectorAll('#detail-extras .detail-grid dd')].slice(0,3).map(e=>e.textContent)"),['chat','Ana','Referencia literal']);await close();
   }
  }
  console.log('Daily UI regressions passed: snapshot revisions, capture outcomes, dates, calendar and localization');

@@ -335,8 +335,9 @@ class Connected:
         concerns = []
         graph_neighbors=[]
         if target_id:
-            graph_neighbors=[t for t in snapshot['tasks'] if t['id'] in (current or {}).get('dependsOn',[]) or target_id in t['dependsOn']]
-            evidence['relationships.prerequisites']=[{'id':t['id'],'title':t['title'],'state':t['state']} for t in graph_neighbors if t['id'] in (current or {}).get('dependsOn',[])]
+            prerequisites=set((current or {}).get('dependsOn',[]))|set((target or {}).get('dependsOn',[]))
+            graph_neighbors=[t for t in snapshot['tasks'] if t['id'] in prerequisites or target_id in t['dependsOn']]
+            evidence['relationships.prerequisites']=[{'id':t['id'],'title':t['title'],'state':t['state']} for t in graph_neighbors if t['id'] in prerequisites]
             dependents=[t for t in graph_neighbors if target_id in t['dependsOn'] and t['state'] not in ('done','retired')]
             evidence['relationships.dependents']=[{'id':t['id'],'title':t['title'],'state':t['state']} for t in dependents]
             for related in graph_neighbors:
@@ -375,7 +376,7 @@ class Connected:
         horizon=max([parse(snapshot['context'].get('availableUntil') or self.app.now())]+[parse(t[k]) for t in snapshot['tasks'] if t['id']==target_id or t['state']=='active' for k in ('due','until') if t.get(k)])
         horizon=max(horizon,self.app.clock()+timedelta(days=1))
         for field in ('due','until','start','end'):
-            if intent['payload'].get(field):horizon=max(horizon,parse(instant(intent['payload'][field],intent['payload'].get('zone'))))
+            if intent['payload'].get(field):horizon=max(horizon,parse(instant(intent['payload'][field],intent['payload'].get('zone'),intent['payload'].get('fold'))))
         calendar=[e for e in snapshot.get('calendar_events',[]) if e['uuid']==target_id or parse(e['end_at'])>self.app.clock() and parse(e['start_at'])<=horizon]
         evidence['calendar_events']=calendar
         if action=='task_snooze' and target:
@@ -432,7 +433,7 @@ class Connected:
         if any(len(payload[k])>2000 for k in ('person','reference') if payload.get(k)):
             raise AssistantError('invalid_provenance','Provenance text is too long.')
         if payload.get('observed_at'):
-            observed=instant(payload['observed_at'],payload.get('zone') or self.store.state_value('timezone'))
+            observed=instant(payload['observed_at'],payload.get('zone') or self.store.state_value('timezone'),payload.get('fold'))
             if parse(observed)>self.app.clock():raise AssistantError('future_observation','Observation time cannot be in the future.')
         if 'estimate_minutes' in payload and (type(payload['estimate_minutes']) is not int or not 0<payload['estimate_minutes']<=100000):
             raise AssistantError('invalid_estimate','Initial estimates must be positive integer minutes.')
