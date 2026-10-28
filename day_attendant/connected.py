@@ -12,6 +12,7 @@ import threading
 import uuid
 
 from .errors import AssistantError
+from .profiles import turn_timeout
 from .service import Assistant, encoded, fingerprint
 from .taskwarrior import canonical
 from .timeutil import instant, parse, stamp, wire
@@ -133,6 +134,8 @@ class Connected:
                 con.execute("INSERT OR IGNORE INTO state VALUES('context_epoch','0')")
                 con.execute("INSERT OR IGNORE INTO state VALUES('synthetic_bootstrap',?)",(encoded(selected=='synthetic'),))
                 if selected=='synthetic':con.execute("INSERT OR IGNORE INTO state VALUES('bootstrap_clock',?)",(encoded(self.app.now()),))
+                floor=con.execute('SELECT COALESCE(MAX(id),0) FROM messages').fetchone()[0]
+                con.execute("INSERT OR IGNORE INTO state VALUES('conversation',?)",(encoded({'floor':floor,'clearedAt':self.app.now() if floor else None}),))
                 con.execute('PRAGMA user_version=4')
             if existing:return
             if selected=='personal':
@@ -300,7 +303,8 @@ class Connected:
         return value
 
     def _review_expired(self, inputs):
-        return (self.app.clock()-parse(inputs['observed_at'])).total_seconds() >= 120
+        effort=getattr(self.bridge,'effort',None) or self.store.state_value('profile',{}).get('effort')
+        return (self.app.clock()-parse(inputs['observed_at'])).total_seconds() >= turn_timeout(effort)
 
     def _input(self, proposal, snapshot=None):
         snapshot = snapshot or self._snapshot()

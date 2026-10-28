@@ -48,7 +48,8 @@ uncertain effects before replay and blocks incompatible external changes.
 
 Model calls run outside the writer lock. Inputs bind target state, active work,
 context, confirmed history, temporal feasibility and a generation. Reviews expire
-after two minutes or a relevant material change. Capacity windows use the current
+after the selected level's turn limit (two minutes up to medium) or a relevant material
+change. Capacity windows use the current
 clock; their consequence identity distinguishes five-minute remaining-window bands.
 This band is a review freshness detail, not inferred human progress.
 

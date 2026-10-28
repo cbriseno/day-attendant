@@ -75,6 +75,23 @@ class ConversationClearTests(unittest.TestCase):
         self.assertEqual(self.stored(),4)
         self.assertEqual(set(continuity),{'messages','openQuestions','scope','authority'})
 
+    def restart(self):
+        board=Connected(Assistant(self.temp.name,clock=lambda:NOW),self.fixture);board.initialize(kind='personal');board.startup()
+        return board
+
+    def test_a_profile_without_a_conversation_starts_clean_once(self):
+        self.say('Stored before the upgrade.','before-upgrade')
+        self.assertEqual([m['key'] for m in self.restart().snapshot()['messages']],['before-upgrade','before-upgrade:assistant'])
+        # A profile from before /clear existed has stored messages and no conversation.
+        with self.app.store.connect() as con:con.execute("DELETE FROM state WHERE key='conversation'")
+        upgraded=self.restart()
+        self.assertEqual(upgraded.snapshot()['messages'],[])
+        self.assertEqual(upgraded.snapshot()['conversation']['clearedAt'],upgraded.app.now())
+        chat=Conversation(upgraded);chat.submit('What do I have?','after-upgrade');chat.run('after-upgrade')
+        self.assertEqual(self.fixture.prompts[-1]['continuity']['messages'],[])
+        self.assertEqual(self.stored(),4)
+        self.assertEqual([m['key'] for m in self.restart().snapshot()['messages']],['after-upgrade','after-upgrade:assistant'])
+
     def test_clear_is_idempotent_and_slash_clear_is_the_same_action(self):
         self.say('First conversation.','one')
         first=self.chat.clear('clear-same')

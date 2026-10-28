@@ -80,7 +80,8 @@ An empty model selects the installed default once and saves the resolved identif
 Codex offers the levels its catalog lists for the model; Claude Code offers low,
 medium, high, xhigh and max. An unset level uses medium on Claude Code; on Codex it
 uses medium when the model offers it, otherwise the model's default level. A model turn
-may take up to 2 minutes at minimal, low or medium, 5 at high, 10 at xhigh and 15 at max.
+may take up to 2 minutes at minimal, low or medium, 5 at high, 10 at xhigh and 15 at max,
+and a contextual review stays valid for the same time unless relevant state changes.
 Starting the service or changing these settings sends no model request; tokens are spent
 only by conversation messages, contextual reviews and the informational guidance after a
 context correction. There is no silent provider/model/account fallback or automatic
