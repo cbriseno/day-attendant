@@ -6,8 +6,8 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from asistentedia import cli
-from asistentedia.service import Assistant
+from day_attendant import cli
+from day_attendant.service import Assistant
 
 
 class HarnessAssistant(Assistant):

@@ -17,9 +17,9 @@ def canonical(row):
 class Taskwarrior:
     def __init__(self, store, binary=None):
         development = Path(__file__).resolve().parent.parent / ".runtime/taskwarrior/bin/task"
-        chosen = binary or os.environ.get("ASISTENTE_TASK_BIN") or shutil.which("task") or (development if development.is_file() else None)
+        chosen = binary or os.environ.get("DAY_ATTENDANT_TASK_BIN") or shutil.which("task") or (development if development.is_file() else None)
         if not chosen:
-            raise AssistantError("task_missing", "Taskwarrior 3.5.0 is required; set ASISTENTE_TASK_BIN.")
+            raise AssistantError("task_missing", "Taskwarrior 3.5.0 is required; set DAY_ATTENDANT_TASK_BIN.")
         self.binary = str(Path(chosen).expanduser().resolve())
         self.home = store.path / "taskwarrior"
         self.home.mkdir(mode=0o700, exist_ok=True)

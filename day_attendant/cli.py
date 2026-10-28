@@ -17,7 +17,7 @@ SPANISH_ERRORS = {
     "ambiguous_time": "Esa hora se repite; aclara si corresponde a fold 0 o 1.",
     "invalid_time": "Usa una fecha ISO 8601 y una zona IANA válida.",
     "unsafe_state_path": "Los datos privados deben quedar fuera del proyecto.",
-    "task_missing": "Falta Taskwarrior 3.5.0; configura ASISTENTE_TASK_BIN.",
+    "task_missing": "Falta Taskwarrior 3.5.0; configura DAY_ATTENDANT_TASK_BIN.",
     "unsupported_task_version": "Esta versión requiere Taskwarrior 3.5.0.",
     "key_required": "La operación requiere una clave de idempotencia.",
     "idempotency_conflict": "Esa clave ya se usó para otro contenido.",
@@ -32,6 +32,9 @@ SPANISH_ERRORS = {
     "past_snooze": "La posposición debe terminar en el futuro.",
     "invalid_arguments": "Argumentos inválidos; consulta --help.",
     "future_observation": "La hora de observación no puede estar en el futuro.",
+    "proposal_required": "Este espacio conectado usa propuestas. Opera desde la UI o con board request/confirm.",
+    "state_required": "Indica --state con el espacio ficticio conectado.",
+    "server_unavailable": "Inicia el servicio web de ese espacio y vuelve a intentar.",
 }
 
 
@@ -46,7 +49,7 @@ def parser():
     common.add_argument("--task-bin")
     common.add_argument("--json", action="store_true")
     common.add_argument("--lang", choices=["es", "en"])
-    root = Parser(prog="asistente", parents=[common])
+    root = Parser(prog="day-attendant", parents=[common])
     groups = root.add_subparsers(dest="group", required=True, parser_class=Parser)
 
     def command(parent, name, mutation=False, focus=False):
@@ -114,6 +117,25 @@ def parser():
     p = command(groups, "schedule")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--every-minutes", type=int, default=10)
+    p = command(groups, "web")
+    p.add_argument("--synthetic", action="store_true", required=True)
+    p.add_argument("--port", type=int, default=0)
+    p.add_argument("--zone", default="America/Edmonton")
+    board = command(groups, "board").add_subparsers(dest="command", required=True, parser_class=Parser)
+    command(board, "list")
+    p = command(board, "request", True)
+    p.add_argument("action")
+    p.add_argument("--payload", required=True)
+    for name in ("cancel", "retry", "confirm"):
+        p = command(board, name)
+        p.add_argument("proposal_id")
+        if name == "confirm":
+            p.add_argument("--generation", type=int, required=True)
+            p.add_argument("--without-review", action="store_true")
+    p = command(board, "undo", True)
+    p.add_argument("fact_id", type=int)
+    p = command(board, "chat", True)
+    p.add_argument("text")
     return root
 
 
@@ -121,7 +143,7 @@ def schedule(app, every):
     if every not in (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60):
         raise AssistantError("invalid_interval", "Use an interval that divides 60 minutes.")
     caps = capabilities()
-    argv = [sys.executable, str(Path(__file__).resolve().parent.parent / "asistente.py"),
+    argv = [sys.executable, str(Path(__file__).resolve().parent.parent / "day-attendant.py"),
             "--state", str(app.store.path), "--task-bin", app.tasks.binary, "notify"]
     if caps["platform"] == "darwin":
         backend = "launchd"
@@ -201,15 +223,48 @@ def human(data, language, group):
 def main(argv=None):
     raw = list(sys.argv[1:] if argv is None else argv)
     wants_json = "--json" in raw
-    language = "en" if "--lang" in raw and raw[raw.index("--lang") + 1:raw.index("--lang") + 2] == ["en"] else "es"
+    language = "es" if "--lang" in raw and raw[raw.index("--lang") + 1:raw.index("--lang") + 2] == ["es"] else "en"
     operation_id = str(uuid.uuid4())
     try:
         args = parser().parse_args(raw)
         wants_json = getattr(args, "json", False)
-        language = getattr(args, "lang", "es")
+        language = getattr(args, "lang", "en")
         operation_id = getattr(args, "key", operation_id)
-        default = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "asistente-dia"
-        app = Assistant(getattr(args, "state", None) or os.environ.get("ASISTENTE_STATE", default),
+        if args.group in ("web", "board"):
+            from .web import client, serve
+            state = getattr(args, "state", None)
+            if not state:
+                raise AssistantError("state_required", "Provide --state with a separate synthetic workspace.")
+            if args.group == "web":
+                serve(state, getattr(args, "task_bin", None), args.port, args.zone)
+                return 0
+            if args.command == "list":
+                data = client(state)
+            elif args.command == "request":
+                try:
+                    payload = json.loads(args.payload)
+                except ValueError as error:
+                    raise AssistantError("invalid_arguments", "--payload requires a JSON object.") from error
+                data = client(state, "/api/proposals", {"action": args.action, "payload": payload,
+                              "key": args.key, "expected_revision": getattr(args,"expect",None)})
+            elif args.command == "chat":
+                data = client(state, "/api/chat", {"text": args.text, "key": args.key})
+            elif args.command == "undo":
+                data = client(state, "/api/undo", {"fact_id": args.fact_id, "key": args.key, "expected_revision": getattr(args,"expect",None)})
+            else:
+                body = {"generation": args.generation, "without_review": args.without_review} if args.command == "confirm" else {}
+                data = client(state, "/api/proposals/" + args.proposal_id + "/" + args.command, body)
+            if wants_json:
+                print(json.dumps({"schema_version":1,"ok":True,"operation_id":operation_id,"data":data,"error":None},ensure_ascii=False))
+            else:
+                print(json.dumps(data,ensure_ascii=False,indent=2))
+            return 0
+        default = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "day-attendant"
+        explicit=getattr(args,'state',None) or os.environ.get('DAY_ATTENDANT_STATE')
+        legacy=Path(os.environ.get('XDG_STATE_HOME',Path.home()/'.local/state'))/'asistente-dia'
+        if not explicit and (os.environ.get('ASISTENTE_STATE') or legacy.exists()):
+            raise AssistantError('state_selection_required','Legacy state exists. Select the intended path explicitly with --state; no data was moved or recreated.')
+        app = Assistant(explicit or default,
                         getattr(args, "task_bin", None))
         data = execute(app, args)
         if wants_json:

@@ -25,7 +25,7 @@ class Store:
         self.lock_path = self.path / "writer.lock"
         with exclusive(self.lock_path), self.connect() as con:
             version = con.execute("PRAGMA user_version").fetchone()[0]
-            if version > 2:
+            if version > 3:
                 raise AssistantError("newer_schema", "The state requires a newer assistant version.")
             if version == 0:
                 con.executescript('''
@@ -77,6 +77,11 @@ class Store:
 
     def lock(self):
         return exclusive(self.lock_path)
+
+    def state_value(self, key, default=None):
+        with self.connect() as con:
+            row = con.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
+            return json.loads(row[0]) if row else default
 
     def revision(self):
         with self.connect() as con:

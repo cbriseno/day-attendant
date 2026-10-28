@@ -17,12 +17,12 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-TASK = os.environ.get('ASISTENTE_TASK_BIN', str(ROOT / '.runtime/taskwarrior/bin/task'))
+TASK = os.environ.get('DAY_ATTENDANT_TASK_BIN', str(ROOT / '.runtime/taskwarrior/bin/task'))
 FIX = ROOT / 'tests/fixtures'
 REPORT = Path(os.environ.get('E2E_REPORT_DIR', '/tmp/asistente-e2e-report'))
 
 
-@unittest.skipUnless(os.environ.get('ASISTENTE_ISOLATED_BUS') == '1', 'Use scripts/test_system.py to isolate D-Bus')
+@unittest.skipUnless(os.environ.get('DAY_ATTENDANT_ISOLATED_BUS') == '1', 'Use scripts/test_system.py to isolate D-Bus')
 class System(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='asistente-system-')
@@ -86,7 +86,7 @@ class System(unittest.TestCase):
         pending.replace(self.clock)
 
     def command(self, args, extra=None, direct=False):
-        argv = [sys.executable, '-B', str(ROOT / 'asistente.py' if direct else FIX / 'cli_worker.py'), '--state', str(self.state), '--task-bin', TASK, '--json', *args]
+        argv = [sys.executable, '-B', str(ROOT / 'day-attendant.py' if direct else FIX / 'cli_worker.py'), '--state', str(self.state), '--task-bin', TASK, '--json', *args]
         return argv, dict(self.env, **(extra or {}))
 
     def runcli(self, *args, code=0, extra=None, direct=False):
@@ -186,7 +186,7 @@ class System(unittest.TestCase):
         self.assertEqual(len(self.messages()), 6)
         self.assertEqual(len({r['body'] for r in self.messages()}), 6)
         for row in self.messages('received'):
-            self.assertEqual((row['app'], row['title']), ('asistente-dia', 'Asistente del día'))
+            self.assertEqual((row['app'], row['title']), ('day-attendant', 'Day Attendant'))
 
     def test_late_claim_cannot_overwrite_uncertain_or_new_owner(self):
         self.add('claim', 'task', '--due', '2026-10-30T15:00Z')

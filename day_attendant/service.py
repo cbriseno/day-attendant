@@ -2,6 +2,7 @@
 from datetime import timedelta
 import hashlib
 import json
+import math
 import uuid
 
 from .errors import AssistantError
@@ -20,6 +21,18 @@ def encoded(value):
 
 def fingerprint(value):
     return hashlib.sha256(encoded(value).encode()).hexdigest()
+
+
+def continuity_values(payload):
+    value={k:payload[k] for k in ('remainingMinutes','awaiting','context','next') if k in payload}
+    remaining=value.get('remainingMinutes')
+    if remaining is not None and (isinstance(remaining,bool) or not isinstance(remaining,(int,float)) or not math.isfinite(remaining) or not 0<=remaining<=100000):
+        raise AssistantError('invalid_estimate','Use nonnegative minutes or leave the estimate empty.')
+    if 'awaiting' in value and not isinstance(value['awaiting'],bool):
+        raise AssistantError('invalid_continuity','Waiting requires an explicit declaration.')
+    if any(not isinstance(value[k],str) or len(value[k])>2000 for k in ('context','next') if k in value):
+        raise AssistantError('invalid_continuity','Context must be short text.')
+    return value
 
 
 class Assistant:
@@ -77,6 +90,8 @@ class Assistant:
             raise AssistantError("key_required", "A nonempty idempotency key of at most 200 characters is required.")
         digest = fingerprint({"action": action, "payload": payload, "expected_revision": expected_revision})
         with self.store.lock():
+            if self.store.state_value("connected", False):
+                raise AssistantError("proposal_required", "This connected workspace requires proposals: use board request/confirm or its UI.")
             with self.store.connect() as con:
                 old = con.execute("SELECT * FROM operations WHERE key=?", (key,)).fetchone()
             if old and old["digest"] != digest:
@@ -132,12 +147,40 @@ class Assistant:
             plan["steps"].append({"uuid": uid, "before": None, "after": row, "create": row})
             plan["effect"] = {"meta_add": [uid, p.get("source", "general"), p.get("person"),
                 p.get("reference"), observed, now, now, p.get("zone"), p.get("estimate_minutes")]}
+            continuation=continuity_values(p)
+            if continuation and not self.store.state_value('synthetic_bootstrap',False):
+                raise AssistantError('proposal_required','Continuity capture requires an initialized connected workspace.')
+            if continuation:plan['effect']['continuity_set']=[uid,continuation,now]
             plan["result"] = {"uuid": uid}
-        elif action in ("task_update", "task_snooze", "task_done"):
+        elif action in ("task_update", "task_snooze", "task_done", "front_activate", "front_todo", "front_retire", "task_restore"):
             row = self.required(p["uuid"])
             changes = {}
-            if action == "task_done":
-                changes = {"status": "completed", "end": wire(now), "start": None, "wait": None}
+            if action == "task_restore":
+                if canonical(row) != p["expected_after"]:
+                    raise AssistantError("undo_conflict", "The responsibility changed after this fact; nothing was overwritten.")
+                changes = p["patch"]
+                if not changes or set(changes) - {"description", "priority", "due", "wait", "start", "status", "end"}:
+                    raise AssistantError("invalid_restore", "The inverse exceeds the fields of that decision.")
+                if changes.get('start',row.get('start')) and changes.get('status',row['status'])=='pending':
+                    by_id={item['uuid']:item for item in self.tasks.rows()}
+                    if any(by_id.get(dep,{}).get('status') in ('pending','recurring') for dep in row.get('depends',[])):
+                        raise AssistantError('not_actionable','The inverse cannot activate a responsibility whose dependencies are now pending.')
+            elif action in ("front_activate", "front_todo", "front_retire"):
+                if row["status"] != "pending":
+                    raise AssistantError("terminal_task", "The responsibility is already closed.")
+                if action == "front_activate":
+                    by_id = {item["uuid"]: item for item in self.tasks.rows()}
+                    if any(by_id.get(dep, {}).get("status") in ("pending", "recurring") for dep in row.get("depends", [])):
+                        raise AssistantError("not_actionable", "The responsibility depends on another pending task.")
+                    changes = {"start": row.get("start") or wire(now), "wait": None}
+                elif action == "front_todo":
+                    changes = {"start": None, "wait": None}
+                else:
+                    changes = {"status": "deleted", "end": wire(now), "start": None, "wait": None}
+            elif action == "task_done":
+                if row['status']=='deleted':
+                    raise AssistantError('terminal_task','Restore a retired responsibility before marking it complete.')
+                changes = {} if row['status']=='completed' else {"status": "completed", "end": wire(now), "start": None, "wait": None}
             elif action == "task_snooze":
                 if row["status"] != "pending":
                     raise AssistantError("terminal_task", "Only pending tasks can be snoozed.")
@@ -162,6 +205,41 @@ class Assistant:
                     raise AssistantError("empty_update", "No change was supplied.")
             patch(row, changes)
             plan["result"] = {"uuid": row["uuid"]}
+        elif action in ("context_update", "continuity_update"):
+            if action == "context_update":
+                current = self.store.state_value("day_context", {"availableMinutes": None, "availableUntil": None, "rest": False})
+                if set(p) - {"availableMinutes", "availableUntil", "rest"}:
+                    raise AssistantError("invalid_context", "Invalid context declaration.")
+                value = dict(current, **p)
+                minutes, until = value["availableMinutes"], value["availableUntil"]
+                availability_supplied=bool({'availableMinutes','availableUntil'} & set(p))
+                if minutes is not None and availability_supplied:
+                    if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or not math.isfinite(minutes) or minutes <= 0 or not until:
+                        raise AssistantError("invalid_context", "Provide positive minutes and the end of the availability window.")
+                    value["availableUntil"] = instant(until)
+                    duration = (parse(value["availableUntil"]) - self.clock()).total_seconds()/60
+                    if duration <= 0 or minutes > duration:
+                        raise AssistantError("invalid_context", "Minutes cannot exceed the future duration of the window.")
+                elif minutes is None:
+                    value["availableUntil"] = None
+                if not isinstance(value["rest"], bool):
+                    raise AssistantError("invalid_context", "Rest requires an explicit declaration.")
+                availability_changed=any(value.get(k)!=current.get(k) for k in ('availableMinutes','availableUntil'))
+                if availability_changed or 'declaredAt' not in value:value['declaredAt']=now
+                if any(value.get(k)!=current.get(k) for k in ('availableMinutes','availableUntil','rest')):
+                    plan["effect"]["context_set"] = value
+            else:
+                uid = self.required(p["uuid"])["uuid"]
+                allowed = {"remainingMinutes", "awaiting", "context", "next"}
+                if set(p) - allowed - {"uuid"}:
+                    raise AssistantError("invalid_continuity", "Invalid declaration.")
+                value = continuity_values(p)
+                with self.store.connect() as con:
+                    existing=con.execute('SELECT data FROM continuity WHERE uuid=?',(uid,)).fetchone()
+                previous=json.loads(existing[0]) if existing else {}
+                if any(previous.get(k)!=v for k,v in value.items()):
+                    plan["effect"]["continuity_set"] = [uid, value, now]
+            plan["result"] = {"declared": True}
         elif action in ("focus_push", "focus_resume"):
             rows = self.tasks.rows()
             by_id = {r["uuid"]: r for r in rows}
@@ -223,6 +301,11 @@ class Assistant:
 
     def _apply(self, key, plan):
         try:
+            if self.store.state_value("connected", False):
+                with self.store.connect() as con:
+                    admitted = con.execute("SELECT 1 FROM decisions WHERE operation_key=? AND proposal_id=?", (key, plan.get("proposal_id"))).fetchone()
+                if not admitted:
+                    raise AssistantError("authorization_missing", "The connected operation has no durable authorization.")
             with self.store.connect() as con:
                 con.execute("UPDATE operations SET status='applying',error=NULL WHERE key=?", (key,))
             if self.store.revision() != plan["revision"]:
@@ -270,6 +353,16 @@ class Assistant:
                 if "config" in effect:
                     name, value = effect["config"]
                     con.execute("UPDATE config SET value=? WHERE key=?", (value, name))
+                if "context_set" in effect:
+                    con.execute("INSERT OR REPLACE INTO state VALUES('day_context',?)", (encoded(effect["context_set"]),))
+                if "continuity_set" in effect:
+                    uid, value, at = effect["continuity_set"]
+                    old = con.execute("SELECT data FROM continuity WHERE uuid=?", (uid,)).fetchone()
+                    merged = dict(json.loads(old[0]) if old else {}, **value, declaredAt=at)
+                    con.execute("INSERT OR REPLACE INTO continuity VALUES(?,?)", (uid, encoded(merged)))
+                if plan.get("proposal_id"):
+                    con.execute("UPDATE proposals SET phase='applied',result=? WHERE id=?", (encoded(result), plan["proposal_id"]))
+                    con.execute("INSERT OR IGNORE INTO facts(operation_key,proposal_id,action,plan,at) VALUES(?,?,?,?,?)", (key, plan["proposal_id"], plan["action"], encoded(plan), self.now()))
                 con.execute("UPDATE state SET value=? WHERE key='revision'", (str(result["revision"]),))
                 con.execute("UPDATE operations SET status='confirmed',result=?,error=NULL WHERE key=?", (encoded(result), key))
                 self.fault("inside_commit")
@@ -300,7 +393,7 @@ class Assistant:
                          "priority": PUBLIC_PRIORITY.get(row.get("priority"), "medium"),
                          "due_at": stamp(parse(row["due"])) if row.get("due") else None,
                          "snoozed_until": stamp(parse(row["wait"])) if row.get("wait") else None,
-                         "focused": uid == focused and status == "pending" and bool(row.get("start")),
+                         "focused": (bool(row.get("start")) if self.store.state_value("connected", False) else uid == focused and bool(row.get("start"))) and status == "pending",
                          "metadata": meta.get(uid, {})})
         return view
 
@@ -440,7 +533,7 @@ class Assistant:
             # A task may still change after this last check. This is a bounded
             # race with external delivery, not an atomic task+popup operation.
             self.fault("before_notify")
-            outcome = self.notifier("Asistente del día", item["title"])
+            outcome = self.notifier("Day Attendant", item["title"])
             self.fault("after_notify")
             status = "uncertain" if outcome.get("uncertain") else "accepted" if outcome.get("accepted") else "pending" if attempt_number < 3 else "failed"
             retry_at = stamp(self.clock() + timedelta(minutes=2 ** attempt_number)) if status == "pending" else None

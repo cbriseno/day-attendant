@@ -60,7 +60,7 @@ def notify(title, body):
                 "display notification (item 2 of argv) with title (item 1 of argv)",
                 "-e", "end run", title, body]
     elif sys.platform.startswith("linux") and shutil.which("notify-send"):
-        argv = ["notify-send", "--app-name=asistente-dia", "--", title, body]
+        argv = ["notify-send", "--app-name=day-attendant", "--", title, body]
     else:
         return {"accepted": False, "error": "No supported local notifier is available."}
     try:

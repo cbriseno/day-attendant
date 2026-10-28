@@ -24,7 +24,7 @@ def main():
     iso = lambda minutes: (now + timedelta(minutes=minutes)).isoformat()
     with tempfile.TemporaryDirectory(prefix="asistente-daily-demo-") as state:
         def run(*argv):
-            result = subprocess.run([sys.executable, "-B", str(ROOT / "asistente.py"),
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "day-attendant.py"),
                                      "--state", state, "--json", *argv], cwd=ROOT,
                                     capture_output=True, text=True, timeout=20)
             data = json.loads(result.stdout)

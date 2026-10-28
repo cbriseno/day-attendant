@@ -9,13 +9,13 @@ import sys
 import tempfile
 import unittest
 
-from asistentedia.errors import AssistantError
-from asistentedia.service import Assistant
-from asistentedia.store import Store
-from asistentedia.timeutil import instant, parse
+from day_attendant.errors import AssistantError
+from day_attendant.service import Assistant
+from day_attendant.store import Store
+from day_attendant.timeutil import instant, parse
 
 ROOT = Path(__file__).resolve().parent.parent
-TASK = os.environ.get("ASISTENTE_TASK_BIN", str(ROOT / ".runtime/taskwarrior/bin/task"))
+TASK = os.environ.get("DAY_ATTENDANT_TASK_BIN", str(ROOT / ".runtime/taskwarrior/bin/task"))
 NOW = datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
 
 
@@ -55,7 +55,7 @@ class TimeTests(unittest.TestCase):
         self.assertFalse((ROOT / "should-not-be-created").exists())
 
 
-@unittest.skipUnless(Path(TASK).is_file(), "Set ASISTENTE_TASK_BIN to a Taskwarrior 3.5.0 binary")
+@unittest.skipUnless(Path(TASK).is_file(), "Set DAY_ATTENDANT_TASK_BIN to a Taskwarrior 3.5.0 binary")
 class Integration(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="asistente-product-test-")
@@ -88,7 +88,7 @@ class Integration(unittest.TestCase):
         code = '''
 import json,os,sys
 from datetime import datetime,timezone
-from asistentedia.service import Assistant
+from day_attendant.service import Assistant
 def fail(point):
     if point==sys.argv[6]:os._exit(75)
 app=Assistant(sys.argv[1],sys.argv[2],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),fault=fail)
@@ -270,7 +270,7 @@ app.mutate(sys.argv[3],json.loads(sys.argv[4]),sys.argv[5],app.store.revision() 
             code = '''
 import sqlite3,sys
 from pathlib import Path
-from asistentedia.platforms import exclusive
+from day_attendant.platforms import exclusive
 with exclusive(Path(sys.argv[1])/'writer.lock',timeout=.5):
  con=sqlite3.connect(Path(sys.argv[1])/'assistant.sqlite3',timeout=.5)
  con.execute('BEGIN IMMEDIATE');con.rollback();con.close()
@@ -285,7 +285,7 @@ with exclusive(Path(sys.argv[1])/'writer.lock',timeout=.5):
         self.add(due="2026-10-28T12:30Z")
         code = '''
 from datetime import datetime,timezone
-from asistentedia.service import Assistant
+from day_attendant.service import Assistant
 import os,sys
 app=Assistant(sys.argv[1],sys.argv[2],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),notifier=lambda *a:{'accepted':True},fault=lambda p:os._exit(75) if p==sys.argv[3] else None)
 app.notify()
@@ -327,7 +327,7 @@ app.notify()
         self.add(due="2026-10-28T12:30Z")
         code = '''
 from datetime import datetime,timezone
-from asistentedia.service import Assistant
+from day_attendant.service import Assistant
 import os,sys
 a=Assistant(sys.argv[1],sys.argv[2],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),fault=lambda p:os._exit(75) if p=='before_notify' else None)
 a.notify()
@@ -388,7 +388,7 @@ a.notify()
         self.add(due="2026-10-28T12:30Z")
         marker = Path(self.temp.name) / "deliveries.txt"
         code = '''
-from asistentedia.service import Assistant
+from day_attendant.service import Assistant
 from datetime import datetime,timezone
 import os,sys,time
 def notify(*args):
@@ -424,7 +424,7 @@ a.notify()
 
     def test_cli_json_any_level_and_schedule_no_install(self):
         def run(*args):
-            call = subprocess.run([sys.executable, "-B", str(ROOT / "asistente.py"), "--state", self.temp.name,
+            call = subprocess.run([sys.executable, "-B", str(ROOT / "day-attendant.py"), "--state", self.temp.name,
                                    "--task-bin", TASK, *args], capture_output=True, text=True, timeout=20)
             self.assertEqual(call.returncode, 0, call.stdout + call.stderr)
             return json.loads(call.stdout)
@@ -438,7 +438,7 @@ a.notify()
 
     def test_concurrent_clients_and_read_only_pulse(self):
         code = '''
-from asistentedia.service import Assistant
+from day_attendant.service import Assistant
 import sys
 a=Assistant(sys.argv[1],sys.argv[2]);a.mutate('task_add',{'title':'[FICTICIO] concurrent'},sys.argv[3])
 '''

@@ -1,0 +1,65 @@
+{
+  "project": "Day Attendant",
+  "scope": "Synthetic Linux pilot, not personal-data migration or production/macOS validation",
+  "validation_date": "2026-10-28",
+  "automated": {
+    "core_integration_and_boundary_checks": 68,
+    "private_DBus_system_checks": 14,
+    "total_distinct_checks": 82,
+    "execution": "67 core checks in final discovery run (14 system cases intentionally skipped there), one added native-effect crash/recovery case passed separately, 14 system cases passed in the isolated D-Bus runner",
+    "reviewer": "Controlled outputs in domain tests, real Taskwarrior and SQLite; not a measure of LLM quality"
+  },
+  "real_model": {
+    "model": "gpt-6.1-sol",
+    "authentication": "Existing ChatGPT account",
+    "semantic_cases_completed": 9,
+    "additional_overbroad_chat_scope_check": "passed",
+    "rubric": [
+      "Grounding in supplied facts",
+      "Uncertainty about unrecorded progress",
+      "Intent scope distinct from consequence acknowledgment",
+      "Useful alternatives and respect for rest"
+    ],
+    "semantic_assessment": "All nine final cases met the observed behavioral contract. Initial known-risk and waiting-front failures were retained separately before fixes."
+  },
+  "browser": {
+    "full_real_traversal": "passed",
+    "current_run_groups": 12,
+    "localization_stale_forms_lost_reply_and_dialog_groups": 7,
+    "responsive_combinations": 24,
+    "physical_devices": "not tested",
+    "mixed_language_cards_after_restart": "Real global CLI Spanish capture, English card preserved, same UUID/content across EN/ES, same pinned model"
+  },
+  "architect": {
+    "round": 18,
+    "verdict": "changes requested",
+    "resolution": "Seven reported defect areas corrected and locally verified; no subsequent architect approval claimed",
+    "round_budget": "The two additional authorized rounds were used; no further message sent"
+  },
+  "evidence_hashes": {
+    "probe-r18-restrictions.json": {
+      "sha256": "e1b1ede9696f1b745f5ccdf14d3dffea781caa402f0199389fe69c2b93f24303"
+    },
+    "semantic-eval-final-english.json": {
+      "sha256": "05d635e87949327f0070431d90f4c2837f804227fcf61c13771f8fe088a92fa8"
+    },
+    "semantic-r18-scope-real.json": {
+      "sha256": "6ba07f2064e0131f4d9c49601f2eb14bc87a5f077ede1c5db81c994a15bd9491"
+    },
+    "connected-browser-final-verified.json": {
+      "sha256": "ba57023fd6bbe63f14fe44fc7a9cb13254be8fe82f9d9682ba1e2490877125b0"
+    },
+    "ui-contract-final.json": {
+      "sha256": "94f122b450993a9e4628ad42b798e77f95a9f065f38b0d0ae07a3b5c9dc3adf7"
+    },
+    "content-language-final.json": {
+      "sha256": "b3e7a5281fb01d3d48f21181b60870f97b08233f0d80b5efb648e9d2af529de0"
+    }
+  },
+  "remaining_limits": [
+    "Dependency editing and visualization are absent from the UI",
+    "Production backup/restore and synchronization are not implemented",
+    "macOS deployment and unattended scheduling are not validated",
+    "Probabilistic model behavior is not a guarantee of perfect risk detection or psychological outcomes"
+  ]
+}

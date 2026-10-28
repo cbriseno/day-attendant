@@ -3,14 +3,17 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "asistente-dia"
-version = "0.1.0"
-description = "A local work assistant operated by coding agents"
+name = "day-attendant"
+version = "0.2.0"
+description = "A local personal assistant for human responsibilities"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
-asistente = "asistentedia.cli:main"
+day-attendant = "day_attendant.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["asistentedia*"]
+include = ["day_attendant*"]
+
+[tool.setuptools.package-data]
+day_attendant = ["ui/*.html", "ui/*.js"]

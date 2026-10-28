@@ -1,9 +1,11 @@
 # Operating this assistant
 
-Use `python3 -B asistente.py --json ...` to read or change assistant state. The CLI
-owns coordination; do not edit SQLite or invoke Taskwarrior directly on its state.
+Use `day-attendant --json --state PATH board ...` for the connected pilot. The
+legacy task/focus commands cannot write connected state. Use explicit workspace
+paths and stable request keys; confirm only the current proposal generation. The local service
+owns state access; do not edit SQLite or invoke Taskwarrior directly on its state.
 Read `README.md` for commands and current limitations. Follow the user's language;
-default to short Mexican Spanish reports with UUID references and one next action.
+default to short English reports with UUID references and one next action.
 
 Extract only facts visible in the user's text or images. Save unambiguous facts
 without a routine confirmation step. Ask about material ambiguity, including an
