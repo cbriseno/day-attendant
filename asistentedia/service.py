@@ -1,0 +1,448 @@
+"""Coordinated task operations, focus, agenda and deterministic reminders."""
+from datetime import timedelta
+import hashlib
+import json
+import uuid
+
+from .errors import AssistantError
+from . import platforms
+from .store import Store, DEFAULTS
+from .taskwarrior import Taskwarrior, canonical
+from .timeutil import instant, parse, stamp, utcnow, wire
+
+PRIORITIES = {"high": "H", "medium": "M", "low": "L"}
+PUBLIC_PRIORITY = {v: k for k, v in PRIORITIES.items()}
+
+
+def encoded(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def fingerprint(value):
+    return hashlib.sha256(encoded(value).encode()).hexdigest()
+
+
+class Assistant:
+    def __init__(self, state, task_bin=None, clock=utcnow, notifier=platforms.notify, fault=None):
+        self.store = Store(state)
+        self.tasks = Taskwarrior(self.store, task_bin)
+        self.clock = clock
+        self.notifier = notifier
+        self.fault = fault or (lambda point: None)
+
+    def now(self):
+        return stamp(self.clock())
+
+    @staticmethod
+    def validate_uuid(uid):
+        try:
+            return str(uuid.UUID(uid))
+        except (ValueError, AttributeError) as error:
+            raise AssistantError("invalid_uuid", "Use a permanent task UUID.") from error
+
+    def required(self, uid):
+        uid = self.validate_uuid(uid)
+        row = self.tasks.get(uid)
+        if row is None:
+            raise AssistantError("task_not_found", "The task does not exist.", {"uuid": uid})
+        return row
+
+    def actionable(self, row, by_id):
+        return (row is not None and row["status"] == "pending"
+                and not (row.get("wait") and parse(row["wait"]) > self.clock())
+                and not any(by_id.get(dep, {}).get("status") in ("pending", "recurring")
+                            for dep in row.get("depends", [])))
+
+    def clean_read(self):
+        pending = self.store.unresolved()
+        if pending:
+            raise AssistantError("recovery_required", "Run recover before reading a coherent state.", {"operations": pending})
+
+    def _recover(self):
+        with self.store.connect() as con:
+            rows = [dict(r) for r in con.execute("SELECT * FROM operations WHERE status IN ('prepared','applying') ORDER BY rowid")]
+        for row in rows:
+            try:
+                self._apply(row["key"], json.loads(row["plan"]))
+            except AssistantError:
+                break
+        return self.store.unresolved()
+
+    def recover(self):
+        with self.store.lock():
+            return {"unresolved": self._recover(), "revision": self.store.revision()}
+
+    def mutate(self, action, payload, key, expected_revision=None):
+        if not key or len(key) > 200:
+            raise AssistantError("key_required", "A nonempty idempotency key of at most 200 characters is required.")
+        digest = fingerprint({"action": action, "payload": payload, "expected_revision": expected_revision})
+        with self.store.lock():
+            with self.store.connect() as con:
+                old = con.execute("SELECT * FROM operations WHERE key=?", (key,)).fetchone()
+            if old and old["digest"] != digest:
+                raise AssistantError("idempotency_conflict", "This key was used for different input.")
+            unresolved = self._recover()
+            if unresolved:
+                raise AssistantError("recovery_required", "An operation needs reconciliation.", {"operations": unresolved})
+            if old:
+                with self.store.connect() as con:
+                    return json.loads(con.execute("SELECT result FROM operations WHERE key=?", (key,)).fetchone()[0])
+            revision = self.store.revision()
+            if expected_revision is not None and expected_revision != revision:
+                raise AssistantError("stale_revision", "The state changed; read it before retrying.", {"revision": revision})
+            if action.startswith("focus_") and expected_revision is None:
+                raise AssistantError("revision_required", "Focus operations require the last observed revision.")
+            plan = self._plan(action, payload, key)
+            plan["revision"] = revision
+            with self.store.connect() as con:
+                con.execute("INSERT INTO operations(key,digest,action,plan,status,created_at) VALUES(?,?,?,?,?,?)",
+                            (key, digest, action, encoded(plan), "prepared", self.now()))
+            self.fault("after_intent")
+            return self._apply(key, plan)
+
+    def _plan(self, action, p, key):
+        now = self.now()
+        plan = {"steps": [], "effect": {}, "result": {}}
+
+        def patch(row, changes):
+            before = canonical(row)
+            after = dict(before)
+            for field, value in changes.items():
+                if value is None:
+                    after.pop(field, None)
+                else:
+                    after[field] = value
+            if after != before:
+                plan["steps"].append({"uuid": row["uuid"], "before": before, "after": after, "patch": changes})
+
+        if action == "task_add":
+            title = p["title"].strip()
+            if not title or len(title) > 500:
+                raise AssistantError("invalid_title", "A task needs a title of 1–500 characters.")
+            if p.get("estimate_minutes") is not None and p["estimate_minutes"] <= 0:
+                raise AssistantError("invalid_estimate", "Estimate must be positive.")
+            uid = str(uuid.uuid4())
+            row = {"uuid": uid, "description": title, "status": "pending", "entry": wire(now),
+                   "priority": PRIORITIES[p.get("priority", "medium")]}
+            if p.get("due"):
+                row["due"] = wire(instant(p["due"], p.get("zone"), p.get("fold")))
+            observed = instant(p["observed_at"], p.get("zone")) if p.get("observed_at") else None
+            if observed and parse(observed) > self.clock():
+                raise AssistantError("future_observation", "Observation time cannot be in the future.")
+            plan["steps"].append({"uuid": uid, "before": None, "after": row, "create": row})
+            plan["effect"] = {"meta_add": [uid, p.get("source", "general"), p.get("person"),
+                p.get("reference"), observed, now, now, p.get("zone"), p.get("estimate_minutes")]}
+            plan["result"] = {"uuid": uid}
+        elif action in ("task_update", "task_snooze", "task_done"):
+            row = self.required(p["uuid"])
+            changes = {}
+            if action == "task_done":
+                changes = {"status": "completed", "end": wire(now), "start": None, "wait": None}
+            elif action == "task_snooze":
+                if row["status"] != "pending":
+                    raise AssistantError("terminal_task", "Only pending tasks can be snoozed.")
+                until = instant(p["until"], p.get("zone"), p.get("fold"))
+                if parse(until) <= self.clock():
+                    raise AssistantError("past_snooze", "Snooze must end in the future.")
+                changes = {"wait": wire(until), "start": None}
+            else:
+                if p.get("title") is not None:
+                    if not p["title"].strip() or len(p["title"]) > 500:
+                        raise AssistantError("invalid_title", "Invalid task title.")
+                    changes["description"] = p["title"].strip()
+                if p.get("priority"):
+                    changes["priority"] = PRIORITIES[p["priority"]]
+                if "due" in p:
+                    changes["due"] = wire(instant(p["due"], p.get("zone"), p.get("fold"))) if p["due"] else None
+                if p.get("progress"):
+                    plan["effect"]["progress"] = [row["uuid"], now]
+                    if row.get("wait") and parse(row["wait"]) <= self.clock():
+                        changes["wait"] = None
+                if not changes and not plan["effect"]:
+                    raise AssistantError("empty_update", "No change was supplied.")
+            patch(row, changes)
+            plan["result"] = {"uuid": row["uuid"]}
+        elif action in ("focus_push", "focus_resume"):
+            rows = self.tasks.rows()
+            by_id = {r["uuid"]: r for r in rows}
+            frames = self.store.frames()
+            current = frames[-1]["target"] if frames else None
+            active = [r["uuid"] for r in rows if r["status"] == "pending" and r.get("start")]
+            if any(uid != current for uid in active):
+                raise AssistantError("external_focus", "Taskwarrior has an active task outside the focus stack.")
+            if action == "focus_push":
+                uid = self.validate_uuid(p["uuid"])
+                target = by_id.get(uid)
+                if not self.actionable(target, by_id):
+                    raise AssistantError("not_actionable", "The target is completed, blocked or snoozed.")
+                if current == uid:
+                    plan["result"] = {"focus": uid, "unchanged": True}
+                    return plan
+                if current and by_id.get(current, {}).get("start"):
+                    patch(by_id[current], {"start": None})
+                patch(target, {"start": wire(now), "wait": None})
+                plan["effect"] = {"frame_push": [key, uid, current]}
+                plan["result"] = {"focus": uid, "paused": current}
+            else:
+                if not frames:
+                    raise AssistantError("empty_focus", "There is no focus frame to resume.")
+                frame = frames[-1]
+                previous = frame["previous"]
+                valid = previous is None or self.actionable(by_id.get(previous), by_id)
+                if not valid and not p.get("skip_invalid"):
+                    raise AssistantError("invalid_frame", "The previous task is unavailable; explicitly skip this frame.", {"previous": previous})
+                if current and by_id.get(current, {}).get("start"):
+                    patch(by_id[current], {"start": None})
+                restored = previous if valid else None
+                if restored:
+                    patch(by_id[restored], {"start": wire(now)})
+                plan["effect"] = {"frame_pop": frame["id"]}
+                plan["result"] = {"focus": restored, "skipped": previous if not valid else None}
+        elif action == "event_add":
+            start = instant(p["start"], p.get("zone"), p.get("fold"))
+            end = instant(p["end"], p.get("zone"), p.get("fold"))
+            if parse(end) <= parse(start) or not p["title"].strip():
+                raise AssistantError("invalid_event", "An event needs a title and an end after its start.")
+            uid = str(uuid.uuid4())
+            plan["effect"] = {"event_add": [uid, p["title"].strip(), start, end, p.get("zone"), p["start"]]}
+            plan["result"] = {"uuid": uid}
+        elif action == "event_cancel":
+            uid = self.validate_uuid(p["uuid"])
+            if not any(e["uuid"] == uid for e in self.store.events()):
+                raise AssistantError("event_not_found", "The event does not exist.")
+            plan["effect"] = {"event_cancel": uid}
+            plan["result"] = {"uuid": uid}
+        elif action == "config_set":
+            if p["name"] not in DEFAULTS or not isinstance(p["value"], int) or not 1 <= p["value"] <= 10080:
+                raise AssistantError("invalid_config", "Unknown setting or value outside 1–10080.")
+            plan["effect"] = {"config": [p["name"], p["value"]]}
+            plan["result"] = p
+        else:
+            raise AssistantError("unknown_action", "Unsupported mutation.")
+        return plan
+
+    def _apply(self, key, plan):
+        try:
+            with self.store.connect() as con:
+                con.execute("UPDATE operations SET status='applying',error=NULL WHERE key=?", (key,))
+            if self.store.revision() != plan["revision"]:
+                raise AssistantError("external_conflict", "The auxiliary revision changed during an incomplete operation.")
+            # Validate every participant before executing any remaining step.
+            # A conflict in a later participant must not cause an earlier one
+            # to acquire another partial effect during recovery.
+            for step in plan["steps"]:
+                current = canonical(self.tasks.get(step["uuid"]))
+                if current not in (step["before"], step["after"]):
+                    raise AssistantError("external_conflict", "A participant changed; no additional step was attempted.", {"uuid": step["uuid"]})
+            for index, step in enumerate(plan["steps"]):
+                current = canonical(self.tasks.get(step["uuid"]))
+                if current == step["after"]:
+                    continue
+                if current != step["before"]:
+                    raise AssistantError("external_conflict", "Taskwarrior changed outside this operation; no overwrite attempted.", {"uuid": step["uuid"]})
+                if "create" in step:
+                    self.tasks.create(step["create"])
+                else:
+                    self.tasks.patch(step["uuid"], step["patch"])
+                self.fault(f"after_task_{index}")
+                if canonical(self.tasks.get(step["uuid"])) != step["after"]:
+                    raise AssistantError("external_conflict", "The observed task differs from the intended effect.", {"uuid": step["uuid"]})
+            self.fault("before_commit")
+            for step in plan["steps"]:
+                if canonical(self.tasks.get(step["uuid"])) != step["after"]:
+                    raise AssistantError("external_conflict", "A task changed before the auxiliary commit.", {"uuid": step["uuid"]})
+            result = dict(plan["result"], revision=plan["revision"] + 1)
+            effect = plan["effect"]
+            with self.store.connect() as con:
+                if "meta_add" in effect:
+                    con.execute("INSERT INTO task_meta VALUES(?,?,?,?,?,?,?,?,?)", effect["meta_add"])
+                if "progress" in effect:
+                    uid, at = effect["progress"]
+                    con.execute("UPDATE task_meta SET human_progress_at=? WHERE uuid=?", (at, uid))
+                if "frame_push" in effect:
+                    con.execute("INSERT INTO frames(operation_key,target,previous) VALUES(?,?,?)", effect["frame_push"])
+                if "frame_pop" in effect:
+                    con.execute("DELETE FROM frames WHERE id=?", (effect["frame_pop"],))
+                if "event_add" in effect:
+                    con.execute("INSERT INTO events(uuid,title,start_at,end_at,origin_zone,original_start) VALUES(?,?,?,?,?,?)", effect["event_add"])
+                if "event_cancel" in effect:
+                    con.execute("UPDATE events SET canceled=1 WHERE uuid=?", (effect["event_cancel"],))
+                if "config" in effect:
+                    name, value = effect["config"]
+                    con.execute("UPDATE config SET value=? WHERE key=?", (value, name))
+                con.execute("UPDATE state SET value=? WHERE key='revision'", (str(result["revision"]),))
+                con.execute("UPDATE operations SET status='confirmed',result=?,error=NULL WHERE key=?", (encoded(result), key))
+                self.fault("inside_commit")
+            self.fault("after_commit")
+            return result
+        except AssistantError as error:
+            status = "conflict" if error.code == "external_conflict" else "applying"
+            with self.store.connect() as con:
+                con.execute("UPDATE operations SET status=?,error=? WHERE key=?", (status, str(error), key))
+            raise
+
+    def _view(self):
+        self.clean_read()
+        rows = self.tasks.rows()
+        by_id = {r["uuid"]: r for r in rows}
+        meta = self.store.metadata()
+        frames = self.store.frames()
+        focused = frames[-1]["target"] if frames else None
+        view = []
+        for row in rows:
+            uid = row["uuid"]
+            status = row["status"]
+            if status == "pending" and row.get("wait") and parse(row["wait"]) > self.clock():
+                status = "waiting"
+            elif status == "pending" and not self.actionable(row, by_id):
+                status = "blocked"
+            view.append({"uuid": uid, "title": row["description"], "status": status,
+                         "priority": PUBLIC_PRIORITY.get(row.get("priority"), "medium"),
+                         "due_at": stamp(parse(row["due"])) if row.get("due") else None,
+                         "snoozed_until": stamp(parse(row["wait"])) if row.get("wait") else None,
+                         "focused": uid == focused and status == "pending" and bool(row.get("start")),
+                         "metadata": meta.get(uid, {})})
+        return view
+
+    def list(self, include_completed=False):
+        with self.store.lock():
+            rows = self._view()
+            return {"revision": self.store.revision(), "tasks": [r for r in rows if include_completed or r["status"] not in ("completed", "deleted")]}
+
+    def _candidates(self, view):
+        now = self.clock()
+        cfg = self.store.config()
+        result = []
+        for task in view:
+            if task["status"] in ("completed", "deleted", "waiting"):
+                continue
+            uid = task["uuid"]
+            def add(kind, episode, title):
+                identity = fingerprint([uid, kind, episode])
+                result.append({"id": identity, "entity": uid, "kind": kind,
+                               "episode": episode, "title": title, "task": task})
+            due = task["due_at"]
+            if due and parse(due) <= now + timedelta(minutes=cfg["due_soon_minutes"]):
+                add("due", due, task["title"])
+            wait = task["snoozed_until"]
+            if wait and parse(wait) <= now:
+                add("snooze_ready", wait, task["title"])
+            info = task["metadata"]
+            progress = info.get("human_progress_at")
+            if progress and parse(progress) <= now - timedelta(days=cfg["stale_days"]):
+                add("stale", progress, task["title"])
+            observed = info.get("observed_at")
+            if info.get("source") == "chat" and observed and parse(observed) <= now - timedelta(minutes=cfg["chat_wait_minutes"]):
+                add("chat_waiting", observed, task["title"])
+        for event in self.store.events():
+            if parse(event["end_at"]) > now and parse(event["start_at"]) <= now + timedelta(minutes=cfg["event_soon_minutes"]):
+                result.append({"id": fingerprint([event["uuid"], "event", event["start_at"]]),
+                               "entity": event["uuid"], "kind": "event", "episode": event["start_at"], "title": event["title"]})
+        return result
+
+    def pulse(self):
+        # This is a pure query: evaluating reminders never consumes suppression.
+        with self.store.lock():
+            return {"revision": self.store.revision(), "notices": self._candidates(self._view())}
+
+    def brief(self):
+        with self.store.lock():
+            view = self._view()
+            available = [t for t in view if t["status"] == "pending"]
+            priority_rank = {"high": 0, "medium": 1, "low": 2}
+            available.sort(key=lambda t: (not t["focused"], priority_rank[t["priority"]], t["due_at"] or "9999", t["uuid"]))
+            next_task = available[0] if available else None
+            events = self.store.events()
+            clashes = []
+            if next_task and next_task["metadata"].get("estimate_minutes"):
+                finish = self.clock() + timedelta(minutes=next_task["metadata"]["estimate_minutes"])
+                clashes = [e for e in events if parse(e["end_at"]) > self.clock() and parse(e["start_at"]) < finish]
+            return {"revision": self.store.revision(), "next": next_task,
+                    "order": "focus, explicit priority, due date, UUID", "conflicts": clashes,
+                    "notices": self._candidates(view)}
+
+    def notify(self, retry_uncertain=False):
+        results = []
+        with self.store.lock():
+            self.clean_read()
+            now = self.now()
+            candidates = self._candidates(self._view())
+            with self.store.connect() as con:
+                for item in candidates:
+                    con.execute("INSERT OR IGNORE INTO notices(id,episode,entity,kind,status) VALUES(?,?,?,?, 'pending')",
+                                (item["id"], item["episode"], item["entity"], item["kind"]))
+                valid = {item["id"] for item in candidates}
+                for row in con.execute("SELECT id FROM notices WHERE status NOT IN ('obsolete','sending')").fetchall():
+                    if row["id"] not in valid:
+                        con.execute("UPDATE notices SET status='obsolete' WHERE id=?", (row["id"],))
+                expired = stamp(self.clock() - timedelta(minutes=2))
+                con.execute("UPDATE attempts SET status='uncertain',error='Process outcome unknown' WHERE status='sending' AND at<=?", (expired,))
+                con.execute("UPDATE notices SET status='uncertain',error='Process outcome unknown' WHERE status='sending' AND claimed_at<=?", (expired,))
+        # Claims and result commits are short transactions; notifier runs outside
+        # both the SQLite transaction and the coordinator lock.
+        for item in candidates:
+            with self.store.lock():
+                self.clean_read()
+                current = {n["id"]: n for n in self._candidates(self._view())}
+                if item["id"] not in current:
+                    continue
+                item = current[item["id"]]
+                with self.store.connect() as con:
+                    row = con.execute("SELECT * FROM notices WHERE id=?", (item["id"],)).fetchone()
+                    if row["status"] in ("sending", "failed") or (row["status"] == "uncertain" and not retry_uncertain):
+                        continue
+                    if row["retry_at"] and parse(row["retry_at"]) > self.clock():
+                        continue
+                    repeat = timedelta(minutes=self.store.config()["repeat_minutes"])
+                    if row["accepted_at"] and parse(row["accepted_at"]) + repeat > self.clock():
+                        continue
+                    attempt_number = row["attempts"] + 1 if row["status"] != "accepted" else 1
+                    if attempt_number > 3:
+                        con.execute("UPDATE notices SET status='failed' WHERE id=?", (item["id"],))
+                        continue
+                    con.execute("UPDATE notices SET status='sending',attempts=?,claimed_at=? WHERE id=?", (attempt_number, self.now(), item["id"]))
+                    attempt = con.execute("INSERT INTO attempts(notice_id,at,status) VALUES(?,?,'sending')", (item["id"], self.now())).lastrowid
+            self.fault("after_claim")
+            with self.store.lock():
+                self.clean_read()
+                current = {n["id"]: n for n in self._candidates(self._view())}
+                if item["id"] not in current:
+                    with self.store.connect() as con:
+                        con.execute("UPDATE attempts SET status='obsolete',error='Condition changed after claim' WHERE id=?", (attempt,))
+                        con.execute("UPDATE notices SET status='obsolete',error='Condition changed after claim' WHERE id=?", (item["id"],))
+                    results.append({"id": item["id"], "status": "obsolete", "read_by_user": "unknown"})
+                    continue
+                item = current[item["id"]]
+            # A task may still change after this last check. This is a bounded
+            # race with external delivery, not an atomic task+popup operation.
+            self.fault("before_notify")
+            outcome = self.notifier("Asistente del día", item["title"])
+            self.fault("after_notify")
+            status = "uncertain" if outcome.get("uncertain") else "accepted" if outcome.get("accepted") else "pending" if attempt_number < 3 else "failed"
+            retry_at = stamp(self.clock() + timedelta(minutes=2 ** attempt_number)) if status == "pending" else None
+            with self.store.lock(), self.store.connect() as con:
+                con.execute("UPDATE attempts SET status=?,error=? WHERE id=?", (status, outcome.get("error"), attempt))
+                con.execute("UPDATE notices SET status=?,error=?,retry_at=?,accepted_at=CASE WHEN ?='accepted' THEN ? ELSE accepted_at END WHERE id=?",
+                            (status, outcome.get("error"), retry_at, status, self.now(), item["id"]))
+            results.append({"id": item["id"], "status": status, "read_by_user": "unknown"})
+        return {"attempts": results}
+
+    def doctor(self):
+        with self.store.lock():
+            caps = platforms.capabilities()
+            with self.store.connect() as con:
+                integrity = con.execute("PRAGMA integrity_check").fetchone()[0]
+                notices = [dict(r) for r in con.execute("SELECT id,status,attempts,error,claimed_at FROM notices WHERE status IN ('sending','uncertain','failed')")]
+            for notice in notices:
+                expired = (notice["status"] == "sending" and notice["claimed_at"]
+                           and parse(notice["claimed_at"]) + timedelta(minutes=2) <= self.clock())
+                notice["claim_expired"] = bool(expired)
+                notice["delivery_state"] = "expired_unknown" if expired else notice["status"]
+                notice["recommended_action"] = ("Run notify to reconcile the expired claim; review before explicit retry."
+                    if expired else "Review before retrying an uncertain delivery." if notice["status"] == "uncertain"
+                    else "Wait for the active delivery." if notice["status"] == "sending"
+                    else "Review the notifier failure; automatic retry limit was reached.")
+            return {"version": self.tasks.version(), "state": str(self.store.path), "integrity": integrity,
+                    "revision": self.store.revision(), "operations": self.store.unresolved(),
+                    "notices_requiring_attention": notices, "capabilities": caps,
+                    "config": self.store.config(), "scheduler_installed_by_this_app": False}

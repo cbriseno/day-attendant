@@ -1,0 +1,65 @@
+{
+  "at": "2026-10-27T23:47:52.197808+00:00",
+  "taskwarrior": "3.5.0",
+  "duration_seconds": 16.969,
+  "tests_run": 13,
+  "failures": 0,
+  "errors": 0,
+  "cases": [
+    {
+      "case": "test_coherent_quiescent_backup_restore",
+      "status": "pass"
+    },
+    {
+      "case": "test_concurrent_creation_and_readers",
+      "status": "pass"
+    },
+    {
+      "case": "test_concurrent_distinct_field_updates",
+      "status": "pass"
+    },
+    {
+      "case": "test_concurrent_same_creation_is_idempotent",
+      "status": "pass"
+    },
+    {
+      "case": "test_creation_crash_boundaries",
+      "status": "pass"
+    },
+    {
+      "case": "test_dependencies",
+      "status": "pass"
+    },
+    {
+      "case": "test_expired_wait_is_actionable",
+      "status": "pass"
+    },
+    {
+      "case": "test_focus_crash_boundaries",
+      "status": "pass"
+    },
+    {
+      "case": "test_json_identity_survives_edit_completion",
+      "status": "pass"
+    },
+    {
+      "case": "test_nested_focus_and_completed_paused_task",
+      "status": "pass"
+    },
+    {
+      "case": "test_repeated_creation_preserves_later_edits",
+      "status": "pass"
+    },
+    {
+      "case": "test_resume_crash_boundaries",
+      "status": "pass"
+    },
+    {
+      "case": "test_wait_and_explicit_dst_instants",
+      "status": "pass"
+    }
+  ],
+  "subtest_failures": [],
+  "errors_detail": [],
+  "failure_detail": []
+}

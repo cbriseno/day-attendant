@@ -1,0 +1,368 @@
+{
+  "fictitious": true,
+  "scheduler_installed": false,
+  "steps": [
+    {
+      "command": [
+        "task",
+        "add",
+        "[FICTICIO] revisar PR",
+        "--priority",
+        "high",
+        "--due",
+        "2026-10-28T01:02:24+00:00",
+        "--source",
+        "pr",
+        "--key",
+        "demo-capture-a"
+      ],
+      "data": {
+        "uuid": "2eb2d316-1288-4dcd-8164-9e0c16062c66",
+        "revision": 1
+      }
+    },
+    {
+      "command": [
+        "task",
+        "add",
+        "[FICTICIO] investigar ticket",
+        "--priority",
+        "medium",
+        "--estimate-minutes",
+        "60",
+        "--key",
+        "demo-capture-b"
+      ],
+      "data": {
+        "uuid": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+        "revision": 2
+      }
+    },
+    {
+      "command": [
+        "task",
+        "snooze",
+        "2eb2d316-1288-4dcd-8164-9e0c16062c66",
+        "2026-10-28T00:47:24+00:00",
+        "--key",
+        "demo-snooze"
+      ],
+      "data": {
+        "uuid": "2eb2d316-1288-4dcd-8164-9e0c16062c66",
+        "revision": 3
+      }
+    },
+    {
+      "command": [
+        "brief"
+      ],
+      "data": {
+        "revision": 3,
+        "next": {
+          "uuid": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+          "title": "[FICTICIO] investigar ticket",
+          "status": "pending",
+          "priority": "medium",
+          "due_at": null,
+          "snoozed_until": null,
+          "focused": false,
+          "metadata": {
+            "uuid": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+            "source": "general",
+            "person": null,
+            "reference": null,
+            "observed_at": null,
+            "captured_at": "2026-10-28T00:32:24Z",
+            "human_progress_at": "2026-10-28T00:32:24Z",
+            "origin_zone": null,
+            "estimate_minutes": 60
+          }
+        },
+        "order": "focus, explicit priority, due date, UUID",
+        "conflicts": [],
+        "notices": []
+      }
+    },
+    {
+      "command": [
+        "focus",
+        "push",
+        "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+        "--expect",
+        "3",
+        "--key",
+        "demo-focus-b"
+      ],
+      "data": {
+        "focus": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+        "paused": null,
+        "revision": 4
+      }
+    },
+    {
+      "command": [
+        "task",
+        "add",
+        "[FICTICIO] resolver incidencia",
+        "--priority",
+        "high",
+        "--key",
+        "demo-capture-c"
+      ],
+      "data": {
+        "uuid": "4b53791b-2106-41ae-99c2-9c3ca3cdbb94",
+        "revision": 5
+      }
+    },
+    {
+      "command": [
+        "focus",
+        "push",
+        "4b53791b-2106-41ae-99c2-9c3ca3cdbb94",
+        "--expect",
+        "5",
+        "--key",
+        "demo-focus-c"
+      ],
+      "data": {
+        "focus": "4b53791b-2106-41ae-99c2-9c3ca3cdbb94",
+        "paused": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+        "revision": 6
+      }
+    },
+    {
+      "command": [
+        "task",
+        "done",
+        "4b53791b-2106-41ae-99c2-9c3ca3cdbb94",
+        "--key",
+        "demo-complete-c"
+      ],
+      "data": {
+        "uuid": "4b53791b-2106-41ae-99c2-9c3ca3cdbb94",
+        "revision": 7
+      }
+    },
+    {
+      "command": [
+        "brief"
+      ],
+      "data": {
+        "revision": 7,
+        "next": {
+          "uuid": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+          "title": "[FICTICIO] investigar ticket",
+          "status": "pending",
+          "priority": "medium",
+          "due_at": null,
+          "snoozed_until": null,
+          "focused": false,
+          "metadata": {
+            "uuid": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+            "source": "general",
+            "person": null,
+            "reference": null,
+            "observed_at": null,
+            "captured_at": "2026-10-28T00:32:24Z",
+            "human_progress_at": "2026-10-28T00:32:24Z",
+            "origin_zone": null,
+            "estimate_minutes": 60
+          }
+        },
+        "order": "focus, explicit priority, due date, UUID",
+        "conflicts": [],
+        "notices": []
+      }
+    },
+    {
+      "command": [
+        "focus",
+        "resume",
+        "--expect",
+        "7",
+        "--key",
+        "demo-resume-b"
+      ],
+      "data": {
+        "focus": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+        "skipped": null,
+        "revision": 8
+      }
+    },
+    {
+      "command": [
+        "event",
+        "add",
+        "[FICTICIO] junta de ejemplo",
+        "--start",
+        "2026-10-28T00:37:24+00:00",
+        "--end",
+        "2026-10-28T01:07:24+00:00",
+        "--key",
+        "demo-event"
+      ],
+      "data": {
+        "uuid": "f0b70083-f9f2-4445-9de9-1b1fea87d5fb",
+        "revision": 9
+      }
+    },
+    {
+      "command": [
+        "brief"
+      ],
+      "data": {
+        "revision": 9,
+        "next": {
+          "uuid": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+          "title": "[FICTICIO] investigar ticket",
+          "status": "pending",
+          "priority": "medium",
+          "due_at": null,
+          "snoozed_until": null,
+          "focused": true,
+          "metadata": {
+            "uuid": "f35bd7b2-900f-4a51-b5a3-b5f00b12353d",
+            "source": "general",
+            "person": null,
+            "reference": null,
+            "observed_at": null,
+            "captured_at": "2026-10-28T00:32:24Z",
+            "human_progress_at": "2026-10-28T00:32:24Z",
+            "origin_zone": null,
+            "estimate_minutes": 60
+          }
+        },
+        "order": "focus, explicit priority, due date, UUID",
+        "conflicts": [
+          {
+            "uuid": "f0b70083-f9f2-4445-9de9-1b1fea87d5fb",
+            "title": "[FICTICIO] junta de ejemplo",
+            "start_at": "2026-10-28T00:37:24Z",
+            "end_at": "2026-10-28T01:07:24Z",
+            "origin_zone": null,
+            "original_start": "2026-10-28T00:37:24+00:00",
+            "canceled": 0
+          }
+        ],
+        "notices": [
+          {
+            "id": "aa0e9acdf1d375b75da2608d63c218ecde83bb2e7ac88a872dca128a00e850e2",
+            "entity": "f0b70083-f9f2-4445-9de9-1b1fea87d5fb",
+            "kind": "event",
+            "episode": "2026-10-28T00:37:24Z",
+            "title": "[FICTICIO] junta de ejemplo"
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "pulse"
+      ],
+      "data": {
+        "revision": 9,
+        "notices": [
+          {
+            "id": "aa0e9acdf1d375b75da2608d63c218ecde83bb2e7ac88a872dca128a00e850e2",
+            "entity": "f0b70083-f9f2-4445-9de9-1b1fea87d5fb",
+            "kind": "event",
+            "episode": "2026-10-28T00:37:24Z",
+            "title": "[FICTICIO] junta de ejemplo"
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "pulse"
+      ],
+      "data": {
+        "revision": 9,
+        "notices": [
+          {
+            "id": "aa0e9acdf1d375b75da2608d63c218ecde83bb2e7ac88a872dca128a00e850e2",
+            "entity": "f0b70083-f9f2-4445-9de9-1b1fea87d5fb",
+            "kind": "event",
+            "episode": "2026-10-28T00:37:24Z",
+            "title": "[FICTICIO] junta de ejemplo"
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "notify"
+      ],
+      "data": {
+        "attempts": [
+          {
+            "id": "aa0e9acdf1d375b75da2608d63c218ecde83bb2e7ac88a872dca128a00e850e2",
+            "status": "accepted",
+            "read_by_user": "unknown"
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "notify"
+      ],
+      "data": {
+        "attempts": []
+      }
+    },
+    {
+      "command": [
+        "schedule",
+        "--dry-run"
+      ],
+      "data": {
+        "dry_run": true,
+        "installed": false,
+        "backend": "cron",
+        "argv": [
+          "/usr/bin/python3",
+          "/home/bri/projects/asistente-dia/asistente.py",
+          "--state",
+          "/tmp/asistente-daily-demo-2ut4ukia",
+          "--task-bin",
+          "/home/bri/projects/asistente-dia/.runtime/taskwarrior/bin/task",
+          "notify"
+        ],
+        "interval_minutes": 10,
+        "cron_example": "*/10 * * * * /usr/bin/python3 /home/bri/projects/asistente-dia/asistente.py --state /tmp/asistente-daily-demo-2ut4ukia --task-bin /home/bri/projects/asistente-dia/.runtime/taskwarrior/bin/task notify",
+        "note": "Choose working hours before installing any job. This command changes no scheduler."
+      }
+    },
+    {
+      "command": [
+        "doctor"
+      ],
+      "data": {
+        "version": "3.5.0",
+        "state": "/tmp/asistente-daily-demo-2ut4ukia",
+        "integrity": "ok",
+        "revision": 9,
+        "operations": [],
+        "notices_requiring_attention": [],
+        "capabilities": {
+          "notify-send": "/usr/bin/notify-send",
+          "osascript": null,
+          "systemctl": "/usr/bin/systemctl",
+          "crontab": "/usr/bin/crontab",
+          "launchctl": null,
+          "platform": "linux",
+          "user_systemd": false
+        },
+        "config": {
+          "repeat_minutes": 30,
+          "stale_days": 3,
+          "due_soon_minutes": 60,
+          "event_soon_minutes": 15,
+          "chat_wait_minutes": 60
+        },
+        "scheduler_installed_by_this_app": false
+      }
+    }
+  ]
+}

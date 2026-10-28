@@ -1,0 +1,23 @@
+{
+  "notify-send": {
+    "path": "/usr/bin/notify-send",
+    "returncode": 0,
+    "stderr": "",
+    "meaning": "Accepted by notifier if code 0; human viewing is not verified"
+  },
+  "systemctl": {
+    "path": "/usr/bin/systemctl",
+    "returncode": 1,
+    "state": "offline",
+    "stderr": ""
+  },
+  "crontab": {
+    "path": "/usr/bin/crontab"
+  },
+  "dbus-send": {
+    "path": "/usr/bin/dbus-send"
+  },
+  "gdbus": {
+    "path": "/usr/bin/gdbus"
+  }
+}

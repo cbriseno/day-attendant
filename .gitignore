@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.runtime/
+.venv/
+.lavish/
+arquitecto/
+.env
+.env.*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.log
+dist/
+build/
+*.egg-info/

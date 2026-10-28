@@ -1,0 +1,12 @@
+{
+  "source_tag": "v3.5.0",
+  "source_commit": "3419d5ba1e6a780fbbb0a8d68d8fd31e675c1bf8",
+  "binary_version": "3.5.0",
+  "binary_origin": "conda-forge/linux-64/taskwarrior-3.5.0-hef4216c_1.conda",
+  "source_build_executed": false,
+  "cargo_lock_package_entries": 348,
+  "note": "Cargo.lock contains platform-specific/build entries too; 348 is not the number compiled on macOS.",
+  "task_binary_sha256": "01487ada39b4aa20e6aac9a54e91925fe72f23fb50eca910df293e76acb9744b",
+  "micromamba_archive_sha256": "9a97976244929bbae28fb1fae504e74a3e7e6d1932870e3a03321f01b7fbd07b",
+  "probe_sha256": "ea0d40576abdfb98e496a31604f1a25ae43f613ff342485748edf8bf11073db8"
+}

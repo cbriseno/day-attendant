@@ -1,0 +1,304 @@
+{
+    "actions": {
+        "FETCH": [
+            {
+                "build": "he0feb66_7",
+                "build_number": 7,
+                "build_string": "he0feb66_7",
+                "channel": "conda-forge",
+                "constrains": [],
+                "depends": [
+                    "__glibc >=2.17,<3.0.a0"
+                ],
+                "fn": "libgomp-16.2.0-he0feb66_7.conda",
+                "license": "GPL-3.0-only WITH GCC-exception-3.1",
+                "md5": "d904c7ddd95e026254b4b80808ee9e12",
+                "name": "libgomp",
+                "sha256": "92a0bb350c7be6a4eedcb4e111c60aefd176018e6b1c009a6e025dbe9bbcd758",
+                "size": 640566,
+                "subdir": "linux-64",
+                "timestamp": 1790303046,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_7.conda",
+                "version": "16.2.0"
+            },
+            {
+                "build": "20_gnu",
+                "build_number": 20,
+                "build_string": "20_gnu",
+                "channel": "conda-forge",
+                "constrains": [
+                    "openmp_impl <0.0a0"
+                ],
+                "depends": [
+                    "__glibc >=2.17,<3.0.a0",
+                    "libgomp >=7.5.0"
+                ],
+                "fn": "_openmp_mutex-4.5-20_gnu.conda",
+                "license": "BSD-3-Clause",
+                "md5": "a9f577daf3de00bca7c3c76c0ecbd1de",
+                "name": "_openmp_mutex",
+                "sha256": "1dd3fffd892081df9726d7eb7e0dea6198962ba775bd88842135a4ddb4deb3c9",
+                "size": 28948,
+                "subdir": "linux-64",
+                "timestamp": 1770939786,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda",
+                "version": "4.5"
+            },
+            {
+                "build": "ha9f2e26_7",
+                "build_number": 7,
+                "build_string": "ha9f2e26_7",
+                "channel": "conda-forge",
+                "constrains": [
+                    "libgcc-ng ==16.2.0 *_7",
+                    "libgomp 16.2.0 he0feb66_7"
+                ],
+                "depends": [
+                    "__glibc >=2.17,<3.0.a0",
+                    "_openmp_mutex >=4.5"
+                ],
+                "fn": "libgcc-16.2.0-ha9f2e26_7.conda",
+                "license": "GPL-3.0-only WITH GCC-exception-3.1",
+                "md5": "735629b400b70eeab21a2ba8f5b1c2ce",
+                "name": "libgcc",
+                "sha256": "e031634c3a928f9594eba868bc46ef5230d6571a364a0c63215b06c4563bfcea",
+                "size": 1058444,
+                "subdir": "linux-64",
+                "timestamp": 1790303109,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_7.conda",
+                "version": "16.2.0"
+            },
+            {
+                "build": "hcfc3c73_0",
+                "build_number": 0,
+                "build_string": "hcfc3c73_0",
+                "channel": "conda-forge",
+                "constrains": [],
+                "depends": [
+                    "libgcc >=15",
+                    "__glibc >=2.17,<3.0.a0"
+                ],
+                "fn": "libuuid-2.42.4-hcfc3c73_0.conda",
+                "license": "BSD-3-Clause",
+                "md5": "54a948337e66706380ff24d6b5fde63f",
+                "name": "libuuid",
+                "sha256": "f34b8d1de9a2bf62476d8608057d9b8a918d97444236dc53a47128f2fae79041",
+                "size": 34442,
+                "subdir": "linux-64",
+                "timestamp": 1790121449,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42.4-hcfc3c73_0.conda",
+                "version": "2.42.4"
+            },
+            {
+                "build": "h934c35e_7",
+                "build_number": 7,
+                "build_string": "h934c35e_7",
+                "channel": "conda-forge",
+                "constrains": [
+                    "libstdcxx-ng ==16.2.0 *_7"
+                ],
+                "depends": [
+                    "__glibc >=2.17,<3.0.a0",
+                    "libgcc 16.2.0 ha9f2e26_7"
+                ],
+                "fn": "libstdcxx-16.2.0-h934c35e_7.conda",
+                "license": "GPL-3.0-only WITH GCC-exception-3.1",
+                "md5": "9b6707e0caca917fa6ea9ee473f37a5d",
+                "name": "libstdcxx",
+                "sha256": "fa7018298629fc429971fffd6ecba3d27a7b02e4e890d6a93ea01ffebe8cb745",
+                "size": 6615436,
+                "subdir": "linux-64",
+                "timestamp": 1790303132,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.2.0-h934c35e_7.conda",
+                "version": "16.2.0"
+            },
+            {
+                "build": "hef4216c_1",
+                "build_number": 1,
+                "build_string": "hef4216c_1",
+                "channel": "conda-forge",
+                "constrains": [
+                    "__glibc >=2.17"
+                ],
+                "depends": [
+                    "libstdcxx >=15",
+                    "libgcc >=15",
+                    "__glibc >=2.17,<3.0.a0",
+                    "libuuid >=2.42.2,<3.0a0"
+                ],
+                "fn": "taskwarrior-3.5.0-hef4216c_1.conda",
+                "license": "MIT",
+                "md5": "1ecbef16179ce1ceee83fb301600692a",
+                "name": "taskwarrior",
+                "sha256": "2972bf6dbecd7b5d10231a335488a7bd98387f545b9ad2e20cacf69e434e1d87",
+                "size": 7960784,
+                "subdir": "linux-64",
+                "timestamp": 1787015726,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/taskwarrior-3.5.0-hef4216c_1.conda",
+                "version": "3.5.0"
+            }
+        ],
+        "LINK": [
+            {
+                "build": "he0feb66_7",
+                "build_number": 7,
+                "build_string": "he0feb66_7",
+                "channel": "https://conda.anaconda.org/conda-forge/linux-64",
+                "constrains": [],
+                "depends": [
+                    "__glibc >=2.17,<3.0.a0"
+                ],
+                "fn": "libgomp-16.2.0-he0feb66_7.conda",
+                "license": "GPL-3.0-only WITH GCC-exception-3.1",
+                "md5": "d904c7ddd95e026254b4b80808ee9e12",
+                "name": "libgomp",
+                "sha256": "92a0bb350c7be6a4eedcb4e111c60aefd176018e6b1c009a6e025dbe9bbcd758",
+                "size": 640566,
+                "subdir": "linux-64",
+                "timestamp": 1790303046,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_7.conda",
+                "version": "16.2.0"
+            },
+            {
+                "build": "20_gnu",
+                "build_number": 20,
+                "build_string": "20_gnu",
+                "channel": "https://conda.anaconda.org/conda-forge/linux-64",
+                "constrains": [
+                    "openmp_impl <0.0a0"
+                ],
+                "depends": [
+                    "__glibc >=2.17,<3.0.a0",
+                    "libgomp >=7.5.0"
+                ],
+                "fn": "_openmp_mutex-4.5-20_gnu.conda",
+                "license": "BSD-3-Clause",
+                "md5": "a9f577daf3de00bca7c3c76c0ecbd1de",
+                "name": "_openmp_mutex",
+                "sha256": "1dd3fffd892081df9726d7eb7e0dea6198962ba775bd88842135a4ddb4deb3c9",
+                "size": 28948,
+                "subdir": "linux-64",
+                "timestamp": 1770939786,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda",
+                "version": "4.5"
+            },
+            {
+                "build": "ha9f2e26_7",
+                "build_number": 7,
+                "build_string": "ha9f2e26_7",
+                "channel": "https://conda.anaconda.org/conda-forge/linux-64",
+                "constrains": [
+                    "libgcc-ng ==16.2.0 *_7",
+                    "libgomp 16.2.0 he0feb66_7"
+                ],
+                "depends": [
+                    "__glibc >=2.17,<3.0.a0",
+                    "_openmp_mutex >=4.5"
+                ],
+                "fn": "libgcc-16.2.0-ha9f2e26_7.conda",
+                "license": "GPL-3.0-only WITH GCC-exception-3.1",
+                "md5": "735629b400b70eeab21a2ba8f5b1c2ce",
+                "name": "libgcc",
+                "sha256": "e031634c3a928f9594eba868bc46ef5230d6571a364a0c63215b06c4563bfcea",
+                "size": 1058444,
+                "subdir": "linux-64",
+                "timestamp": 1790303109,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_7.conda",
+                "version": "16.2.0"
+            },
+            {
+                "build": "hcfc3c73_0",
+                "build_number": 0,
+                "build_string": "hcfc3c73_0",
+                "channel": "https://conda.anaconda.org/conda-forge/linux-64",
+                "constrains": [],
+                "depends": [
+                    "libgcc >=15",
+                    "__glibc >=2.17,<3.0.a0"
+                ],
+                "fn": "libuuid-2.42.4-hcfc3c73_0.conda",
+                "license": "BSD-3-Clause",
+                "md5": "54a948337e66706380ff24d6b5fde63f",
+                "name": "libuuid",
+                "sha256": "f34b8d1de9a2bf62476d8608057d9b8a918d97444236dc53a47128f2fae79041",
+                "size": 34442,
+                "subdir": "linux-64",
+                "timestamp": 1790121449,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42.4-hcfc3c73_0.conda",
+                "version": "2.42.4"
+            },
+            {
+                "build": "h934c35e_7",
+                "build_number": 7,
+                "build_string": "h934c35e_7",
+                "channel": "https://conda.anaconda.org/conda-forge/linux-64",
+                "constrains": [
+                    "libstdcxx-ng ==16.2.0 *_7"
+                ],
+                "depends": [
+                    "__glibc >=2.17,<3.0.a0",
+                    "libgcc 16.2.0 ha9f2e26_7"
+                ],
+                "fn": "libstdcxx-16.2.0-h934c35e_7.conda",
+                "license": "GPL-3.0-only WITH GCC-exception-3.1",
+                "md5": "9b6707e0caca917fa6ea9ee473f37a5d",
+                "name": "libstdcxx",
+                "sha256": "fa7018298629fc429971fffd6ecba3d27a7b02e4e890d6a93ea01ffebe8cb745",
+                "size": 6615436,
+                "subdir": "linux-64",
+                "timestamp": 1790303132,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.2.0-h934c35e_7.conda",
+                "version": "16.2.0"
+            },
+            {
+                "build": "hef4216c_1",
+                "build_number": 1,
+                "build_string": "hef4216c_1",
+                "channel": "https://conda.anaconda.org/conda-forge/linux-64",
+                "constrains": [
+                    "__glibc >=2.17"
+                ],
+                "depends": [
+                    "libstdcxx >=15",
+                    "libgcc >=15",
+                    "__glibc >=2.17,<3.0.a0",
+                    "libuuid >=2.42.2,<3.0a0"
+                ],
+                "fn": "taskwarrior-3.5.0-hef4216c_1.conda",
+                "license": "MIT",
+                "md5": "1ecbef16179ce1ceee83fb301600692a",
+                "name": "taskwarrior",
+                "sha256": "2972bf6dbecd7b5d10231a335488a7bd98387f545b9ad2e20cacf69e434e1d87",
+                "size": 7960784,
+                "subdir": "linux-64",
+                "timestamp": 1787015726,
+                "track_features": "",
+                "url": "https://conda.anaconda.org/conda-forge/linux-64/taskwarrior-3.5.0-hef4216c_1.conda",
+                "version": "3.5.0"
+            }
+        ],
+        "PREFIX": "/tmp/asistente-taskwarrior-env/runtime"
+    },
+    "dry_run": false,
+    "log_history": [
+        {
+            "level": "warning",
+            "location": "/home/conda/feedstock_root/build_artifacts/micromamba_1793024567739/work/mamba/libmamba/src/core/transaction.cpp:1189:13 bool mamba::MTransaction::prompt(const mamba::Context&, mamba::ChannelContext&)",
+            "message": "Security Warning: This transaction includes executing package scripts (pre/post-link/unlink) if present. These scripts can contain arbitrary code. Please ensure you trust the package sources.",
+            "source": "libmamba"
+        }
+    ],
+    "prefix": "/tmp/asistente-taskwarrior-env/runtime",
+    "success": true
+}

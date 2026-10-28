@@ -1,0 +1,64 @@
+{
+  "at": "2026-10-27T23:46:53.431179+00:00",
+  "taskwarrior": "3.5.0",
+  "duration_seconds": 7.668,
+  "tests_run": 11,
+  "failures": 1,
+  "errors": 0,
+  "cases": [
+    {
+      "case": "test_coherent_quiescent_backup_restore",
+      "status": "pass"
+    },
+    {
+      "case": "test_concurrent_creation_and_readers",
+      "status": "pass"
+    },
+    {
+      "case": "test_concurrent_distinct_field_updates",
+      "status": "pass"
+    },
+    {
+      "case": "test_creation_crash_boundaries",
+      "status": "pass"
+    },
+    {
+      "case": "test_dependencies",
+      "status": "pass"
+    },
+    {
+      "case": "test_focus_crash_boundaries",
+      "status": "pass"
+    },
+    {
+      "case": "test_json_identity_survives_edit_completion",
+      "status": "pass"
+    },
+    {
+      "case": "test_nested_focus_and_completed_paused_task",
+      "status": "pass"
+    },
+    {
+      "case": "test_repeated_creation_preserves_later_edits",
+      "status": "pass"
+    },
+    {
+      "case": "test_resume_crash_boundaries",
+      "status": "pass"
+    },
+    {
+      "case": "test_wait_and_explicit_dst_instants",
+      "status": "fail"
+    }
+  ],
+  "subtest_failures": [
+    "test_wait_and_explicit_dst_instants (__main__.Feasibility.test_wait_and_explicit_dst_instants)"
+  ],
+  "errors_detail": [],
+  "failure_detail": [
+    [
+      "test_wait_and_explicit_dst_instants (__main__.Feasibility.test_wait_and_explicit_dst_instants)",
+      "Traceback (most recent call last):\n  File \"/home/bri/projects/asistente-dia/pruebas/viabilidad-taskwarrior/probe.py\", line 205, in test_wait_and_explicit_dst_instants\n    self.assertEqual(row['status'], 'waiting')\nAssertionError: 'pending' != 'waiting'\n- pending\n+ waiting\n\n"
+    ]
+  ]
+}

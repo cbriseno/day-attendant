@@ -1,0 +1,233 @@
+"""Human-readable Spanish/English output and a stable JSON contract for agents."""
+import argparse
+import json
+import os
+from pathlib import Path
+import shlex
+import sys
+import uuid
+
+from .errors import AssistantError
+from .platforms import capabilities
+from .service import Assistant, PRIORITIES
+
+SPANISH_ERRORS = {
+    "timezone_required": "Incluye un desplazamiento UTC o una zona IANA.",
+    "nonexistent_time": "Esa hora local no existe por el cambio de horario.",
+    "ambiguous_time": "Esa hora se repite; aclara si corresponde a fold 0 o 1.",
+    "invalid_time": "Usa una fecha ISO 8601 y una zona IANA válida.",
+    "unsafe_state_path": "Los datos privados deben quedar fuera del proyecto.",
+    "task_missing": "Falta Taskwarrior 3.5.0; configura ASISTENTE_TASK_BIN.",
+    "unsupported_task_version": "Esta versión requiere Taskwarrior 3.5.0.",
+    "key_required": "La operación requiere una clave de idempotencia.",
+    "idempotency_conflict": "Esa clave ya se usó para otro contenido.",
+    "recovery_required": "Ejecuta recover; hay una operación pendiente de reconciliar.",
+    "external_conflict": "Se detectó un cambio externo; no se sobrescribieron los datos.",
+    "stale_revision": "El estado cambió; consúltalo antes de reintentar.",
+    "revision_required": "Indica la última revisión observada con --expect.",
+    "invalid_frame": "La tarea anterior no está disponible; revisa el motivo antes de omitir el marco.",
+    "not_actionable": "La tarea está cerrada, bloqueada o pospuesta.",
+    "empty_focus": "No hay un marco de foco para retomar.",
+    "task_uncertain": "Taskwarrior agotó el tiempo; ejecuta recover antes de reintentar.",
+    "past_snooze": "La posposición debe terminar en el futuro.",
+    "invalid_arguments": "Argumentos inválidos; consulta --help.",
+    "future_observation": "La hora de observación no puede estar en el futuro.",
+}
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise AssistantError("invalid_arguments", message)
+
+
+def parser():
+    common = Parser(add_help=False, argument_default=argparse.SUPPRESS)
+    common.add_argument("--state")
+    common.add_argument("--task-bin")
+    common.add_argument("--json", action="store_true")
+    common.add_argument("--lang", choices=["es", "en"])
+    root = Parser(prog="asistente", parents=[common])
+    groups = root.add_subparsers(dest="group", required=True, parser_class=Parser)
+
+    def command(parent, name, mutation=False, focus=False):
+        p = parent.add_parser(name, parents=[common])
+        if mutation:
+            p.add_argument("--key", required=True)
+            p.add_argument("--expect", type=int, required=focus)
+        return p
+
+    def temporal(p):
+        p.add_argument("--zone")
+        p.add_argument("--fold", type=int, choices=[0, 1])
+
+    task = command(groups, "task").add_subparsers(dest="command", required=True, parser_class=Parser)
+    p = command(task, "add", True)
+    p.add_argument("title")
+    p.add_argument("--priority", choices=PRIORITIES, default="medium")
+    p.add_argument("--due")
+    p.add_argument("--source", default="general", choices=["general", "ticket", "pr", "chat", "email", "call", "research"])
+    p.add_argument("--person")
+    p.add_argument("--reference")
+    p.add_argument("--observed-at")
+    p.add_argument("--estimate-minutes", type=int)
+    temporal(p)
+    p = command(task, "list")
+    p.add_argument("--all", action="store_true")
+    p = command(task, "update", True)
+    p.add_argument("uuid")
+    p.add_argument("--title")
+    p.add_argument("--priority", choices=PRIORITIES)
+    due = p.add_mutually_exclusive_group()
+    due.add_argument("--due", default=argparse.SUPPRESS)
+    due.add_argument("--clear-due", action="store_true")
+    p.add_argument("--progress", action="store_true")
+    temporal(p)
+    p = command(task, "done", True)
+    p.add_argument("uuid")
+    p = command(task, "snooze", True)
+    p.add_argument("uuid")
+    p.add_argument("until")
+    temporal(p)
+    focus = command(groups, "focus").add_subparsers(dest="command", required=True, parser_class=Parser)
+    p = command(focus, "push", True, True)
+    p.add_argument("uuid")
+    p = command(focus, "resume", True, True)
+    p.add_argument("--skip-invalid", action="store_true")
+    event = command(groups, "event").add_subparsers(dest="command", required=True, parser_class=Parser)
+    p = command(event, "add", True)
+    p.add_argument("title")
+    p.add_argument("--start", required=True)
+    p.add_argument("--end", required=True)
+    temporal(p)
+    command(event, "list")
+    p = command(event, "cancel", True)
+    p.add_argument("uuid")
+    config = command(groups, "config").add_subparsers(dest="command", required=True, parser_class=Parser)
+    command(config, "list")
+    p = command(config, "set", True)
+    p.add_argument("name")
+    p.add_argument("value", type=int)
+    for name in ("brief", "pulse", "doctor", "recover"):
+        command(groups, name)
+    p = command(groups, "notify")
+    p.add_argument("--retry-uncertain", action="store_true")
+    p = command(groups, "schedule")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--every-minutes", type=int, default=10)
+    return root
+
+
+def schedule(app, every):
+    if every not in (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60):
+        raise AssistantError("invalid_interval", "Use an interval that divides 60 minutes.")
+    caps = capabilities()
+    argv = [sys.executable, str(Path(__file__).resolve().parent.parent / "asistente.py"),
+            "--state", str(app.store.path), "--task-bin", app.tasks.binary, "notify"]
+    if caps["platform"] == "darwin":
+        backend = "launchd"
+    else:
+        backend = "systemd-user" if caps["user_systemd"] else "cron" if caps["crontab"] else "manual"
+    cron = ("0 * * * *" if every == 60 else f"*/{every} * * * *") + " " + shlex.join(argv)
+    return {"dry_run": True, "installed": False, "backend": backend, "argv": argv,
+            "interval_minutes": every, "cron_example": cron if backend == "cron" else None,
+            "note": "Choose working hours before installing any job. This command changes no scheduler."}
+
+
+def execute(app, args):
+    values = vars(args)
+    group = args.group
+    command = values.get("command")
+    ignored = {"state", "task_bin", "json", "lang", "group", "command", "key", "expect"}
+    payload = {k: v for k, v in values.items() if k not in ignored}
+    if group == "task" and command == "list":
+        return app.list(values.get("all", False))
+    if group == "task" and command == "update" and payload.pop("clear_due", False):
+        payload["due"] = None
+    if group in ("task", "focus", "event", "config") and command not in ("list",):
+        return app.mutate(f"{group}_{command}", payload, args.key, values.get("expect"))
+    if group == "event":
+        with app.store.lock():
+            app.clean_read()
+            return {"events": app.store.events(), "revision": app.store.revision()}
+    if group == "config":
+        return app.store.config()
+    if group == "brief":
+        return app.brief()
+    if group == "pulse":
+        return app.pulse()
+    if group == "notify":
+        return app.notify(values.get("retry_uncertain", False))
+    if group == "recover":
+        return app.recover()
+    if group == "doctor":
+        return app.doctor()
+    if group == "schedule":
+        return schedule(app, args.every_minutes)
+    raise AssistantError("invalid_arguments", "Unsupported command.")
+
+
+def human(data, language, group):
+    es = language == "es"
+    if group == "brief":
+        task = data["next"]
+        if not task:
+            return "Sin tareas accionables." if es else "No actionable tasks."
+        lines = [("Sigue: " if es else "Next: ") + f"{task['title']} ({task['uuid']})"]
+        priority = {"high": "alta", "medium": "media", "low": "baja"}.get(task["priority"]) if es else task["priority"]
+        lines.append(("Prioridad: " if es else "Priority: ") + priority)
+        lines += [("Choque de agenda: " if es else "Calendar conflict: ") + e["title"] for e in data["conflicts"]]
+        return "\n".join(lines[:8])
+    if "tasks" in data:
+        priorities = {"high": "alta", "medium": "media", "low": "baja"}
+        states = {"pending": "pendiente", "waiting": "pospuesta", "blocked": "bloqueada", "completed": "terminada", "deleted": "eliminada"}
+        return "\n".join(f"{t['uuid']} · {t['title']} · {priorities.get(t['priority'], t['priority']) if es else t['priority']} · {states.get(t['status'], t['status']) if es else t['status']}" for t in data["tasks"][:8]) or ("Sin tareas pendientes." if es else "No pending tasks.")
+    if group == "pulse":
+        kinds = {"due": "vence pronto o está vencida", "stale": "sin avance registrado", "chat_waiting": "mensaje capturado pendiente", "event": "evento próximo o en curso", "snooze_ready": "terminó la posposición"}
+        return "\n".join(f"{kinds.get(n['kind'], n['kind']) if es else n['kind']} · {n['title']}" for n in data["notices"][:8])
+    if group == "notify":
+        states = {"accepted": "aceptado por el sistema local", "uncertain": "resultado incierto", "pending": "pendiente de reintento", "failed": "falló"}
+        return "\n".join(f"{r['id'][:10]} · {states.get(r['status'], r['status']) if es else r['status']}" for r in data["attempts"][:8])
+    if group == "doctor":
+        label = "Estado" if es else "State"
+        return f"Taskwarrior {data['version']} · SQLite {data['integrity']}\n{label}: {data['state']}\n" + (
+            f"Operaciones pendientes: {len(data['operations'])}" if es else f"Unresolved operations: {len(data['operations'])}")
+    if "uuid" in data:
+        return ("Guardado: " if es else "Saved: ") + data["uuid"]
+    if "focus" in data:
+        return ("Foco: " if es else "Focus: ") + str(data["focus"] or ("ninguno" if es else "none"))
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def main(argv=None):
+    raw = list(sys.argv[1:] if argv is None else argv)
+    wants_json = "--json" in raw
+    language = "en" if "--lang" in raw and raw[raw.index("--lang") + 1:raw.index("--lang") + 2] == ["en"] else "es"
+    operation_id = str(uuid.uuid4())
+    try:
+        args = parser().parse_args(raw)
+        wants_json = getattr(args, "json", False)
+        language = getattr(args, "lang", "es")
+        operation_id = getattr(args, "key", operation_id)
+        default = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "asistente-dia"
+        app = Assistant(getattr(args, "state", None) or os.environ.get("ASISTENTE_STATE", default),
+                        getattr(args, "task_bin", None))
+        data = execute(app, args)
+        if wants_json:
+            print(json.dumps({"schema_version": 1, "ok": True, "operation_id": operation_id, "data": data, "error": None}, ensure_ascii=False))
+        else:
+            text = human(data, language, args.group)
+            if text:
+                print(text)
+        return 0
+    except AssistantError as error:
+        if wants_json:
+            print(json.dumps({"schema_version": 1, "ok": False, "operation_id": operation_id,
+                              "data": None, "error": {"code": error.code, "message": str(error), "details": error.details}}, ensure_ascii=False))
+        else:
+            message = SPANISH_ERRORS.get(error.code, f"No se pudo completar la operación ({error.code}).") if language == "es" else str(error)
+            print(f"Error [{error.code}]: {message}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
