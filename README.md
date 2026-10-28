@@ -4,16 +4,17 @@ A local assistant for your responsibilities: capture tasks and commitments, keep
 several fronts active, understand what blocks what, and review concrete risks with
 your chosen LLM. It does not coordinate coding agents or replace their project boards.
 
-Python 3.11+, SQLite and Taskwarrior 3.5.0 form the local core. Codex and Claude Code
+Python 3.11+ and its standard-library SQLite support form the local core on both
+Linux and macOS. Taskwarrior, Rust and CMake are not runtime or installation
+requirements. Codex and Claude Code
 adapters use your existing subscription login. The UI defaults to English and supports
 Spanish, light/dark themes, responsive list/board views and collapsible chat. Card and
 conversation content keep the language in which they were created.
 
 ## Start using it
 
-Install an approved Taskwarrior **3.5.0** binary and put it on PATH, or set
-`DAY_ATTENDANT_TASK_BIN` to its absolute path. Use an existing authenticated Codex or
-Claude Code installation. No additional Python runtime packages, API keys, MCP server
+Use an approved Python 3.11+ installation with SQLite and IANA timezone data, and
+an existing authenticated Codex or Claude Code installation. No additional Python runtime packages, API keys, MCP server
 or admin permissions are required by Day Attendant.
 
 ```sh
@@ -32,7 +33,7 @@ For a command available from every directory, install the checkout with an appro
 Python package installer (`python3 -m pip install --user /absolute/path/day-attendant`),
 or add a wrapper on your user PATH that invokes the absolute script. A virtual
 environment is also supported. See [Mac handoff](docs/macos-handoff.md) for the
-approved-source build route and [daily operation](docs/daily-operation.md) for commands.
+Python-only installation route and [daily operation](docs/daily-operation.md) for commands.
 
 ```sh
 day-attendant --json board list
@@ -99,8 +100,8 @@ histories. A very long conversation can reach the provider's context window; use
 
 ## Backups and recovery
 
-The scheduler creates a coherent daily snapshot of both SQLite stores, Taskwarrior
-configuration and selected images. It retains seven daily and four weekly snapshots,
+The scheduler creates a coherent daily snapshot of the task store (`tasks.sqlite3`),
+the auxiliary store (`assistant.sqlite3`) and selected images. It retains seven daily and four weekly snapshots,
 plus manual/pre-migration backups. Snapshots exclude authentication, HTTP tokens,
 process receipts and harness homes. They remain private outside the checkout.
 
@@ -118,8 +119,7 @@ location to protect against disk loss; there is no default cloud upload or devic
 
 An interrupted operation either recovers its authorized effects or opens in a read-only
 diagnostic view. Supervised reconciliation shows observed versus intended state, takes
-a backup and rechecks preconditions. Never edit managed SQLite or run Taskwarrior
-directly on a profile. See [daily operation](docs/daily-operation.md).
+a backup and rechecks preconditions. Never edit either managed SQLite store directly. See [daily operation](docs/daily-operation.md).
 
 ## Agent access and validation
 
@@ -134,10 +134,10 @@ python3 -B -m unittest discover -s tests -q
 python3 -B scripts/test_system.py
 ```
 
-Tests use real Taskwarrior with disposable state. Controlled protocol tests, live-model
+Tests use real SQLite task and auxiliary stores with disposable state. Controlled protocol tests, live-model
 semantics, real-browser flows and native scheduler execution are separate evidence.
 See [daily validation](docs/daily-validation.md) and [architecture](docs/architecture.md).
-Linux is tested locally. Hosted macOS core checks and the user's managed Mac deployment
+Linux is tested locally. Previously hosted macOS core checks and the user's managed Mac deployment
 are separate from Linux evidence; native Mac notifications and company policy require
 that Mac's handoff checks. No assistant guarantees perfect risk detection or psychological
 outcomes.
@@ -146,3 +146,27 @@ Existing v3 synthetic pilot state requires `profile upgrade` with the old servic
 stopped; a verified pre-migration backup is automatic. Legacy commands remain for
 explicit separate legacy workspaces and cannot bypass connected proposals. Old default
 state is never silently moved. Historical pilot evidence stays labeled as historical.
+
+## Upgrading an existing Taskwarrior profile
+
+New profiles use the same Python/SQLite backend on every operating system. An old
+profile is never silently replaced with an empty task store. Stop its service,
+then explicitly convert it once on the machine that already has the old engine:
+
+```sh
+day-attendant service stop
+day-attendant --json profile migrate --taskwarrior-bin /absolute/path/to/task
+day-attendant service start
+```
+
+The one-time importer requires the old **Taskwarrior 3.5.0** executable only to read
+its existing data. It takes and verifies a legacy backup, validates task identity
+and the dependency graph, then atomically publishes `tasks.sqlite3`. UUIDs, journal,
+calendar, notes, conversation and profile identity are preserved. Legacy files
+remain untouched. Normal operation and all new backups thereafter need only
+Python/SQLite. Starting a fresh Mac profile requires no legacy engine or conversion.
+This does not enable synchronization between machines.
+
+Format-1 backups remain verifiable. To restore and convert an old backup on the
+legacy machine, use `restore ARCHIVE --to NEW_DIRECTORY --taskwarrior-bin PATH`.
+Format-2 backups restore without that option or executable on Linux or macOS.

@@ -41,7 +41,7 @@ class ReviewRegressions(DailyBase):
 
     def cli_recover(self):
         return subprocess.run([sys.executable, '-B', '-m', 'day_attendant', '--json', '--state', self.temp.name,
-                               '--task-bin', self.app.tasks.binary, 'recover'], cwd=ROOT, capture_output=True, text=True, timeout=10)
+                               'recover'], cwd=ROOT, capture_output=True, text=True, timeout=10)
 
     def audit_count(self):
         with self.app.store.connect() as con:
@@ -414,7 +414,7 @@ class ReviewRegressions(DailyBase):
             driver = '''import json,sys
 from day_attendant.service import Assistant
 from day_attendant import lifecycle
-app=Assistant(sys.argv[1],sys.argv[2])
+app=Assistant(sys.argv[1])
 try:
  print(json.dumps(lifecycle.start(app)))
  print(json.dumps(lifecycle.status(app)))
@@ -422,7 +422,7 @@ finally:lifecycle.stop(app)
 print(lifecycle.cron_block(app,{'PATH':''}).splitlines()[1].split(' ',5)[5])
 '''
             env = dict(os.environ, PYTHONPATH=str(site), PATH='')
-            result = subprocess.run([sys.executable, '-B', '-c', driver, self.temp.name, self.app.tasks.binary],
+            result = subprocess.run([sys.executable, '-B', '-c', driver, self.temp.name],
                                     cwd=self.output.name, env=env, capture_output=True, text=True, timeout=25)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             lines = result.stdout.splitlines()

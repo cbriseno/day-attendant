@@ -1,4 +1,4 @@
-"""Daily human flows over real native Taskwarrior and SQLite; controlled reasoning."""
+"""Daily human flows over real SQLite task and auxiliary stores; controlled reasoning."""
 from datetime import timedelta
 import json
 import tempfile
@@ -9,7 +9,7 @@ from day_attendant.conversation import Conversation,FIELDS
 from day_attendant.errors import AssistantError
 from day_attendant.profiles import configure,delivery_allowed,default_policy
 from day_attendant.service import Assistant
-from day_attendant.taskwarrior import canonical
+from day_attendant.taskstore import canonical
 from day_attendant.timeutil import stamp
 from test_connected import NOW,ReviewFixture
 from test_conversation import ChatFixture

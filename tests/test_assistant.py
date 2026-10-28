@@ -1,4 +1,4 @@
-"""Real Taskwarrior integration and independently observed failure boundaries."""
+"""Real SQLite integration and independently observed failure boundaries."""
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -15,7 +15,6 @@ from day_attendant.store import Store
 from day_attendant.timeutil import instant, parse
 
 ROOT = Path(__file__).resolve().parent.parent
-TASK = os.environ.get("DAY_ATTENDANT_TASK_BIN", str(ROOT / ".runtime/taskwarrior/bin/task"))
 NOW = datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
 
 
@@ -56,13 +55,12 @@ class TimeTests(unittest.TestCase):
         self.assertFalse((ROOT / "should-not-be-created").exists())
 
 
-@unittest.skipUnless(Path(TASK).is_file(), "Set DAY_ATTENDANT_TASK_BIN to a Taskwarrior 3.5.0 binary")
 class Integration(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="asistente-product-test-")
         self.clock = Clock()
         self.deliveries = []
-        self.app = Assistant(self.temp.name, TASK, self.clock, self.accept)
+        self.app = Assistant(self.temp.name, clock=self.clock, notifier=self.accept)
         self.counter = 0
 
     def tearDown(self):
@@ -91,11 +89,11 @@ import json,os,sys
 from datetime import datetime,timezone
 from day_attendant.service import Assistant
 def fail(point):
-    if point==sys.argv[6]:os._exit(75)
-app=Assistant(sys.argv[1],sys.argv[2],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),fault=fail)
-app.mutate(sys.argv[3],json.loads(sys.argv[4]),sys.argv[5],app.store.revision() if sys.argv[3].startswith('focus_') else None)
+    if point==sys.argv[5]:os._exit(75)
+app=Assistant(sys.argv[1],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),fault=fail)
+app.mutate(sys.argv[2],json.loads(sys.argv[3]),sys.argv[4],app.store.revision() if sys.argv[2].startswith('focus_') else None)
 '''
-        return subprocess.run([sys.executable, "-B", "-c", code, self.temp.name, TASK,
+        return subprocess.run([sys.executable, "-B", "-c", code, self.temp.name,
                                action, json.dumps(payload), key, point], cwd=ROOT,
                               capture_output=True, text=True, timeout=30)
 
@@ -288,10 +286,10 @@ with exclusive(Path(sys.argv[1])/'writer.lock',timeout=.5):
 from datetime import datetime,timezone
 from day_attendant.service import Assistant
 import os,sys
-app=Assistant(sys.argv[1],sys.argv[2],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),notifier=lambda *a:{'accepted':True},fault=lambda p:os._exit(75) if p==sys.argv[3] else None)
+app=Assistant(sys.argv[1],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),notifier=lambda *a:{'accepted':True},fault=lambda p:os._exit(75) if p==sys.argv[2] else None)
 app.notify()
 '''
-        run = subprocess.run([sys.executable, "-B", "-c", code, self.temp.name, TASK, "after_notify"], cwd=ROOT, capture_output=True, text=True, timeout=20)
+        run = subprocess.run([sys.executable, "-B", "-c", code, self.temp.name, "after_notify"], cwd=ROOT, capture_output=True, text=True, timeout=20)
         self.assertEqual(run.returncode, 75, run.stderr)
         self.clock.advance(minutes=3)
         self.assertEqual(self.app.notify()["attempts"], [])
@@ -330,10 +328,10 @@ app.notify()
 from datetime import datetime,timezone
 from day_attendant.service import Assistant
 import os,sys
-a=Assistant(sys.argv[1],sys.argv[2],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),fault=lambda p:os._exit(75) if p=='before_notify' else None)
+a=Assistant(sys.argv[1],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),fault=lambda p:os._exit(75) if p=='before_notify' else None)
 a.notify()
 '''
-        run = subprocess.run([sys.executable, "-B", "-c", code, self.temp.name, TASK], cwd=ROOT,
+        run = subprocess.run([sys.executable, "-B", "-c", code, self.temp.name], cwd=ROOT,
                              capture_output=True, text=True, timeout=20)
         self.assertEqual(run.returncode, 75, run.stderr)
         active = self.app.doctor()["notices_requiring_attention"][0]
@@ -368,15 +366,15 @@ a.notify()
         a, b = self.add("[FICTICIO] prerequisite"), self.add("[FICTICIO] dependent")
         # Native edits establish independent backend fixtures, not a supported
         # ordinary write route for agents operating the product.
-        self.app.tasks.command(b, "modify", f"depends:{a}")
+        self.app.tasks.patch(b, {'depends':[a]})
         self.assertEqual(next(t for t in self.app.list()["tasks"] if t["uuid"] == b)["status"], "blocked")
         self.assertEqual(self.app.brief()["next"]["uuid"], a)
         self.app.mutate("task_done", {"uuid": a}, self.key())
         self.assertEqual(self.app.brief()["next"]["uuid"], b)
         c = self.add("[FICTICIO] removed prerequisite")
-        self.app.tasks.command(b, "modify", f"depends:{c}")
+        self.app.tasks.patch(b, {'depends':[c]})
         self.assertEqual(next(t for t in self.app.list()["tasks"] if t["uuid"] == b)["status"], "blocked")
-        self.app.tasks.command(c, "delete")
+        self.app.tasks.patch(c, {'status':'deleted'})
         self.assertEqual(self.app.brief()["next"]["uuid"], b)
 
     def test_private_files_are_not_group_or_world_readable(self):
@@ -393,13 +391,13 @@ from day_attendant.service import Assistant
 from datetime import datetime,timezone
 import os,sys,time
 def notify(*args):
- fd=os.open(sys.argv[3],os.O_CREAT|os.O_WRONLY|os.O_APPEND,0o600)
+ fd=os.open(sys.argv[2],os.O_CREAT|os.O_WRONLY|os.O_APPEND,0o600)
  os.write(fd,b'delivered\\n');os.close(fd);time.sleep(.2)
  return {'accepted':True}
-a=Assistant(sys.argv[1],sys.argv[2],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),notifier=notify)
+a=Assistant(sys.argv[1],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),notifier=notify)
 a.notify()
 '''
-        processes = [subprocess.Popen([sys.executable, "-B", "-c", code, self.temp.name, TASK, str(marker)],
+        processes = [subprocess.Popen([sys.executable, "-B", "-c", code, self.temp.name, str(marker)],
                                       cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(2)]
         for process in processes:
             out, err = process.communicate(timeout=20)
@@ -426,7 +424,7 @@ a.notify()
     def test_cli_json_any_level_and_schedule_no_install(self):
         def run(*args):
             call = subprocess.run([sys.executable, "-B", str(ROOT / "day-attendant.py"), "--state", self.temp.name,
-                                   "--task-bin", TASK, *args], capture_output=True, text=True, timeout=20)
+                                   *args], capture_output=True, text=True, timeout=20)
             self.assertEqual(call.returncode, 0, call.stdout + call.stderr)
             return json.loads(call.stdout)
         created = run("task", "add", "[FICTICIO] CLI", "--key", "cli", "--json")
@@ -441,9 +439,9 @@ a.notify()
         code = '''
 from day_attendant.service import Assistant
 import sys
-a=Assistant(sys.argv[1],sys.argv[2]);a.mutate('task_add',{'title':'[FICTICIO] concurrent'},sys.argv[3])
+a=Assistant(sys.argv[1]);a.mutate('task_add',{'title':'[FICTICIO] concurrent'},sys.argv[2])
 '''
-        children = [subprocess.Popen([sys.executable, "-B", "-c", code, self.temp.name, TASK, f"parallel-{i}"],
+        children = [subprocess.Popen([sys.executable, "-B", "-c", code, self.temp.name, f"parallel-{i}"],
                                      cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for i in range(6)]
         for _ in range(3):
             self.app.pulse()

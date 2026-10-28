@@ -1,4 +1,4 @@
-"""System scenarios: separate public CLI processes, real Taskwarrior/notify-send.
+"""System scenarios: separate public CLI processes, real SQLite/notify-send.
 
 Run only via scripts/test_system.py: never use the desktop session bus.
 Expected timelines are authored here, not derived from product candidate logic.
@@ -17,7 +17,6 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-TASK = os.environ.get('DAY_ATTENDANT_TASK_BIN', str(ROOT / '.runtime/taskwarrior/bin/task'))
 FIX = ROOT / 'tests/fixtures'
 REPORT = Path(os.environ.get('E2E_REPORT_DIR', '/tmp/asistente-e2e-report'))
 
@@ -53,7 +52,7 @@ class System(unittest.TestCase):
                 con.row_factory = sqlite3.Row
                 snapshot = {table: [dict(r) for r in con.execute('SELECT * FROM ' + table)] for table in ('operations', 'notices', 'attempts', 'frames', 'state')}
             (target / 'journal.json').write_text(json.dumps(snapshot, indent=2))
-            (target / 'taskwarrior.json').write_text(json.dumps(self.export(), indent=2))
+            (target / 'tasks.json').write_text(json.dumps(self.export(), indent=2))
         self.temp.cleanup()
 
     def control(self, **kwargs):
@@ -86,7 +85,7 @@ class System(unittest.TestCase):
         pending.replace(self.clock)
 
     def command(self, args, extra=None, direct=False):
-        argv = [sys.executable, '-B', str(ROOT / 'day-attendant.py' if direct else FIX / 'cli_worker.py'), '--state', str(self.state), '--task-bin', TASK, '--json', *args]
+        argv = [sys.executable, '-B', str(ROOT / 'day-attendant.py' if direct else FIX / 'cli_worker.py'), '--state', str(self.state), '--json', *args]
         return argv, dict(self.env, **(extra or {}))
 
     def runcli(self, *args, code=0, extra=None, direct=False):
@@ -122,10 +121,9 @@ class System(unittest.TestCase):
             return [dict(r) for r in con.execute(query)]
 
     def export(self):
-        env = dict(os.environ, TASKRC=str(self.state / 'taskwarrior/taskrc'), TASKDATA=str(self.state / 'taskwarrior/data'))
-        result = subprocess.run([TASK, 'rc.verbose=nothing', 'export'], env=env, capture_output=True, text=True, timeout=15)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        return json.loads(result.stdout)
+        # Observe the actual database independently of the product's read API.
+        with sqlite3.connect(self.state / 'tasks.sqlite3') as con:
+            return [json.loads(row[0]) for row in con.execute('SELECT data FROM tasks ORDER BY rowid')]
 
     def messages(self, stage='accepted'):
         path = self.folder / 'dbus.jsonl'
@@ -240,9 +238,11 @@ class System(unittest.TestCase):
     def test_external_conflict_preserves_data_and_blocks_writes(self):
         self.runcli('task', 'add', '[FICTICIO] original', '--key', 'conflict', code=75, extra={'E2E_CRASH': 'after_task_0'})
         uid = self.export()[0]['uuid']
-        env = dict(os.environ, TASKRC=str(self.state / 'taskwarrior/taskrc'), TASKDATA=str(self.state / 'taskwarrior/data'))
-        run = subprocess.run([TASK, 'rc.confirmation=off', uid, 'modify', 'description:[FICTICIO] external'], env=env, capture_output=True, timeout=15)
-        self.assertEqual(run.returncode, 0)
+        # Deliberate out-of-band corruption in disposable test state.
+        with sqlite3.connect(self.state / 'tasks.sqlite3') as con:
+            row=json.loads(con.execute('SELECT data FROM tasks WHERE uuid=?',(uid,)).fetchone()[0])
+            row['description']='[FICTICIO] external'
+            con.execute('UPDATE tasks SET data=? WHERE uuid=?',(json.dumps(row),uid))
         before = self.export()
         self.assertEqual(self.runcli('recover')['unresolved'][0]['status'], 'conflict')
         self.runcli('task', 'add', '[FICTICIO] blocked', '--key', 'blocked', code=2)

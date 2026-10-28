@@ -217,16 +217,16 @@ def preflight(state):
     return selected
 
 
-def initialize_profile(state,task_bin=None,kind='personal',zone=None,name=None):
+def initialize_profile(state,kind='personal',zone=None,name=None):
     selected=preflight(state)
-    app=Assistant(selected,task_bin)
+    app=Assistant(selected)
     Connected(app).initialize(kind=kind,zone=zone,name=name)
     return app
 
 
-def serve(state,task_bin=None,port=0,zone=None,kind=None,supervised=False):
+def serve(state,port=0,zone=None,kind=None,supervised=False):
     selected=preflight(state)
-    app=Assistant(selected,task_bin)
+    app=Assistant(selected)
     # Lifetime ownership uses the platform lock adapter on both Linux and macOS.
     with exclusive(app.store.path/'server.lock',timeout=0):
         board=Connected(app)
