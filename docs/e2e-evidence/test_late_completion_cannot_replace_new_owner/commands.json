@@ -1,0 +1,61 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] two owners",
+      "--key",
+      "task",
+      "--due",
+      "2026-10-30T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"task\", \"data\": {\"uuid\": \"3d575c63-53ab-43f2-ac27-6e89d83968b8\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "notify"
+    ],
+    "fault": {
+      "E2E_PAUSE": "after_notify",
+      "E2E_BARRIER": "/tmp/asistente-system-9cqsn2ka/first"
+    }
+  },
+  {
+    "at": "2026-10-30T15:03:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"cdcddaf5-386c-428f-b104-b9ea45a019f5\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:03:00+00:00",
+    "spawn": [
+      "notify",
+      "--retry-uncertain"
+    ],
+    "fault": {
+      "E2E_PAUSE": "after_claim",
+      "E2E_BARRIER": "/tmp/asistente-system-9cqsn2ka/second"
+    }
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"190e1cb7-3c58-4fb3-9246-965e5e3c745b\", \"data\": {\"attempts\": [{\"id\": \"d64454dc40f7b71fd408856b2dc2a0acd2c3c3b716075f27ebc5642063bce0f3\", \"status\": \"ownership_lost\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"54ce7fdf-7bea-4f3b-b161-61285fc92c16\", \"data\": {\"attempts\": [{\"id\": \"d64454dc40f7b71fd408856b2dc2a0acd2c3c3b716075f27ebc5642063bce0f3\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": ""
+  }
+]

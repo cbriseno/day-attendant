@@ -1,0 +1,54 @@
+{
+  "operations": [
+    {
+      "key": "task",
+      "digest": "61438ec536568ee9287c70330b6a5c4812cbd0d4c3c9f3b7cf07e72bfded0f07",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"30719425-1c00-4a4e-8798-7f0fd5547469\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"30719425-1c00-4a4e-8798-7f0fd5547469\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] claim\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"30719425-1c00-4a4e-8798-7f0fd5547469\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] claim\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"30719425-1c00-4a4e-8798-7f0fd5547469\"},\"uuid\":\"30719425-1c00-4a4e-8798-7f0fd5547469\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"30719425-1c00-4a4e-8798-7f0fd5547469\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    }
+  ],
+  "notices": [
+    {
+      "id": "a90d77349b83e84afd7062d488aa946974e62b827fd4619520200fe8d09dc86e",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "30719425-1c00-4a4e-8798-7f0fd5547469",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 2,
+      "accepted_at": "2026-10-30T15:03:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-10-30T15:03:00Z",
+      "active_attempt_id": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 1,
+      "notice_id": "a90d77349b83e84afd7062d488aa946974e62b827fd4619520200fe8d09dc86e",
+      "at": "2026-10-30T15:00:00Z",
+      "status": "uncertain",
+      "error": "Process outcome unknown",
+      "late_outcome": "{\"accepted\":true,\"error\":\"\",\"returncode\":0}"
+    },
+    {
+      "id": 2,
+      "notice_id": "a90d77349b83e84afd7062d488aa946974e62b827fd4619520200fe8d09dc86e",
+      "at": "2026-10-30T15:03:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    }
+  ],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "1"
+    }
+  ]
+}

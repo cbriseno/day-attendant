@@ -1,0 +1,23 @@
+{
+  "operations": [
+    {
+      "key": "conflict",
+      "digest": "97e9aabdd3a845970e75c5a2fc31245e2d3abbfe4c27449f97cfa98c29cc0cb5",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"b1d9985b-7d05-4af7-9250-4a269fe7fc72\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"b1d9985b-7d05-4af7-9250-4a269fe7fc72\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] original\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"b1d9985b-7d05-4af7-9250-4a269fe7fc72\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] original\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"b1d9985b-7d05-4af7-9250-4a269fe7fc72\"},\"uuid\":\"b1d9985b-7d05-4af7-9250-4a269fe7fc72\"}]}",
+      "status": "conflict",
+      "result": null,
+      "error": "A participant changed; no additional step was attempted.",
+      "created_at": "2026-10-30T15:00:00Z"
+    }
+  ],
+  "notices": [],
+  "attempts": [],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "0"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] severity",
+      "--key",
+      "task"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"task\", \"data\": {\"uuid\": \"61ee5c2a-129b-4abb-9b60-715dde859e0c\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"e225ad65-ea6a-4f8b-aa56-72a79bfe0a14\", \"data\": {\"attempts\": [{\"id\": \"208fe846321c3374cd7ca235a290ddf0f7e70faab477070d93057374de998c5a\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:05:00+00:00",
+    "argv": [
+      "task",
+      "update",
+      "61ee5c2a-129b-4abb-9b60-715dde859e0c",
+      "--due",
+      "2026-11-02T15:05:00+00:00",
+      "--key",
+      "new-due"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"new-due\", \"data\": {\"uuid\": \"61ee5c2a-129b-4abb-9b60-715dde859e0c\", \"revision\": 2}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:05:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"1545bcbe-cd1b-43fc-8659-fdc48a4b4cf6\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:30:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"0d70b450-521d-4b6e-bb56-98235de7e783\", \"data\": {\"attempts\": [{\"id\": \"30076f37c554a6438d065ddebff99e7c51cf50d8158643cd9cf5741dd2bd2389\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  }
+]

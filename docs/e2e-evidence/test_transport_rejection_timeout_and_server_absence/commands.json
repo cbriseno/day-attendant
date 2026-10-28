@@ -1,0 +1,63 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] transport",
+      "--key",
+      "task",
+      "--due",
+      "2026-10-30T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"task\", \"data\": {\"uuid\": \"eba9131b-566e-4745-a609-fcdcdacc37ba\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"bbbf06df-3555-4f55-94c2-c7ccc10b11c1\", \"data\": {\"attempts\": [{\"id\": \"1d4b666aea0296757703b8f1060d74558d55117097ff6a559b4f2e9afa43b699\", \"status\": \"pending\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:03:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"169a5033-6ba4-4ad1-901a-22bd54b4040b\", \"data\": {\"attempts\": [{\"id\": \"1d4b666aea0296757703b8f1060d74558d55117097ff6a559b4f2e9afa43b699\", \"status\": \"pending\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:08:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"4387725c-b468-4a8f-8f0e-6827be6885c4\", \"data\": {\"attempts\": [{\"id\": \"1d4b666aea0296757703b8f1060d74558d55117097ff6a559b4f2e9afa43b699\", \"status\": \"uncertain\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-01T15:08:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"23a20d6b-47f2-46a9-940c-2bc699a95ed1\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  }
+]

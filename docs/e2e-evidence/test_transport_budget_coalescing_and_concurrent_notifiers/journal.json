@@ -1,0 +1,247 @@
+{
+  "operations": [
+    {
+      "key": "0",
+      "digest": "503279c240de73946fd321add1eaefb89cc09dcc31294052909e3bac02005bb9",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"35bbeaed-01a2-4d04-bf60-034441cbbf83\",\"chat\",null,null,\"2026-10-29T15:00:00Z\",\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"35bbeaed-01a2-4d04-bf60-034441cbbf83\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] tarea 0\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"35bbeaed-01a2-4d04-bf60-034441cbbf83\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] tarea 0\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"35bbeaed-01a2-4d04-bf60-034441cbbf83\"},\"uuid\":\"35bbeaed-01a2-4d04-bf60-034441cbbf83\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"35bbeaed-01a2-4d04-bf60-034441cbbf83\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "1",
+      "digest": "1a730b2b74a664e5fd47c9b7c1bd3a8cfe6842e5199c8a4371bed2e6b7bfebba",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"276dc6d5-7872-4f40-8f5b-d870522837c8\",\"chat\",null,null,\"2026-10-29T15:00:00Z\",\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"276dc6d5-7872-4f40-8f5b-d870522837c8\"},\"revision\":1,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] tarea 1\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"276dc6d5-7872-4f40-8f5b-d870522837c8\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] tarea 1\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"276dc6d5-7872-4f40-8f5b-d870522837c8\"},\"uuid\":\"276dc6d5-7872-4f40-8f5b-d870522837c8\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":2,\"uuid\":\"276dc6d5-7872-4f40-8f5b-d870522837c8\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "2",
+      "digest": "46e9fb8fb34a7f5c0dd58250e9ce5c9fcf284c1ffa484a03a5d507e2834a1600",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"15d7a37c-97a3-4f8b-b17e-3d2d04a79637\",\"chat\",null,null,\"2026-10-29T15:00:00Z\",\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"15d7a37c-97a3-4f8b-b17e-3d2d04a79637\"},\"revision\":2,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] tarea 2\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"15d7a37c-97a3-4f8b-b17e-3d2d04a79637\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] tarea 2\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"15d7a37c-97a3-4f8b-b17e-3d2d04a79637\"},\"uuid\":\"15d7a37c-97a3-4f8b-b17e-3d2d04a79637\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":3,\"uuid\":\"15d7a37c-97a3-4f8b-b17e-3d2d04a79637\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "3",
+      "digest": "f7afb4157a0bcc98b9c9ffb3afa766d80f089cce5197cba601894693028f4d2c",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"6ec93e9e-e6b4-4974-897c-29e4d81d3513\",\"chat\",null,null,\"2026-10-29T15:00:00Z\",\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"6ec93e9e-e6b4-4974-897c-29e4d81d3513\"},\"revision\":3,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] tarea 3\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"6ec93e9e-e6b4-4974-897c-29e4d81d3513\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] tarea 3\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"6ec93e9e-e6b4-4974-897c-29e4d81d3513\"},\"uuid\":\"6ec93e9e-e6b4-4974-897c-29e4d81d3513\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":4,\"uuid\":\"6ec93e9e-e6b4-4974-897c-29e4d81d3513\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "4",
+      "digest": "b27cf5acba8d726b7b9f2079a48e11ccba87c5479b62b4d56624cf1a1ff996d7",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"c73527fa-0371-4165-a89f-12d3196c0474\",\"chat\",null,null,\"2026-10-29T15:00:00Z\",\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"c73527fa-0371-4165-a89f-12d3196c0474\"},\"revision\":4,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] tarea 4\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"c73527fa-0371-4165-a89f-12d3196c0474\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] tarea 4\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"c73527fa-0371-4165-a89f-12d3196c0474\"},\"uuid\":\"c73527fa-0371-4165-a89f-12d3196c0474\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":5,\"uuid\":\"c73527fa-0371-4165-a89f-12d3196c0474\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "5",
+      "digest": "aaa365b695e095cb5094e3ba3bf5b4666c5a2a488497ffa1d330e8d2afca0b41",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"fd9385c8-f71a-4af9-98a6-2a89ecd63428\",\"chat\",null,null,\"2026-10-29T15:00:00Z\",\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"fd9385c8-f71a-4af9-98a6-2a89ecd63428\"},\"revision\":5,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] tarea 5\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"fd9385c8-f71a-4af9-98a6-2a89ecd63428\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] tarea 5\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"fd9385c8-f71a-4af9-98a6-2a89ecd63428\"},\"uuid\":\"fd9385c8-f71a-4af9-98a6-2a89ecd63428\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":6,\"uuid\":\"fd9385c8-f71a-4af9-98a6-2a89ecd63428\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "6",
+      "digest": "73efe0bab3e04628b127816712aca774a9d3b9718afdc7e95818687fc01be273",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"99d01bb2-b5ec-4594-ab73-e518838c3df8\",\"chat\",null,null,\"2026-10-29T15:00:00Z\",\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"99d01bb2-b5ec-4594-ab73-e518838c3df8\"},\"revision\":6,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] tarea 6\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"99d01bb2-b5ec-4594-ab73-e518838c3df8\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] tarea 6\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"99d01bb2-b5ec-4594-ab73-e518838c3df8\"},\"uuid\":\"99d01bb2-b5ec-4594-ab73-e518838c3df8\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":7,\"uuid\":\"99d01bb2-b5ec-4594-ab73-e518838c3df8\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "7",
+      "digest": "63a64f63a7555130ea9fb33aa3ae9ce3c683c80c80e9bf30909fb725f4ccfaa4",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"3139a011-d198-4091-a538-4f84946849be\",\"chat\",null,null,\"2026-10-29T15:00:00Z\",\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"3139a011-d198-4091-a538-4f84946849be\"},\"revision\":7,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] tarea 7\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"3139a011-d198-4091-a538-4f84946849be\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] tarea 7\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"3139a011-d198-4091-a538-4f84946849be\"},\"uuid\":\"3139a011-d198-4091-a538-4f84946849be\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":8,\"uuid\":\"3139a011-d198-4091-a538-4f84946849be\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    }
+  ],
+  "notices": [
+    {
+      "id": "ed60c40e3c1812e8e7afd0348936432203561e61730360a33292e3f9bad66131",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "15d7a37c-97a3-4f8b-b17e-3d2d04a79637",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 1,
+      "accepted_at": "2026-11-02T15:00:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-11-02T15:00:00Z",
+      "active_attempt_id": null
+    },
+    {
+      "id": "db95b358ed139ebc2872f46d9e506cf75a0d24be0ba5de9c06c9154b968d8ac5",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "276dc6d5-7872-4f40-8f5b-d870522837c8",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 1,
+      "accepted_at": "2026-11-02T15:00:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-11-02T15:00:00Z",
+      "active_attempt_id": null
+    },
+    {
+      "id": "4781a5d24167208b294a92b4d1adbdcdd7a8b1df71b03a8ffbcdb438e1ca2481",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "3139a011-d198-4091-a538-4f84946849be",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 1,
+      "accepted_at": "2026-11-02T15:00:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-11-02T15:00:00Z",
+      "active_attempt_id": null
+    },
+    {
+      "id": "0c175862b3131432dc3c2a3d02cc85af3417630d8a18b3c69cf7ad3c648496c1",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "35bbeaed-01a2-4d04-bf60-034441cbbf83",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 1,
+      "accepted_at": "2026-11-02T15:05:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-11-02T15:05:00Z",
+      "active_attempt_id": null
+    },
+    {
+      "id": "dc1689db932923545f279de9f75cd386a6382817919c848a26c91dcb23cb0480",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "6ec93e9e-e6b4-4974-897c-29e4d81d3513",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 1,
+      "accepted_at": "2026-11-02T15:05:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-11-02T15:05:00Z",
+      "active_attempt_id": null
+    },
+    {
+      "id": "42845c416d23564ac0af731a241c54e8e54a287bede5f5e89959dc13c474a1f6",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "99d01bb2-b5ec-4594-ab73-e518838c3df8",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 1,
+      "accepted_at": "2026-11-02T15:05:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-11-02T15:05:00Z",
+      "active_attempt_id": null
+    },
+    {
+      "id": "ba2007466085de714427ef81d1d55d386fc473373b3449fba9ce28ab706e4c49",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "c73527fa-0371-4165-a89f-12d3196c0474",
+      "kind": "due",
+      "status": "pending",
+      "attempts": 0,
+      "accepted_at": null,
+      "retry_at": null,
+      "error": null,
+      "claimed_at": null,
+      "active_attempt_id": null
+    },
+    {
+      "id": "65117ce30c428f234e5f1515fe82071b9610b8ecd27c1aa677bd528df5519569",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "fd9385c8-f71a-4af9-98a6-2a89ecd63428",
+      "kind": "due",
+      "status": "pending",
+      "attempts": 0,
+      "accepted_at": null,
+      "retry_at": null,
+      "error": null,
+      "claimed_at": null,
+      "active_attempt_id": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 1,
+      "notice_id": "ed60c40e3c1812e8e7afd0348936432203561e61730360a33292e3f9bad66131",
+      "at": "2026-11-02T15:00:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    },
+    {
+      "id": 2,
+      "notice_id": "db95b358ed139ebc2872f46d9e506cf75a0d24be0ba5de9c06c9154b968d8ac5",
+      "at": "2026-11-02T15:00:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    },
+    {
+      "id": 3,
+      "notice_id": "4781a5d24167208b294a92b4d1adbdcdd7a8b1df71b03a8ffbcdb438e1ca2481",
+      "at": "2026-11-02T15:00:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    },
+    {
+      "id": 4,
+      "notice_id": "0c175862b3131432dc3c2a3d02cc85af3417630d8a18b3c69cf7ad3c648496c1",
+      "at": "2026-11-02T15:05:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    },
+    {
+      "id": 5,
+      "notice_id": "dc1689db932923545f279de9f75cd386a6382817919c848a26c91dcb23cb0480",
+      "at": "2026-11-02T15:05:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    },
+    {
+      "id": 6,
+      "notice_id": "42845c416d23564ac0af731a241c54e8e54a287bede5f5e89959dc13c474a1f6",
+      "at": "2026-11-02T15:05:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    }
+  ],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "8"
+    }
+  ]
+}

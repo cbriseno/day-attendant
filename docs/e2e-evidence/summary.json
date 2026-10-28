@@ -1,0 +1,86 @@
+{
+  "test_claim_expired_before_transport_is_not_sent": {
+    "commands": 4,
+    "received": 0,
+    "accepted": 0,
+    "rejected": 0
+  },
+  "test_crashes_recover_and_concurrent_capture": {
+    "commands": 30,
+    "received": 0,
+    "accepted": 0,
+    "rejected": 0
+  },
+  "test_external_conflict_preserves_data_and_blocks_writes": {
+    "commands": 3,
+    "received": 0,
+    "accepted": 0,
+    "rejected": 0
+  },
+  "test_late_claim_cannot_overwrite_uncertain_or_new_owner": {
+    "commands": 5,
+    "received": 2,
+    "accepted": 2,
+    "rejected": 0
+  },
+  "test_late_completion_cannot_replace_new_owner": {
+    "commands": 6,
+    "received": 2,
+    "accepted": 2,
+    "rejected": 0
+  },
+  "test_missing_notification_client_is_visible_failure": {
+    "commands": 2,
+    "received": 0,
+    "accepted": 0,
+    "rejected": 0
+  },
+  "test_nested_focus_invalid_frames_and_priority": {
+    "commands": 21,
+    "received": 0,
+    "accepted": 0,
+    "rejected": 0
+  },
+  "test_new_due_reason_intentionally_obeys_entity_suppression": {
+    "commands": 5,
+    "received": 2,
+    "accepted": 2,
+    "rejected": 0
+  },
+  "test_real_time_entrypoint_and_scheduler_dry_run": {
+    "commands": 3,
+    "received": 1,
+    "accepted": 1,
+    "rejected": 0
+  },
+  "test_schema_one_sending_claim_becomes_uncertain_without_resend": {
+    "commands": 6,
+    "received": 0,
+    "accepted": 0,
+    "rejected": 0
+  },
+  "test_schema_one_upgrade_preserves_idempotency_and_suppression": {
+    "commands": 4,
+    "received": 1,
+    "accepted": 1,
+    "rejected": 0
+  },
+  "test_seven_days_absence_restart_and_backward_clock": {
+    "commands": 16,
+    "received": 3,
+    "accepted": 3,
+    "rejected": 0
+  },
+  "test_transport_budget_coalescing_and_concurrent_notifiers": {
+    "commands": 16,
+    "received": 6,
+    "accepted": 6,
+    "rejected": 0
+  },
+  "test_transport_rejection_timeout_and_server_absence": {
+    "commands": 5,
+    "received": 2,
+    "accepted": 0,
+    "rejected": 1
+  }
+}

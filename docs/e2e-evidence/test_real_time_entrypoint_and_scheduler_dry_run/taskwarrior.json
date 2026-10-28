@@ -1,0 +1,13 @@
+[
+  {
+    "id": 1,
+    "description": "[FICTICIO] reloj real",
+    "due": "20261028T010712Z",
+    "entry": "20261028T010712Z",
+    "modified": "20261028T010712Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "e5468272-1249-42bb-b1e0-ab2be09d5561",
+    "urgency": 12.7
+  }
+]

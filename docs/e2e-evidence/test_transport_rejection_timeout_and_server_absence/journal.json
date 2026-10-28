@@ -1,0 +1,62 @@
+{
+  "operations": [
+    {
+      "key": "task",
+      "digest": "cae0cfd4f1c349187ff519bda68279260b698b8dda3233fd5b436724a208e6de",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"eba9131b-566e-4745-a609-fcdcdacc37ba\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"eba9131b-566e-4745-a609-fcdcdacc37ba\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] transport\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"eba9131b-566e-4745-a609-fcdcdacc37ba\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] transport\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"eba9131b-566e-4745-a609-fcdcdacc37ba\"},\"uuid\":\"eba9131b-566e-4745-a609-fcdcdacc37ba\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"eba9131b-566e-4745-a609-fcdcdacc37ba\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    }
+  ],
+  "notices": [
+    {
+      "id": "1d4b666aea0296757703b8f1060d74558d55117097ff6a559b4f2e9afa43b699",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "eba9131b-566e-4745-a609-fcdcdacc37ba",
+      "kind": "due",
+      "status": "uncertain",
+      "attempts": 3,
+      "accepted_at": null,
+      "retry_at": null,
+      "error": "Notifier timed out; acceptance is unknown.",
+      "claimed_at": "2026-10-30T15:08:00Z",
+      "active_attempt_id": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 1,
+      "notice_id": "1d4b666aea0296757703b8f1060d74558d55117097ff6a559b4f2e9afa43b699",
+      "at": "2026-10-30T15:00:00Z",
+      "status": "pending",
+      "error": "GDBus.Error:org.freedesktop.DBus.Error.Failed: Injected rejection",
+      "late_outcome": null
+    },
+    {
+      "id": 2,
+      "notice_id": "1d4b666aea0296757703b8f1060d74558d55117097ff6a559b4f2e9afa43b699",
+      "at": "2026-10-30T15:03:00Z",
+      "status": "pending",
+      "error": "GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.Notifications was not provided by any .service files",
+      "late_outcome": null
+    },
+    {
+      "id": 3,
+      "notice_id": "1d4b666aea0296757703b8f1060d74558d55117097ff6a559b4f2e9afa43b699",
+      "at": "2026-10-30T15:08:00Z",
+      "status": "uncertain",
+      "error": "Notifier timed out; acceptance is unknown.",
+      "late_outcome": null
+    }
+  ],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "1"
+    }
+  ]
+}

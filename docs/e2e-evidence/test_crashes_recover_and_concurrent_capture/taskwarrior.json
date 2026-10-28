@@ -1,0 +1,72 @@
+[
+  {
+    "id": 1,
+    "description": "[FICTICIO] crash 0",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010657Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "10f7a295-1280-497e-bab2-18598e6a3a39",
+    "urgency": 3.88904
+  },
+  {
+    "id": 2,
+    "description": "[FICTICIO] crash 1",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010658Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "d444b7fe-e842-4845-b7f8-1ec399932021",
+    "urgency": 3.88904
+  },
+  {
+    "id": 3,
+    "description": "[FICTICIO] crash 2",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010658Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "870f94d0-1109-4e3c-bd3c-b8f30222ac83",
+    "urgency": 3.88904
+  },
+  {
+    "id": 4,
+    "description": "[FICTICIO] crash 3",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010659Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "f7f3ef1f-7795-453f-a4ae-41b9cedbafb4",
+    "urgency": 3.88904
+  },
+  {
+    "id": 5,
+    "description": "[FICTICIO] concurrent 0",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010700Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "ac8db8c5-735d-44c6-ad4d-0c1e645a772f",
+    "urgency": 3.88904
+  },
+  {
+    "id": 6,
+    "description": "[FICTICIO] concurrent 1",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010700Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "e27beafe-9d57-4cc1-a6e8-a393ab4702a4",
+    "urgency": 3.88904
+  },
+  {
+    "id": 7,
+    "description": "[FICTICIO] concurrent 2",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010700Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "d6d3f686-d5b8-4c86-88fd-d3324562b98c",
+    "urgency": 3.88904
+  }
+]

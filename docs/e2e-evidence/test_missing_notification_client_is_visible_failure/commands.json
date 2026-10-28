@@ -1,0 +1,32 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] missing client",
+      "--key",
+      "task",
+      "--due",
+      "2026-10-30T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"task\", \"data\": {\"uuid\": \"4dcf63ff-7339-4592-922c-4eb4b1eeab7a\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": {
+      "PATH": "/nonexistent"
+    },
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"1a6fcfbd-76f8-4897-9861-98a5f29ffeb4\", \"data\": {\"attempts\": [{\"id\": \"4461199230b0e602b4824a7a5d06b8a4b2920286138f3e7584a5bc1f3602f817\", \"status\": \"pending\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  }
+]

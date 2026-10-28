@@ -1,0 +1,45 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] expired",
+      "--key",
+      "task",
+      "--due",
+      "2026-10-30T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"task\", \"data\": {\"uuid\": \"8e536afb-25fd-4fed-9e71-fb57b2b14bfc\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "notify"
+    ],
+    "fault": {
+      "E2E_PAUSE": "after_claim",
+      "E2E_BARRIER": "/tmp/asistente-system-f4dm_47s/barrier"
+    }
+  },
+  {
+    "at": "2026-10-30T15:03:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"39fc889b-af48-4dcb-adfe-38a51b5962a5\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"98873bf6-e34b-411a-adc4-6b6b6b98d203\", \"data\": {\"attempts\": [{\"id\": \"e094d58b69f4d0c342c8a62431a8d2f190759970af300e8930bc29030ac30e24\", \"status\": \"ownership_lost\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": ""
+  }
+]

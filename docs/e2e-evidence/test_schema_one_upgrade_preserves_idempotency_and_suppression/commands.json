@@ -1,0 +1,58 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] migration",
+      "--key",
+      "old-key",
+      "--due",
+      "2026-10-30T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"old-key\", \"data\": {\"uuid\": \"de6d7085-9586-44d9-93fc-09fa9afe84b1\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"376479c8-5f19-4c0d-9f3a-de058f9f4d3c\", \"data\": {\"attempts\": [{\"id\": \"2c1da34642b881694ceecabc121f392f439a832295fde8fb32752946b20c0cde\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] migration",
+      "--key",
+      "old-key",
+      "--due",
+      "2026-10-30T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"old-key\", \"data\": {\"revision\": 1, \"uuid\": \"de6d7085-9586-44d9-93fc-09fa9afe84b1\"}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"18fba71b-59df-4cec-8e06-431994686ee3\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  }
+]

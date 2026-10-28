@@ -1,0 +1,130 @@
+{
+  "operations": [
+    {
+      "key": "a",
+      "digest": "ef7f3bd1b61813bc82e7199fb8012450b8ee00fd3ba2ef2ace5f8c68ec843241",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"76a7f971-97ca-40b9-a3fc-c12e671ce724\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "b",
+      "digest": "3cd3a9d7b24934af905c55ca712a13ab7e84e3b85d88402c7ae9c2acb03eeae9",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"revision\":1,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":2,\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "c",
+      "digest": "e02c3f47cd32dc056faf3a56c589dbe7d9567ddd79307e53b3251d423cb17393",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"},\"revision\":2,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] C\",\"entry\":\"20261030T150000Z\",\"priority\":\"L\",\"status\":\"pending\",\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] C\",\"entry\":\"20261030T150000Z\",\"priority\":\"L\",\"status\":\"pending\",\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"},\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":3,\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "push-0",
+      "digest": "d36c3549588721bef76a674fb8025a2d825a63c6a13074edd2465e6ab3e757d8",
+      "action": "focus_push",
+      "plan": "{\"effect\":{\"frame_push\":[\"push-0\",\"76a7f971-97ca-40b9-a3fc-c12e671ce724\",null]},\"result\":{\"focus\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\",\"paused\":null},\"revision\":3,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"before\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"patch\":{\"start\":\"20261030T150000Z\",\"wait\":null},\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"}]}",
+      "status": "confirmed",
+      "result": "{\"focus\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\",\"paused\":null,\"revision\":4}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "push-1",
+      "digest": "d4f174fcf5ba969ec97021b8d35439a8afcb7676950bccf0a68e67e7887d3fe3",
+      "action": "focus_push",
+      "plan": "{\"effect\":{\"frame_push\":[\"push-1\",\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"]},\"result\":{\"focus\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"paused\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"revision\":4,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"before\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"patch\":{\"start\":null},\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},{\"after\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"before\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"patch\":{\"start\":\"20261030T150000Z\",\"wait\":null},\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"}]}",
+      "status": "confirmed",
+      "result": "{\"focus\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"paused\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\",\"revision\":5}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "push-2",
+      "digest": "fe158295d925e6849da01484e34bda436be45300f6d39f77645d1c0913b8f09e",
+      "action": "focus_push",
+      "plan": "{\"effect\":{\"frame_push\":[\"push-2\",\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\",\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"]},\"result\":{\"focus\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\",\"paused\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"revision\":5,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"before\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"patch\":{\"start\":null},\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},{\"after\":{\"description\":\"[FICTICIO] C\",\"entry\":\"20261030T150000Z\",\"priority\":\"L\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"},\"before\":{\"description\":\"[FICTICIO] C\",\"entry\":\"20261030T150000Z\",\"priority\":\"L\",\"status\":\"pending\",\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"},\"patch\":{\"start\":\"20261030T150000Z\",\"wait\":null},\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"}]}",
+      "status": "confirmed",
+      "result": "{\"focus\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\",\"paused\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"revision\":6}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "resume-1",
+      "digest": "409ed9e1556158cb93de942384227a6082240e80ad4c75fa04491320914c62ca",
+      "action": "focus_resume",
+      "plan": "{\"effect\":{\"frame_pop\":3},\"result\":{\"focus\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"skipped\":null},\"revision\":6,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] C\",\"entry\":\"20261030T150000Z\",\"priority\":\"L\",\"status\":\"pending\",\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"},\"before\":{\"description\":\"[FICTICIO] C\",\"entry\":\"20261030T150000Z\",\"priority\":\"L\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"},\"patch\":{\"start\":null},\"uuid\":\"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\"},{\"after\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"before\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"patch\":{\"start\":\"20261030T150000Z\"},\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"}]}",
+      "status": "confirmed",
+      "result": "{\"focus\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"revision\":7,\"skipped\":null}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "resume-2",
+      "digest": "16adbb8b1fa2c518c4a64862d04ba8d38f7cb4e270602c1421a70700bdc4e5a0",
+      "action": "focus_resume",
+      "plan": "{\"effect\":{\"frame_pop\":2},\"result\":{\"focus\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\",\"skipped\":null},\"revision\":7,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"before\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"patch\":{\"start\":null},\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},{\"after\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"before\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"patch\":{\"start\":\"20261030T150000Z\"},\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"}]}",
+      "status": "confirmed",
+      "result": "{\"focus\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\",\"revision\":8,\"skipped\":null}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "push-again",
+      "digest": "6896538642f7c348d67fc4de0fb5d917a129fcc575db35674dd7649eeee82e1f",
+      "action": "focus_push",
+      "plan": "{\"effect\":{\"frame_push\":[\"push-again\",\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"]},\"result\":{\"focus\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"paused\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"revision\":8,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"before\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"patch\":{\"start\":null},\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},{\"after\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"before\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"patch\":{\"start\":\"20261030T150000Z\",\"wait\":null},\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"}]}",
+      "status": "confirmed",
+      "result": "{\"focus\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\",\"paused\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\",\"revision\":9}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "done-a",
+      "digest": "15f40c57b914a7ec49725870ea66f0bfcdde0f29c7fe6f2af3c4ca0d1231e039",
+      "action": "task_done",
+      "plan": "{\"effect\":{},\"result\":{\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"revision\":9,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] A\",\"end\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"status\":\"completed\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"before\":{\"description\":\"[FICTICIO] A\",\"entry\":\"20261030T150000Z\",\"priority\":\"H\",\"status\":\"pending\",\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"patch\":{\"end\":\"20261030T150000Z\",\"start\":null,\"status\":\"completed\",\"wait\":null},\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":10,\"uuid\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "skip",
+      "digest": "4d6ef06e59deb1d4bc1b4e22e2a5d7bddb6bf8238bd695e5d226fa20fa59007e",
+      "action": "focus_resume",
+      "plan": "{\"effect\":{\"frame_pop\":4},\"result\":{\"focus\":null,\"skipped\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"},\"revision\":10,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"before\":{\"description\":\"[FICTICIO] B\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"start\":\"20261030T150000Z\",\"status\":\"pending\",\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"},\"patch\":{\"start\":null},\"uuid\":\"7b96b827-b5af-44e5-9b55-bcae9bd78d04\"}]}",
+      "status": "confirmed",
+      "result": "{\"focus\":null,\"revision\":11,\"skipped\":\"76a7f971-97ca-40b9-a3fc-c12e671ce724\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    }
+  ],
+  "notices": [],
+  "attempts": [],
+  "frames": [
+    {
+      "id": 1,
+      "operation_key": "push-0",
+      "target": "76a7f971-97ca-40b9-a3fc-c12e671ce724",
+      "previous": null
+    }
+  ],
+  "state": [
+    {
+      "key": "revision",
+      "value": "11"
+    }
+  ]
+}

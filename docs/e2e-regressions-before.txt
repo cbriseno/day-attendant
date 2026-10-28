@@ -1,0 +1,20 @@
+Regression verification against unchanged product code from local commit 9e826f1.
+New system harness copied into /tmp/asistente-before-e2e; private isolated bus.
+Taskwarrior 3.5.0, fictitious data only. Exit code 1, two expected failures.
+
+test_transport_budget_coalescing_and_concurrent_notifiers: FAIL
+AssertionError: 24 != 3
+Observed 24 accepted D-Bus notifications; expected budget at most three.
+
+test_late_claim_cannot_overwrite_uncertain_or_new_owner: FAIL
+AssertionError: 'accepted' != 'ownership_lost'
+The old process finalized an expired/reclassified claim as accepted.
+
+Ran 2 tests in 6.966s
+FAILED (failures=2)
+
+Both scenarios pass with the current product corrections. Full current execution
+is in test-results-system-linux.txt; current independent observations are stored
+under e2e-evidence/. The first new harness run also exposed three trace-reader
+KeyErrors (acceptance rows contain IDs, payloads belong to request rows); the
+reader was corrected before recording the final successful run.

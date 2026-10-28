@@ -1,0 +1,42 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] reloj real",
+      "--due",
+      "2026-10-28T01:07:12.461501+00:00",
+      "--key",
+      "real"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"real\", \"data\": {\"uuid\": \"e5468272-1249-42bb-b1e0-ab2be09d5561\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": true
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"826473fc-6ea9-49e4-a722-b071151d5257\", \"data\": {\"attempts\": [{\"id\": \"4d17258b8d1abe88cfacceda463ec8071c4d3e3f86f3a39474adf6fef76e2e82\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": true
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "schedule",
+      "--dry-run"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"0c64d78c-0da1-424d-a12f-30688df340c2\", \"data\": {\"dry_run\": true, \"installed\": false, \"backend\": \"cron\", \"argv\": [\"/usr/bin/python3\", \"/home/bri/projects/asistente-dia/asistente.py\", \"--state\", \"/tmp/asistente-system-ypedwih9/state\", \"--task-bin\", \"/home/bri/projects/asistente-dia/.runtime/taskwarrior/bin/task\", \"notify\"], \"interval_minutes\": 10, \"cron_example\": \"*/10 * * * * /usr/bin/python3 /home/bri/projects/asistente-dia/asistente.py --state /tmp/asistente-system-ypedwih9/state --task-bin /home/bri/projects/asistente-dia/.runtime/taskwarrior/bin/task notify\", \"note\": \"Choose working hours before installing any job. This command changes no scheduler.\"}, \"error\": null}\n",
+    "stderr": "",
+    "direct": true
+  }
+]

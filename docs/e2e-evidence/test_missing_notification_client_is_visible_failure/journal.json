@@ -1,0 +1,46 @@
+{
+  "operations": [
+    {
+      "key": "task",
+      "digest": "1934a4a7c244d4c51e4e462e2b2cff01638638a442fff894a05795cd7c1e7f70",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"4dcf63ff-7339-4592-922c-4eb4b1eeab7a\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"4dcf63ff-7339-4592-922c-4eb4b1eeab7a\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] missing client\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"4dcf63ff-7339-4592-922c-4eb4b1eeab7a\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] missing client\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"4dcf63ff-7339-4592-922c-4eb4b1eeab7a\"},\"uuid\":\"4dcf63ff-7339-4592-922c-4eb4b1eeab7a\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"4dcf63ff-7339-4592-922c-4eb4b1eeab7a\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    }
+  ],
+  "notices": [
+    {
+      "id": "4461199230b0e602b4824a7a5d06b8a4b2920286138f3e7584a5bc1f3602f817",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "4dcf63ff-7339-4592-922c-4eb4b1eeab7a",
+      "kind": "due",
+      "status": "pending",
+      "attempts": 1,
+      "accepted_at": null,
+      "retry_at": "2026-10-30T15:02:00Z",
+      "error": "No supported local notifier is available.",
+      "claimed_at": "2026-10-30T15:00:00Z",
+      "active_attempt_id": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 1,
+      "notice_id": "4461199230b0e602b4824a7a5d06b8a4b2920286138f3e7584a5bc1f3602f817",
+      "at": "2026-10-30T15:00:00Z",
+      "status": "pending",
+      "error": "No supported local notifier is available.",
+      "late_outcome": null
+    }
+  ],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "1"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+[
+  {
+    "id": 1,
+    "description": "[FICTICIO] claim",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010701Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "30719425-1c00-4a4e-8798-7f0fd5547469",
+    "urgency": 11.5103
+  }
+]

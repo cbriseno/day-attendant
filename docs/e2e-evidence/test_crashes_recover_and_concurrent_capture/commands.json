@@ -1,0 +1,318 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] crash 0",
+      "--key",
+      "crash-0"
+    ],
+    "fault": {
+      "E2E_CRASH": "after_intent"
+    },
+    "exit": 75,
+    "stdout": "",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "recover"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"252a8bce-9aea-43b5-b7b4-ba4c1511e8fd\", \"data\": {\"unresolved\": [], \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] crash 0",
+      "--key",
+      "crash-0"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"crash-0\", \"data\": {\"revision\": 1, \"uuid\": \"10f7a295-1280-497e-bab2-18598e6a3a39\"}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] crash 1",
+      "--key",
+      "crash-1"
+    ],
+    "fault": {
+      "E2E_CRASH": "after_task_0"
+    },
+    "exit": 75,
+    "stdout": "",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "recover"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"6b011c38-94a7-46c0-a109-d1ef4af13f26\", \"data\": {\"unresolved\": [], \"revision\": 2}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] crash 1",
+      "--key",
+      "crash-1"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"crash-1\", \"data\": {\"revision\": 2, \"uuid\": \"d444b7fe-e842-4845-b7f8-1ec399932021\"}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] crash 2",
+      "--key",
+      "crash-2"
+    ],
+    "fault": {
+      "E2E_CRASH": "inside_commit"
+    },
+    "exit": 75,
+    "stdout": "",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "recover"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"eee6c19c-cedf-4cb0-bb08-8263c219cac4\", \"data\": {\"unresolved\": [], \"revision\": 3}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] crash 2",
+      "--key",
+      "crash-2"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"crash-2\", \"data\": {\"revision\": 3, \"uuid\": \"870f94d0-1109-4e3c-bd3c-b8f30222ac83\"}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] crash 3",
+      "--key",
+      "crash-3"
+    ],
+    "fault": {
+      "E2E_CRASH": "after_commit"
+    },
+    "exit": 75,
+    "stdout": "",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "recover"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"0af11eb3-6e7a-4f58-9833-dd1c13d37d27\", \"data\": {\"unresolved\": [], \"revision\": 4}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] crash 3",
+      "--key",
+      "crash-3"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"crash-3\", \"data\": {\"revision\": 4, \"uuid\": \"f7f3ef1f-7795-453f-a4ae-41b9cedbafb4\"}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "task",
+      "add",
+      "[FICTICIO] concurrent 0",
+      "--key",
+      "agent-0"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "task",
+      "add",
+      "[FICTICIO] concurrent 1",
+      "--key",
+      "agent-1"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "task",
+      "add",
+      "[FICTICIO] concurrent 2",
+      "--key",
+      "agent-2"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "task",
+      "add",
+      "[FICTICIO] concurrent 0",
+      "--key",
+      "agent-0"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "task",
+      "add",
+      "[FICTICIO] concurrent 1",
+      "--key",
+      "agent-1"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "task",
+      "add",
+      "[FICTICIO] concurrent 2",
+      "--key",
+      "agent-2"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "task",
+      "add",
+      "[FICTICIO] concurrent 0",
+      "--key",
+      "agent-0"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "task",
+      "add",
+      "[FICTICIO] concurrent 1",
+      "--key",
+      "agent-1"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "spawn": [
+      "task",
+      "add",
+      "[FICTICIO] concurrent 2",
+      "--key",
+      "agent-2"
+    ],
+    "fault": null
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"agent-0\", \"data\": {\"uuid\": \"ac8db8c5-735d-44c6-ad4d-0c1e645a772f\", \"revision\": 5}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"agent-1\", \"data\": {\"revision\": 6, \"uuid\": \"e27beafe-9d57-4cc1-a6e8-a393ab4702a4\"}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"agent-2\", \"data\": {\"revision\": 7, \"uuid\": \"d6d3f686-d5b8-4c86-88fd-d3324562b98c\"}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"agent-0\", \"data\": {\"revision\": 5, \"uuid\": \"ac8db8c5-735d-44c6-ad4d-0c1e645a772f\"}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"agent-1\", \"data\": {\"revision\": 6, \"uuid\": \"e27beafe-9d57-4cc1-a6e8-a393ab4702a4\"}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"agent-2\", \"data\": {\"revision\": 7, \"uuid\": \"d6d3f686-d5b8-4c86-88fd-d3324562b98c\"}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"agent-0\", \"data\": {\"revision\": 5, \"uuid\": \"ac8db8c5-735d-44c6-ad4d-0c1e645a772f\"}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"agent-1\", \"data\": {\"uuid\": \"e27beafe-9d57-4cc1-a6e8-a393ab4702a4\", \"revision\": 6}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"agent-2\", \"data\": {\"uuid\": \"d6d3f686-d5b8-4c86-88fd-d3324562b98c\", \"revision\": 7}, \"error\": null}\n",
+    "stderr": ""
+  }
+]

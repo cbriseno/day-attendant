@@ -1,0 +1,46 @@
+{
+  "operations": [
+    {
+      "key": "real",
+      "digest": "9d4f5611fad7b519bde3dd06fed3e4d9c5f95c95ec76c2d01fae8a4ca801f6c6",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"e5468272-1249-42bb-b1e0-ab2be09d5561\",\"general\",null,null,null,\"2026-10-28T01:07:12Z\",\"2026-10-28T01:07:12Z\",null,null]},\"result\":{\"uuid\":\"e5468272-1249-42bb-b1e0-ab2be09d5561\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] reloj real\",\"due\":\"20261028T010712Z\",\"entry\":\"20261028T010712Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"e5468272-1249-42bb-b1e0-ab2be09d5561\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] reloj real\",\"due\":\"20261028T010712Z\",\"entry\":\"20261028T010712Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"e5468272-1249-42bb-b1e0-ab2be09d5561\"},\"uuid\":\"e5468272-1249-42bb-b1e0-ab2be09d5561\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"e5468272-1249-42bb-b1e0-ab2be09d5561\"}",
+      "error": null,
+      "created_at": "2026-10-28T01:07:12Z"
+    }
+  ],
+  "notices": [
+    {
+      "id": "4d17258b8d1abe88cfacceda463ec8071c4d3e3f86f3a39474adf6fef76e2e82",
+      "episode": "2026-10-28T01:07:12Z",
+      "entity": "e5468272-1249-42bb-b1e0-ab2be09d5561",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 1,
+      "accepted_at": "2026-10-28T01:07:13Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-10-28T01:07:13Z",
+      "active_attempt_id": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 1,
+      "notice_id": "4d17258b8d1abe88cfacceda463ec8071c4d3e3f86f3a39474adf6fef76e2e82",
+      "at": "2026-10-28T01:07:13Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    }
+  ],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "1"
+    }
+  ]
+}

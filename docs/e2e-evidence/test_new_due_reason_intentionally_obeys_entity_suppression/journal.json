@@ -1,0 +1,77 @@
+{
+  "operations": [
+    {
+      "key": "task",
+      "digest": "30313794dbc9440cd4c0cccc5f7c14a147c1ddf47aed2c3ba5b540da930b3f79",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"61ee5c2a-129b-4abb-9b60-715dde859e0c\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] severity\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] severity\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"},\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "new-due",
+      "digest": "690c1d469c478067be5922cc0d4a54d618be49ad372bc1429a20e0e20e6032c0",
+      "action": "task_update",
+      "plan": "{\"effect\":{},\"result\":{\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"},\"revision\":1,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] severity\",\"due\":\"20261102T150500Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"},\"before\":{\"description\":\"[FICTICIO] severity\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"},\"patch\":{\"due\":\"20261102T150500Z\"},\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":2,\"uuid\":\"61ee5c2a-129b-4abb-9b60-715dde859e0c\"}",
+      "error": null,
+      "created_at": "2026-11-02T15:05:00Z"
+    }
+  ],
+  "notices": [
+    {
+      "id": "208fe846321c3374cd7ca235a290ddf0f7e70faab477070d93057374de998c5a",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "61ee5c2a-129b-4abb-9b60-715dde859e0c",
+      "kind": "stale",
+      "status": "accepted",
+      "attempts": 1,
+      "accepted_at": "2026-11-02T15:00:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-11-02T15:00:00Z",
+      "active_attempt_id": null
+    },
+    {
+      "id": "30076f37c554a6438d065ddebff99e7c51cf50d8158643cd9cf5741dd2bd2389",
+      "episode": "2026-11-02T15:05:00Z",
+      "entity": "61ee5c2a-129b-4abb-9b60-715dde859e0c",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 1,
+      "accepted_at": "2026-11-02T15:30:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-11-02T15:30:00Z",
+      "active_attempt_id": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 1,
+      "notice_id": "208fe846321c3374cd7ca235a290ddf0f7e70faab477070d93057374de998c5a",
+      "at": "2026-11-02T15:00:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    },
+    {
+      "id": 2,
+      "notice_id": "30076f37c554a6438d065ddebff99e7c51cf50d8158643cd9cf5741dd2bd2389",
+      "at": "2026-11-02T15:30:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    }
+  ],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "2"
+    }
+  ]
+}

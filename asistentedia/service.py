@@ -366,18 +366,25 @@ class Assistant:
         with self.store.lock():
             self.clean_read()
             now = self.now()
-            candidates = self._candidates(self._view())
+            # One reason per entity, ordered independently of backend export order.
+            rank = {"event": 0, "due": 1, "snooze_ready": 2, "chat_waiting": 3, "stale": 4}
+            candidates = sorted(self._candidates(self._view()),
+                                key=lambda n: (rank[n["kind"]], n["episode"], n["entity"]))
+            selected = {}
+            for item in candidates:
+                selected.setdefault(item["entity"], item)
+            candidates = list(selected.values())
             with self.store.connect() as con:
                 for item in candidates:
                     con.execute("INSERT OR IGNORE INTO notices(id,episode,entity,kind,status) VALUES(?,?,?,?, 'pending')",
                                 (item["id"], item["episode"], item["entity"], item["kind"]))
-                valid = {item["id"] for item in candidates}
+                valid = {item["id"] for item in self._candidates(self._view())}
                 for row in con.execute("SELECT id FROM notices WHERE status NOT IN ('obsolete','sending')").fetchall():
                     if row["id"] not in valid:
                         con.execute("UPDATE notices SET status='obsolete' WHERE id=?", (row["id"],))
                 expired = stamp(self.clock() - timedelta(minutes=2))
                 con.execute("UPDATE attempts SET status='uncertain',error='Process outcome unknown' WHERE status='sending' AND at<=?", (expired,))
-                con.execute("UPDATE notices SET status='uncertain',error='Process outcome unknown' WHERE status='sending' AND claimed_at<=?", (expired,))
+                con.execute("UPDATE notices SET status='uncertain',active_attempt_id=NULL,error='Process outcome unknown' WHERE status='sending' AND claimed_at<=?", (expired,))
         # Claims and result commits are short transactions; notifier runs outside
         # both the SQLite transaction and the coordinator lock.
         for item in candidates:
@@ -389,6 +396,18 @@ class Assistant:
                 item = current[item["id"]]
                 with self.store.connect() as con:
                     row = con.execute("SELECT * FROM notices WHERE id=?", (item["id"],)).fetchone()
+                    # A shared rolling budget also covers concurrent/restarted
+                    # clients and backward clock jumps. Failures consume budget.
+                    since = stamp(self.clock() - timedelta(minutes=5))
+                    if con.execute("SELECT count(*) FROM attempts WHERE at>?", (since,)).fetchone()[0] >= self.store.config()["notification_budget"]:
+                        continue
+                    siblings = con.execute("SELECT * FROM notices WHERE entity=?", (item["entity"],)).fetchall()
+                    repeat = timedelta(minutes=self.store.config()["repeat_minutes"])
+                    if any(r["status"] == "sending" or
+                           (r["status"] == "uncertain" and not retry_uncertain) or
+                           (r["accepted_at"] and parse(r["accepted_at"]) + repeat > self.clock())
+                           for r in siblings):
+                        continue
                     if row["status"] in ("sending", "failed") or (row["status"] == "uncertain" and not retry_uncertain):
                         continue
                     if row["retry_at"] and parse(row["retry_at"]) > self.clock():
@@ -400,16 +419,21 @@ class Assistant:
                     if attempt_number > 3:
                         con.execute("UPDATE notices SET status='failed' WHERE id=?", (item["id"],))
                         continue
-                    con.execute("UPDATE notices SET status='sending',attempts=?,claimed_at=? WHERE id=?", (attempt_number, self.now(), item["id"]))
                     attempt = con.execute("INSERT INTO attempts(notice_id,at,status) VALUES(?,?,'sending')", (item["id"], self.now())).lastrowid
+                    con.execute("UPDATE notices SET status='sending',attempts=?,claimed_at=?,active_attempt_id=? WHERE id=?", (attempt_number, self.now(), attempt, item["id"]))
             self.fault("after_claim")
             with self.store.lock():
                 self.clean_read()
                 current = {n["id"]: n for n in self._candidates(self._view())}
+                with self.store.connect() as con:
+                    owned = con.execute("SELECT 1 FROM notices WHERE id=? AND status='sending' AND active_attempt_id=?", (item["id"], attempt)).fetchone()
+                if not owned:
+                    results.append({"id": item["id"], "status": "ownership_lost", "read_by_user": "unknown"})
+                    continue
                 if item["id"] not in current:
                     with self.store.connect() as con:
                         con.execute("UPDATE attempts SET status='obsolete',error='Condition changed after claim' WHERE id=?", (attempt,))
-                        con.execute("UPDATE notices SET status='obsolete',error='Condition changed after claim' WHERE id=?", (item["id"],))
+                        con.execute("UPDATE notices SET status='obsolete',active_attempt_id=NULL,error='Condition changed after claim' WHERE id=? AND status='sending' AND active_attempt_id=?", (item["id"], attempt))
                     results.append({"id": item["id"], "status": "obsolete", "read_by_user": "unknown"})
                     continue
                 item = current[item["id"]]
@@ -421,9 +445,13 @@ class Assistant:
             status = "uncertain" if outcome.get("uncertain") else "accepted" if outcome.get("accepted") else "pending" if attempt_number < 3 else "failed"
             retry_at = stamp(self.clock() + timedelta(minutes=2 ** attempt_number)) if status == "pending" else None
             with self.store.lock(), self.store.connect() as con:
-                con.execute("UPDATE attempts SET status=?,error=? WHERE id=?", (status, outcome.get("error"), attempt))
-                con.execute("UPDATE notices SET status=?,error=?,retry_at=?,accepted_at=CASE WHEN ?='accepted' THEN ? ELSE accepted_at END WHERE id=?",
-                            (status, outcome.get("error"), retry_at, status, self.now(), item["id"]))
+                changed = con.execute("UPDATE notices SET status=?,active_attempt_id=NULL,error=?,retry_at=?,accepted_at=CASE WHEN ?='accepted' THEN ? ELSE accepted_at END WHERE id=? AND status='sending' AND active_attempt_id=?",
+                            (status, outcome.get("error"), retry_at, status, self.now(), item["id"], attempt)).rowcount
+                if changed:
+                    con.execute("UPDATE attempts SET status=?,error=? WHERE id=?", (status, outcome.get("error"), attempt))
+                else:
+                    con.execute("UPDATE attempts SET late_outcome=? WHERE id=?", (encoded(outcome), attempt))
+                    status = "ownership_lost"
             results.append({"id": item["id"], "status": status, "read_by_user": "unknown"})
         return {"attempts": results}
 

@@ -9,7 +9,8 @@ from .errors import AssistantError
 from .platforms import exclusive
 
 DEFAULTS = {"repeat_minutes": 30, "stale_days": 3, "due_soon_minutes": 60,
-            "event_soon_minutes": 15, "chat_wait_minutes": 60}
+            "event_soon_minutes": 15, "chat_wait_minutes": 60,
+            "notification_budget": 3}
 
 
 class Store:
@@ -24,7 +25,7 @@ class Store:
         self.lock_path = self.path / "writer.lock"
         with exclusive(self.lock_path), self.connect() as con:
             version = con.execute("PRAGMA user_version").fetchone()[0]
-            if version > 1:
+            if version > 2:
                 raise AssistantError("newer_schema", "The state requires a newer assistant version.")
             if version == 0:
                 con.executescript('''
@@ -51,6 +52,15 @@ class Store:
                     PRAGMA user_version=1;
                 ''')
                 con.executemany("INSERT INTO config VALUES(?,?)", DEFAULTS.items())
+            if version < 2:
+                con.executescript('''
+                    BEGIN IMMEDIATE;
+                    ALTER TABLE notices ADD COLUMN active_attempt_id INTEGER;
+                    ALTER TABLE attempts ADD COLUMN late_outcome TEXT;
+                    INSERT OR IGNORE INTO config VALUES('notification_budget',3);
+                    PRAGMA user_version=2;
+                    COMMIT;
+                ''')
         os.chmod(self.database, 0o600)
 
     @contextmanager

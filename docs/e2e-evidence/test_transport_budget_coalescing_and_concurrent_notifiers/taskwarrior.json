@@ -1,0 +1,90 @@
+[
+  {
+    "id": 1,
+    "description": "[FICTICIO] tarea 0",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010720Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "35bbeaed-01a2-4d04-bf60-034441cbbf83",
+    "urgency": 11.5104
+  },
+  {
+    "id": 2,
+    "description": "[FICTICIO] tarea 1",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010721Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "276dc6d5-7872-4f40-8f5b-d870522837c8",
+    "urgency": 11.5104
+  },
+  {
+    "id": 3,
+    "description": "[FICTICIO] tarea 2",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010721Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "15d7a37c-97a3-4f8b-b17e-3d2d04a79637",
+    "urgency": 11.5104
+  },
+  {
+    "id": 4,
+    "description": "[FICTICIO] tarea 3",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010721Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "6ec93e9e-e6b4-4974-897c-29e4d81d3513",
+    "urgency": 11.5104
+  },
+  {
+    "id": 5,
+    "description": "[FICTICIO] tarea 4",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010721Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "c73527fa-0371-4165-a89f-12d3196c0474",
+    "urgency": 11.5104
+  },
+  {
+    "id": 6,
+    "description": "[FICTICIO] tarea 5",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010722Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "fd9385c8-f71a-4af9-98a6-2a89ecd63428",
+    "urgency": 11.5104
+  },
+  {
+    "id": 7,
+    "description": "[FICTICIO] tarea 6",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010722Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "99d01bb2-b5ec-4594-ab73-e518838c3df8",
+    "urgency": 11.5104
+  },
+  {
+    "id": 8,
+    "description": "[FICTICIO] tarea 7",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010722Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "3139a011-d198-4091-a538-4f84946849be",
+    "urgency": 11.5104
+  }
+]

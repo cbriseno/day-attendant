@@ -1,0 +1,201 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] lunes",
+      "--key",
+      "task",
+      "--due",
+      "2026-11-02T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"task\", \"data\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "snooze",
+      "201aafc0-7e7c-4fe8-a824-8bb84cfe3da9",
+      "2026-11-02T15:00Z",
+      "--key",
+      "snooze"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"snooze\", \"data\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"revision\": 2}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "event",
+      "add",
+      "[FICTICIO] viernes",
+      "--start",
+      "2026-10-30T15:10Z",
+      "--end",
+      "2026-10-30T16:00Z",
+      "--key",
+      "event"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"event\", \"data\": {\"uuid\": \"0fbbd571-a274-45c3-9311-a47890c2a282\", \"revision\": 3}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"5f963046-98f1-4da9-bba1-d6253576792f\", \"data\": {\"attempts\": [{\"id\": \"ea01a860366b95bf6fe64856470381039c73f6e1f47674d37406a4610af42baa\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "argv": [
+      "pulse"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"b24349c6-2ba4-4abe-a5ae-097555349aad\", \"data\": {\"revision\": 3, \"notices\": [{\"id\": \"ff07967bc551f533c5d5cd4cb7037e8a1e3f6b65eed8394103731d82311028de\", \"entity\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"kind\": \"due\", \"episode\": \"2026-11-02T15:00:00Z\", \"title\": \"[FICTICIO] lunes\", \"task\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"title\": \"[FICTICIO] lunes\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": \"2026-11-02T15:00:00Z\", \"snoozed_until\": \"2026-11-02T15:00:00Z\", \"focused\": false, \"metadata\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}}, {\"id\": \"90b1931b4c9b8a8a78dace5b894b65c8fc4022c508dd6d9cf48354403f3b3c53\", \"entity\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"kind\": \"snooze_ready\", \"episode\": \"2026-11-02T15:00:00Z\", \"title\": \"[FICTICIO] lunes\", \"task\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"title\": \"[FICTICIO] lunes\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": \"2026-11-02T15:00:00Z\", \"snoozed_until\": \"2026-11-02T15:00:00Z\", \"focused\": false, \"metadata\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}}, {\"id\": \"dbe0907d56553cc4b4c468027261082556e6d2e06cb858710523d4a289479a90\", \"entity\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"kind\": \"stale\", \"episode\": \"2026-10-30T15:00:00Z\", \"title\": \"[FICTICIO] lunes\", \"task\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"title\": \"[FICTICIO] lunes\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": \"2026-11-02T15:00:00Z\", \"snoozed_until\": \"2026-11-02T15:00:00Z\", \"focused\": false, \"metadata\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "argv": [
+      "pulse"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"833cf9b3-6df1-4fbb-9899-cb67d6a22790\", \"data\": {\"revision\": 3, \"notices\": [{\"id\": \"ff07967bc551f533c5d5cd4cb7037e8a1e3f6b65eed8394103731d82311028de\", \"entity\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"kind\": \"due\", \"episode\": \"2026-11-02T15:00:00Z\", \"title\": \"[FICTICIO] lunes\", \"task\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"title\": \"[FICTICIO] lunes\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": \"2026-11-02T15:00:00Z\", \"snoozed_until\": \"2026-11-02T15:00:00Z\", \"focused\": false, \"metadata\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}}, {\"id\": \"90b1931b4c9b8a8a78dace5b894b65c8fc4022c508dd6d9cf48354403f3b3c53\", \"entity\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"kind\": \"snooze_ready\", \"episode\": \"2026-11-02T15:00:00Z\", \"title\": \"[FICTICIO] lunes\", \"task\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"title\": \"[FICTICIO] lunes\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": \"2026-11-02T15:00:00Z\", \"snoozed_until\": \"2026-11-02T15:00:00Z\", \"focused\": false, \"metadata\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}}, {\"id\": \"dbe0907d56553cc4b4c468027261082556e6d2e06cb858710523d4a289479a90\", \"entity\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"kind\": \"stale\", \"episode\": \"2026-10-30T15:00:00Z\", \"title\": \"[FICTICIO] lunes\", \"task\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"title\": \"[FICTICIO] lunes\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": \"2026-11-02T15:00:00Z\", \"snoozed_until\": \"2026-11-02T15:00:00Z\", \"focused\": false, \"metadata\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "argv": [
+      "pulse"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"0ba2c862-bacb-402a-bbd6-1e33d8dc3bbc\", \"data\": {\"revision\": 3, \"notices\": [{\"id\": \"ff07967bc551f533c5d5cd4cb7037e8a1e3f6b65eed8394103731d82311028de\", \"entity\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"kind\": \"due\", \"episode\": \"2026-11-02T15:00:00Z\", \"title\": \"[FICTICIO] lunes\", \"task\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"title\": \"[FICTICIO] lunes\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": \"2026-11-02T15:00:00Z\", \"snoozed_until\": \"2026-11-02T15:00:00Z\", \"focused\": false, \"metadata\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}}, {\"id\": \"90b1931b4c9b8a8a78dace5b894b65c8fc4022c508dd6d9cf48354403f3b3c53\", \"entity\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"kind\": \"snooze_ready\", \"episode\": \"2026-11-02T15:00:00Z\", \"title\": \"[FICTICIO] lunes\", \"task\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"title\": \"[FICTICIO] lunes\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": \"2026-11-02T15:00:00Z\", \"snoozed_until\": \"2026-11-02T15:00:00Z\", \"focused\": false, \"metadata\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}}, {\"id\": \"dbe0907d56553cc4b4c468027261082556e6d2e06cb858710523d4a289479a90\", \"entity\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"kind\": \"stale\", \"episode\": \"2026-10-30T15:00:00Z\", \"title\": \"[FICTICIO] lunes\", \"task\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"title\": \"[FICTICIO] lunes\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": \"2026-11-02T15:00:00Z\", \"snoozed_until\": \"2026-11-02T15:00:00Z\", \"focused\": false, \"metadata\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"109dac2b-4741-4b4d-a9d1-00a0c68d01da\", \"data\": {\"attempts\": [{\"id\": \"ff07967bc551f533c5d5cd4cb7037e8a1e3f6b65eed8394103731d82311028de\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"e2995410-c95a-4e5e-aa35-bbf5ee14fee3\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T14:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"65e8dc8b-6b9e-4a34-95a8-ca778adfaeb1\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:31:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"2be1f1fe-b808-4da9-bfc1-ec8d8cfa6bf4\", \"data\": {\"attempts\": [{\"id\": \"ff07967bc551f533c5d5cd4cb7037e8a1e3f6b65eed8394103731d82311028de\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:31:00+00:00",
+    "argv": [
+      "task",
+      "done",
+      "201aafc0-7e7c-4fe8-a824-8bb84cfe3da9",
+      "--key",
+      "done"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"done\", \"data\": {\"uuid\": \"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\", \"revision\": 4}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-03T15:31:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"847775a1-813f-4f14-8e43-ff7f6dd6a1d1\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-04T15:31:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"b1928ad4-10b7-4b1e-a96f-d288a43070da\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-05T15:31:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"a0204291-cee7-46b6-a6d5-f1b00704d7ba\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-06T15:31:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"4932d4d9-85fb-4cef-8ba8-8137811ecda4\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "id": 1,
+    "description": "[FICTICIO] inherited claim",
+    "due": "20261030T150000Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010713Z",
+    "priority": "M",
+    "status": "pending",
+    "uuid": "48e5a59a-cd01-471f-8738-3926d64864d9",
+    "urgency": 11.5104
+  }
+]

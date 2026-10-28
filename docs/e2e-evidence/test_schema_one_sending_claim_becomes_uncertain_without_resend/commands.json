@@ -1,0 +1,76 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] inherited claim",
+      "--key",
+      "task",
+      "--due",
+      "2026-10-30T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"task\", \"data\": {\"uuid\": \"48e5a59a-cd01-471f-8738-3926d64864d9\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": {
+      "E2E_CRASH": "after_claim"
+    },
+    "exit": 75,
+    "stdout": "",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "doctor"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"3e00bf07-c555-4e09-bdfa-f969d1bb6dae\", \"data\": {\"version\": \"3.5.0\", \"state\": \"/tmp/asistente-system-elmd7uyx/state\", \"integrity\": \"ok\", \"revision\": 1, \"operations\": [], \"notices_requiring_attention\": [{\"id\": \"eba1661d326aa16b4807bc5f1f200f2bcd93fd9cd72410fceffcc9a05745efba\", \"status\": \"sending\", \"attempts\": 1, \"error\": null, \"claimed_at\": \"2026-10-30T15:00:00Z\", \"claim_expired\": false, \"delivery_state\": \"sending\", \"recommended_action\": \"Wait for the active delivery.\"}], \"capabilities\": {\"notify-send\": \"/usr/bin/notify-send\", \"osascript\": null, \"systemctl\": \"/usr/bin/systemctl\", \"crontab\": \"/usr/bin/crontab\", \"launchctl\": null, \"platform\": \"linux\", \"user_systemd\": false}, \"config\": {\"repeat_minutes\": 30, \"stale_days\": 3, \"due_soon_minutes\": 60, \"event_soon_minutes\": 15, \"chat_wait_minutes\": 60, \"notification_budget\": 3}, \"scheduler_installed_by_this_app\": false}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:03:00+00:00",
+    "argv": [
+      "doctor"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"3ad1badd-1ebd-4620-a263-a104e9a59953\", \"data\": {\"version\": \"3.5.0\", \"state\": \"/tmp/asistente-system-elmd7uyx/state\", \"integrity\": \"ok\", \"revision\": 1, \"operations\": [], \"notices_requiring_attention\": [{\"id\": \"eba1661d326aa16b4807bc5f1f200f2bcd93fd9cd72410fceffcc9a05745efba\", \"status\": \"sending\", \"attempts\": 1, \"error\": null, \"claimed_at\": \"2026-10-30T15:00:00Z\", \"claim_expired\": true, \"delivery_state\": \"expired_unknown\", \"recommended_action\": \"Run notify to reconcile the expired claim; review before explicit retry.\"}], \"capabilities\": {\"notify-send\": \"/usr/bin/notify-send\", \"osascript\": null, \"systemctl\": \"/usr/bin/systemctl\", \"crontab\": \"/usr/bin/crontab\", \"launchctl\": null, \"platform\": \"linux\", \"user_systemd\": false}, \"config\": {\"repeat_minutes\": 30, \"stale_days\": 3, \"due_soon_minutes\": 60, \"event_soon_minutes\": 15, \"chat_wait_minutes\": 60, \"notification_budget\": 3}, \"scheduler_installed_by_this_app\": false}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:03:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"4abcb857-0de2-42de-9458-106edd5c0d89\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-31T15:03:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"4464cbd5-c031-48d9-bc0f-5d4f0eb61838\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  }
+]

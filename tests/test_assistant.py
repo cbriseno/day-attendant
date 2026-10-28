@@ -15,7 +15,7 @@ from asistentedia.store import Store
 from asistentedia.timeutil import instant, parse
 
 ROOT = Path(__file__).resolve().parent.parent
-TASK = os.environ.get("ASISTENTE_TASK_BIN", "/tmp/asistente-taskwarrior-env/runtime/bin/task")
+TASK = os.environ.get("ASISTENTE_TASK_BIN", str(ROOT / ".runtime/taskwarrior/bin/task"))
 NOW = datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
 
 

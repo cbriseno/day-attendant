@@ -1,0 +1,19 @@
+test_claim_expired_before_transport_is_not_sent (__main__.System.test_claim_expired_before_transport_is_not_sent) ... ok
+test_crashes_recover_and_concurrent_capture (__main__.System.test_crashes_recover_and_concurrent_capture) ... ok
+test_external_conflict_preserves_data_and_blocks_writes (__main__.System.test_external_conflict_preserves_data_and_blocks_writes) ... ok
+test_late_claim_cannot_overwrite_uncertain_or_new_owner (__main__.System.test_late_claim_cannot_overwrite_uncertain_or_new_owner) ... ok
+test_late_completion_cannot_replace_new_owner (__main__.System.test_late_completion_cannot_replace_new_owner) ... ok
+test_missing_notification_client_is_visible_failure (__main__.System.test_missing_notification_client_is_visible_failure) ... ok
+test_nested_focus_invalid_frames_and_priority (__main__.System.test_nested_focus_invalid_frames_and_priority) ... ok
+test_new_due_reason_intentionally_obeys_entity_suppression (__main__.System.test_new_due_reason_intentionally_obeys_entity_suppression) ... ok
+test_real_time_entrypoint_and_scheduler_dry_run (__main__.System.test_real_time_entrypoint_and_scheduler_dry_run) ... ok
+test_schema_one_sending_claim_becomes_uncertain_without_resend (__main__.System.test_schema_one_sending_claim_becomes_uncertain_without_resend) ... ok
+test_schema_one_upgrade_preserves_idempotency_and_suppression (__main__.System.test_schema_one_upgrade_preserves_idempotency_and_suppression) ... ok
+test_seven_days_absence_restart_and_backward_clock (__main__.System.test_seven_days_absence_restart_and_backward_clock) ... ok
+test_transport_budget_coalescing_and_concurrent_notifiers (__main__.System.test_transport_budget_coalescing_and_concurrent_notifiers) ... ok
+test_transport_rejection_timeout_and_server_absence (__main__.System.test_transport_rejection_timeout_and_server_absence) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 40.382s
+
+OK

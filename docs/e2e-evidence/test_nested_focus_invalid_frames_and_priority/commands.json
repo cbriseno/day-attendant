@@ -1,0 +1,308 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] A",
+      "--key",
+      "a",
+      "--priority",
+      "high"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"a\", \"data\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] B",
+      "--key",
+      "b",
+      "--priority",
+      "medium"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"b\", \"data\": {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"revision\": 2}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] C",
+      "--key",
+      "c",
+      "--priority",
+      "low"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"c\", \"data\": {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"revision\": 3}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "brief"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"5bd79c64-de16-4045-a01f-65e50081d479\", \"data\": {\"revision\": 3, \"next\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"title\": \"[FICTICIO] A\", \"status\": \"pending\", \"priority\": \"high\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, \"order\": \"focus, explicit priority, due date, UUID\", \"conflicts\": [], \"notices\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "list"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"c9f61993-51e7-4385-a40a-9aef005c6a0c\", \"data\": {\"revision\": 3, \"tasks\": [{\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"title\": \"[FICTICIO] A\", \"status\": \"pending\", \"priority\": \"high\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"title\": \"[FICTICIO] B\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"title\": \"[FICTICIO] C\", \"status\": \"pending\", \"priority\": \"low\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "focus",
+      "push",
+      "76a7f971-97ca-40b9-a3fc-c12e671ce724",
+      "--key",
+      "push-0",
+      "--expect",
+      "3"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"push-0\", \"data\": {\"focus\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"paused\": null, \"revision\": 4}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "list"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"1f9052d4-d86d-4180-996b-5f86de7eabb2\", \"data\": {\"revision\": 4, \"tasks\": [{\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"title\": \"[FICTICIO] A\", \"status\": \"pending\", \"priority\": \"high\", \"due_at\": null, \"snoozed_until\": null, \"focused\": true, \"metadata\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"title\": \"[FICTICIO] B\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"title\": \"[FICTICIO] C\", \"status\": \"pending\", \"priority\": \"low\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "focus",
+      "push",
+      "7b96b827-b5af-44e5-9b55-bcae9bd78d04",
+      "--key",
+      "push-1",
+      "--expect",
+      "4"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"push-1\", \"data\": {\"focus\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"paused\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"revision\": 5}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "list"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"9aa43cd8-a090-4be9-bdb5-5077c706a61f\", \"data\": {\"revision\": 5, \"tasks\": [{\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"title\": \"[FICTICIO] A\", \"status\": \"pending\", \"priority\": \"high\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"title\": \"[FICTICIO] B\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": null, \"snoozed_until\": null, \"focused\": true, \"metadata\": {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"title\": \"[FICTICIO] C\", \"status\": \"pending\", \"priority\": \"low\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "focus",
+      "push",
+      "5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8",
+      "--key",
+      "push-2",
+      "--expect",
+      "5"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"push-2\", \"data\": {\"focus\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"paused\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"revision\": 6}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "list"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"58733939-d783-402a-9c15-dd3798e56471\", \"data\": {\"revision\": 6, \"tasks\": [{\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"title\": \"[FICTICIO] A\", \"status\": \"pending\", \"priority\": \"high\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"title\": \"[FICTICIO] B\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"title\": \"[FICTICIO] C\", \"status\": \"pending\", \"priority\": \"low\", \"due_at\": null, \"snoozed_until\": null, \"focused\": true, \"metadata\": {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "focus",
+      "resume",
+      "--key",
+      "resume-1",
+      "--expect",
+      "6"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"resume-1\", \"data\": {\"focus\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"skipped\": null, \"revision\": 7}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "list"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"accf2e6e-2b77-4e4b-8597-94a7841c3bfd\", \"data\": {\"revision\": 7, \"tasks\": [{\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"title\": \"[FICTICIO] A\", \"status\": \"pending\", \"priority\": \"high\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"title\": \"[FICTICIO] B\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": null, \"snoozed_until\": null, \"focused\": true, \"metadata\": {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"title\": \"[FICTICIO] C\", \"status\": \"pending\", \"priority\": \"low\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "focus",
+      "resume",
+      "--key",
+      "resume-2",
+      "--expect",
+      "7"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"resume-2\", \"data\": {\"focus\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"skipped\": null, \"revision\": 8}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "list"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"669bf99d-ebf0-49bf-af5f-7891696bb94e\", \"data\": {\"revision\": 8, \"tasks\": [{\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"title\": \"[FICTICIO] A\", \"status\": \"pending\", \"priority\": \"high\", \"due_at\": null, \"snoozed_until\": null, \"focused\": true, \"metadata\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"title\": \"[FICTICIO] B\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"title\": \"[FICTICIO] C\", \"status\": \"pending\", \"priority\": \"low\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "focus",
+      "push",
+      "7b96b827-b5af-44e5-9b55-bcae9bd78d04",
+      "--key",
+      "push-again",
+      "--expect",
+      "8"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"push-again\", \"data\": {\"focus\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"paused\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"revision\": 9}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "done",
+      "76a7f971-97ca-40b9-a3fc-c12e671ce724",
+      "--key",
+      "done-a"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"done-a\", \"data\": {\"uuid\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"revision\": 10}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "list"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"8d7f7598-6703-4ac8-b4de-fe06bd212037\", \"data\": {\"revision\": 10, \"tasks\": [{\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"title\": \"[FICTICIO] B\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": null, \"snoozed_until\": null, \"focused\": true, \"metadata\": {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"title\": \"[FICTICIO] C\", \"status\": \"pending\", \"priority\": \"low\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "focus",
+      "resume",
+      "--key",
+      "invalid",
+      "--expect",
+      "10"
+    ],
+    "fault": null,
+    "exit": 2,
+    "stdout": "{\"schema_version\": 1, \"ok\": false, \"operation_id\": \"invalid\", \"data\": null, \"error\": {\"code\": \"invalid_frame\", \"message\": \"The previous task is unavailable; explicitly skip this frame.\", \"details\": {\"previous\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\"}}}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "list"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"4cc3eb65-a5c4-4cb6-8e1b-319542f1ea4d\", \"data\": {\"revision\": 10, \"tasks\": [{\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"title\": \"[FICTICIO] B\", \"status\": \"pending\", \"priority\": \"medium\", \"due_at\": null, \"snoozed_until\": null, \"focused\": true, \"metadata\": {\"uuid\": \"7b96b827-b5af-44e5-9b55-bcae9bd78d04\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}, {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"title\": \"[FICTICIO] C\", \"status\": \"pending\", \"priority\": \"low\", \"due_at\": null, \"snoozed_until\": null, \"focused\": false, \"metadata\": {\"uuid\": \"5b8a3ec4-29a8-479c-918d-22fe3ed3e7f8\", \"source\": \"general\", \"person\": null, \"reference\": null, \"observed_at\": null, \"captured_at\": \"2026-10-30T15:00:00Z\", \"human_progress_at\": \"2026-10-30T15:00:00Z\", \"origin_zone\": null, \"estimate_minutes\": null}}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "focus",
+      "resume",
+      "--skip-invalid",
+      "--key",
+      "skip",
+      "--expect",
+      "10"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"skip\", \"data\": {\"focus\": null, \"skipped\": \"76a7f971-97ca-40b9-a3fc-c12e671ce724\", \"revision\": 11}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  }
+]

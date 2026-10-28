@@ -52,7 +52,9 @@ python3 -B asistente.py schedule --dry-run
 
 `brief`, `task list` y `pulse` no consumen intervalos. `notify` registra intentos en una cola durable. Un fallo tiene hasta tres intentos con backoff; un resultado incierto no se reintenta automáticamente. Sólo tras revisar el caso se usa `notify --retry-uncertain`. Un código exitoso del notificador significa aceptación local, no lectura humana. Una caída después del popup y antes del commit puede producir duplicación si se autoriza reintentar.
 
-Los avisos cubren vencimientos, fin de snooze, estancamiento, mensajes capturados pendientes y eventos próximos/en curso. Los defaults visibles en `config list` son políticas iniciales ajustables, no horarios asumidos del usuario. `config set NOMBRE VALOR --key CLAVE` permite cambiarlos. No hay avisos periódicos hasta instalar explícitamente un job, algo que esta versión sólo muestra en `dry-run`. Se deben acordar jornada y horas de silencio antes de hacerlo.
+Los avisos cubren vencimientos, fin de snooze, estancamiento, mensajes capturados pendientes y eventos próximos/en curso. Se agrupan los motivos de cada tarea en un aviso y se respeta su intervalo aunque cambie el motivo. El orden es evento, vencimiento, fin de snooze, chat y estancamiento; dentro de cada motivo, fecha y UUID. El presupuesto compartido por todos los procesos es de tres intentos en cinco minutos (`notification_budget`); los fallos también lo consumen. No se acumulan avisos por pulsos omitidos. Tras una ausencia, los vencimientos siguen vigentes y los eventos terminados se omiten. Un retroceso del reloj conserva la supresión hasta alcanzar los tiempos guardados.
+
+Los defaults visibles en `config list` son políticas iniciales ajustables, no horarios asumidos del usuario. `config set NOMBRE VALOR --key CLAVE` permite cambiarlos. No hay avisos periódicos hasta instalar explícitamente un job, algo que esta versión sólo muestra en `dry-run`. Se deben acordar jornada y horas de silencio antes de hacerlo.
 
 ## Recuperación
 
@@ -72,16 +74,22 @@ Una tarea completada/pospuesta/bloqueada que figure en la pila no se restaura si
 
 ```sh
 ASISTENTE_TASK_BIN="$PWD/.runtime/taskwarrior/bin/task" \
-  python3 -B -m unittest discover -s tests -v
+  python3 -B -m unittest discover -s tests -p test_assistant.py -v
+
+# Sistema: CLI en procesos nuevos y notify-send real en D-Bus privado.
+# Requiere dbus-run-session, notify-send y Python gi (Gio/GLib).
+python3 -B scripts/test_system.py
 ```
 
 Las pruebas de integración ejecutan Taskwarrior real. Incluyen muerte de procesos entre pasos, rollback de SQLite, conflicto externo sin sobrescritura, concurrencia, DST, snooze vencido, supresión, reintentos y avisos inciertos. Para revisar la prueba inicial independiente del producto, consulta [el laboratorio de viabilidad](pruebas/viabilidad-taskwarrior/README.md).
+
+La suite de sistema recorre siete días lógicos acelerados, ausencias, reinicios, fallos reales de transporte y claims tardíos. Su reloj sólo existe en el harness. El receptor aislado registra los mensajes enviados por `notify-send`; no usa el bus de tu escritorio. Consulta [alcance y evidencia](docs/e2e-linux.md) antes de interpretar esto como validación de operación desatendida.
 
 ## Límites actuales
 
 La coordinación cubre escritores que usan esta CLI en una misma máquina. No es una transacción distribuida ni sincronización Mac–Linux. No escribir directamente con `task` sobre el estado administrado salvo durante una reconciliación revisada. La copia coherente de seguridad y un proceso de retención/restauración de producción aún no tienen un comando en el producto.
 
-Antes de avisos automáticos también falta asociar cada resultado a un identificador de claim vigente: una entrega demorada o un cambio brusco de reloj no debe confirmar un claim que otro proceso ya reclasificó. El notificador actual tiene timeout de 10 segundos y un lease de dos minutos; el review registró este caso como P1 previo a automatización, sin bloquear el piloto manual.
+Cada intento posee un identificador persistente. Un resultado tardío se conserva como evidencia y sólo finaliza el aviso si mantiene la propiedad del claim. El notificador tiene timeout de 10 segundos y un lease de dos minutos. El esquema SQLite migra de v1 a v2 conservando tareas, claves y supresión; detén los procesos de la versión anterior antes de actualizar.
 
 El núcleo no extrae imágenes ni interpreta frases. Eso corresponde a los agentes con estas [instrucciones](AGENTS.md). Los datos observados son una instantánea: el asistente no sabe si llegaron mensajes nuevos ni si contestaste fuera de él.
 

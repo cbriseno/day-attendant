@@ -1,0 +1,35 @@
+test_administrative_changes_do_not_imply_human_progress (test_assistant.Integration.test_administrative_changes_do_not_imply_human_progress) ... ok
+test_cli_json_any_level_and_schedule_no_install (test_assistant.Integration.test_cli_json_any_level_and_schedule_no_install) ... ok
+test_completed_previous_frame_needs_explicit_skip (test_assistant.Integration.test_completed_previous_frame_needs_explicit_skip) ... ok
+test_concurrent_clients_and_read_only_pulse (test_assistant.Integration.test_concurrent_clients_and_read_only_pulse) ... ok
+test_concurrent_notifiers_claim_one_attempt (test_assistant.Integration.test_concurrent_notifiers_claim_one_attempt) ... ok
+test_create_recovery_after_real_process_death (test_assistant.Integration.test_create_recovery_after_real_process_death) ... ok
+test_creation_idempotent_and_key_conflict (test_assistant.Integration.test_creation_idempotent_and_key_conflict) ... ok
+test_doctor_reports_expired_claim_without_mutating_it (test_assistant.Integration.test_doctor_reports_expired_claim_without_mutating_it) ... ok
+test_events_conflicts_and_cancel (test_assistant.Integration.test_events_conflicts_and_cancel) ... ok
+test_failed_notice_retries_without_claiming_acceptance (test_assistant.Integration.test_failed_notice_retries_without_claiming_acceptance) ... ok
+test_focus_recovery_at_all_boundaries (test_assistant.Integration.test_focus_recovery_at_all_boundaries) ... ok
+test_interrupted_notifier_stays_uncertain_until_explicit_retry (test_assistant.Integration.test_interrupted_notifier_stays_uncertain_until_explicit_retry) ... ok
+test_later_recovery_conflict_does_not_mutate_earlier_participant (test_assistant.Integration.test_later_recovery_conflict_does_not_mutate_earlier_participant) ... ok
+test_nested_focus_revisions_and_stale_writer (test_assistant.Integration.test_nested_focus_revisions_and_stale_writer) ... ok
+test_notice_invalidated_after_claim_is_not_sent (test_assistant.Integration.test_notice_invalidated_after_claim_is_not_sent) ... ok
+test_notification_retry_bound (test_assistant.Integration.test_notification_retry_bound) ... ok
+test_notifier_runs_without_writer_lock_or_write_transaction (test_assistant.Integration.test_notifier_runs_without_writer_lock_or_write_transaction) ... ok
+test_obsolete_notice_not_delivered (test_assistant.Integration.test_obsolete_notice_not_delivered) ... ok
+test_priority_is_explicit_and_focus_overrides_it (test_assistant.Integration.test_priority_is_explicit_and_focus_overrides_it) ... ok
+test_private_files_are_not_group_or_world_readable (test_assistant.Integration.test_private_files_are_not_group_or_world_readable) ... ok
+test_pulse_does_not_consume_notification_and_repeat_is_suppressed (test_assistant.Integration.test_pulse_does_not_consume_notification_and_repeat_is_suppressed) ... ok
+test_real_dependencies_pending_completed_and_deleted (test_assistant.Integration.test_real_dependencies_pending_completed_and_deleted) ... ok
+test_recovery_refuses_external_edit_after_timeout (test_assistant.Integration.test_recovery_refuses_external_edit_after_timeout) ... ok
+test_resume_recovery_at_all_boundaries (test_assistant.Integration.test_resume_recovery_at_all_boundaries) ... ok
+test_snooze_expiry_is_not_human_progress (test_assistant.Integration.test_snooze_expiry_is_not_human_progress) ... ok
+test_snoozed_previous_is_not_resumed (test_assistant.Integration.test_snoozed_previous_is_not_resumed) ... ok
+test_ambiguous_hour_requires_choice (test_assistant.TimeTests.test_ambiguous_hour_requires_choice) ... ok
+test_checkout_state_rejected (test_assistant.TimeTests.test_checkout_state_rejected) ... ok
+test_naive_time_requires_zone (test_assistant.TimeTests.test_naive_time_requires_zone) ... ok
+test_nonexistent_hour_rejected (test_assistant.TimeTests.test_nonexistent_hour_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 30 tests in 32.111s
+
+OK

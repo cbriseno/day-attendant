@@ -1,0 +1,228 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] tarea 0",
+      "--key",
+      "0",
+      "--due",
+      "2026-10-30T15:00Z",
+      "--source",
+      "chat",
+      "--observed-at",
+      "2026-10-29T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"0\", \"data\": {\"uuid\": \"35bbeaed-01a2-4d04-bf60-034441cbbf83\", \"revision\": 1}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] tarea 1",
+      "--key",
+      "1",
+      "--due",
+      "2026-10-30T15:00Z",
+      "--source",
+      "chat",
+      "--observed-at",
+      "2026-10-29T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"1\", \"data\": {\"uuid\": \"276dc6d5-7872-4f40-8f5b-d870522837c8\", \"revision\": 2}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] tarea 2",
+      "--key",
+      "2",
+      "--due",
+      "2026-10-30T15:00Z",
+      "--source",
+      "chat",
+      "--observed-at",
+      "2026-10-29T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"2\", \"data\": {\"uuid\": \"15d7a37c-97a3-4f8b-b17e-3d2d04a79637\", \"revision\": 3}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] tarea 3",
+      "--key",
+      "3",
+      "--due",
+      "2026-10-30T15:00Z",
+      "--source",
+      "chat",
+      "--observed-at",
+      "2026-10-29T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"3\", \"data\": {\"uuid\": \"6ec93e9e-e6b4-4974-897c-29e4d81d3513\", \"revision\": 4}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] tarea 4",
+      "--key",
+      "4",
+      "--due",
+      "2026-10-30T15:00Z",
+      "--source",
+      "chat",
+      "--observed-at",
+      "2026-10-29T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"4\", \"data\": {\"uuid\": \"c73527fa-0371-4165-a89f-12d3196c0474\", \"revision\": 5}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] tarea 5",
+      "--key",
+      "5",
+      "--due",
+      "2026-10-30T15:00Z",
+      "--source",
+      "chat",
+      "--observed-at",
+      "2026-10-29T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"5\", \"data\": {\"uuid\": \"fd9385c8-f71a-4af9-98a6-2a89ecd63428\", \"revision\": 6}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] tarea 6",
+      "--key",
+      "6",
+      "--due",
+      "2026-10-30T15:00Z",
+      "--source",
+      "chat",
+      "--observed-at",
+      "2026-10-29T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"6\", \"data\": {\"uuid\": \"99d01bb2-b5ec-4594-ab73-e518838c3df8\", \"revision\": 7}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] tarea 7",
+      "--key",
+      "7",
+      "--due",
+      "2026-10-30T15:00Z",
+      "--source",
+      "chat",
+      "--observed-at",
+      "2026-10-29T15:00Z"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"7\", \"data\": {\"uuid\": \"3139a011-d198-4091-a538-4f84946849be\", \"revision\": 8}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "spawn": [
+      "notify"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "spawn": [
+      "notify"
+    ],
+    "fault": null
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "spawn": [
+      "notify"
+    ],
+    "fault": null
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"b5d914f2-5555-4d31-8275-caa80e9b6e14\", \"data\": {\"attempts\": [{\"id\": \"4781a5d24167208b294a92b4d1adbdcdd7a8b1df71b03a8ffbcdb438e1ca2481\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"e2bf554c-35af-4b41-bbdc-98a976698f1b\", \"data\": {\"attempts\": [{\"id\": \"db95b358ed139ebc2872f46d9e506cf75a0d24be0ba5de9c06c9154b968d8ac5\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "child_exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"681964b3-633b-4f03-abfa-70bbed61a391\", \"data\": {\"attempts\": [{\"id\": \"ed60c40e3c1812e8e7afd0348936432203561e61730360a33292e3f9bad66131\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": ""
+  },
+  {
+    "at": "2026-11-02T15:00:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"79a14855-b097-4668-806d-6501d287dbde\", \"data\": {\"attempts\": []}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-11-02T15:05:00+00:00",
+    "argv": [
+      "notify"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"68815c68-6311-461b-80f7-b7c303addf3f\", \"data\": {\"attempts\": [{\"id\": \"0c175862b3131432dc3c2a3d02cc85af3417630d8a18b3c69cf7ad3c648496c1\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}, {\"id\": \"dc1689db932923545f279de9f75cd386a6382817919c848a26c91dcb23cb0480\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}, {\"id\": \"42845c416d23564ac0af731a241c54e8e54a287bede5f5e89959dc13c474a1f6\", \"status\": \"accepted\", \"read_by_user\": \"unknown\"}]}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  }
+]

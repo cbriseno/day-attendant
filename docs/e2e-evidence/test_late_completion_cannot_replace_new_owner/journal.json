@@ -1,0 +1,54 @@
+{
+  "operations": [
+    {
+      "key": "task",
+      "digest": "855766322b730acc825acc0c091615604932152f7852da8d688458afae3a905b",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"3d575c63-53ab-43f2-ac27-6e89d83968b8\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"3d575c63-53ab-43f2-ac27-6e89d83968b8\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] two owners\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"3d575c63-53ab-43f2-ac27-6e89d83968b8\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] two owners\",\"due\":\"20261030T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"3d575c63-53ab-43f2-ac27-6e89d83968b8\"},\"uuid\":\"3d575c63-53ab-43f2-ac27-6e89d83968b8\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"3d575c63-53ab-43f2-ac27-6e89d83968b8\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    }
+  ],
+  "notices": [
+    {
+      "id": "d64454dc40f7b71fd408856b2dc2a0acd2c3c3b716075f27ebc5642063bce0f3",
+      "episode": "2026-10-30T15:00:00Z",
+      "entity": "3d575c63-53ab-43f2-ac27-6e89d83968b8",
+      "kind": "due",
+      "status": "accepted",
+      "attempts": 2,
+      "accepted_at": "2026-10-30T15:03:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-10-30T15:03:00Z",
+      "active_attempt_id": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 1,
+      "notice_id": "d64454dc40f7b71fd408856b2dc2a0acd2c3c3b716075f27ebc5642063bce0f3",
+      "at": "2026-10-30T15:00:00Z",
+      "status": "uncertain",
+      "error": "Process outcome unknown",
+      "late_outcome": "{\"accepted\":true,\"error\":\"\",\"returncode\":0}"
+    },
+    {
+      "id": 2,
+      "notice_id": "d64454dc40f7b71fd408856b2dc2a0acd2c3c3b716075f27ebc5642063bce0f3",
+      "at": "2026-10-30T15:03:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    }
+  ],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "1"
+    }
+  ]
+}

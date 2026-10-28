@@ -1,0 +1,83 @@
+{
+  "operations": [
+    {
+      "key": "crash-0",
+      "digest": "209ef4937fc0219904e0f0bff76f64d6c5dcea194c415ed1072daeca8bac2ddf",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"10f7a295-1280-497e-bab2-18598e6a3a39\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"10f7a295-1280-497e-bab2-18598e6a3a39\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] crash 0\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"10f7a295-1280-497e-bab2-18598e6a3a39\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] crash 0\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"10f7a295-1280-497e-bab2-18598e6a3a39\"},\"uuid\":\"10f7a295-1280-497e-bab2-18598e6a3a39\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"10f7a295-1280-497e-bab2-18598e6a3a39\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "crash-1",
+      "digest": "2b04ed77183a6f201721fbf05a57de646c7866b9dc45632c4a3e4c8929171b42",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"d444b7fe-e842-4845-b7f8-1ec399932021\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"d444b7fe-e842-4845-b7f8-1ec399932021\"},\"revision\":1,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] crash 1\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"d444b7fe-e842-4845-b7f8-1ec399932021\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] crash 1\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"d444b7fe-e842-4845-b7f8-1ec399932021\"},\"uuid\":\"d444b7fe-e842-4845-b7f8-1ec399932021\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":2,\"uuid\":\"d444b7fe-e842-4845-b7f8-1ec399932021\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "crash-2",
+      "digest": "aa1aefeb61c11650b3ccf781b4f4c9255a345afd915171bfed8430325e4347cf",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"870f94d0-1109-4e3c-bd3c-b8f30222ac83\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"870f94d0-1109-4e3c-bd3c-b8f30222ac83\"},\"revision\":2,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] crash 2\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"870f94d0-1109-4e3c-bd3c-b8f30222ac83\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] crash 2\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"870f94d0-1109-4e3c-bd3c-b8f30222ac83\"},\"uuid\":\"870f94d0-1109-4e3c-bd3c-b8f30222ac83\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":3,\"uuid\":\"870f94d0-1109-4e3c-bd3c-b8f30222ac83\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "crash-3",
+      "digest": "5ae900e5f26ac6d77f8d923b2cf0fae9006cb45e4d171d7d15eba9187b52b272",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"f7f3ef1f-7795-453f-a4ae-41b9cedbafb4\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"f7f3ef1f-7795-453f-a4ae-41b9cedbafb4\"},\"revision\":3,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] crash 3\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"f7f3ef1f-7795-453f-a4ae-41b9cedbafb4\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] crash 3\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"f7f3ef1f-7795-453f-a4ae-41b9cedbafb4\"},\"uuid\":\"f7f3ef1f-7795-453f-a4ae-41b9cedbafb4\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":4,\"uuid\":\"f7f3ef1f-7795-453f-a4ae-41b9cedbafb4\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "agent-0",
+      "digest": "18a299b56f63aed66bff45523471feb515fd524a7edc3fbf3cce95f2b11d09c6",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"ac8db8c5-735d-44c6-ad4d-0c1e645a772f\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"ac8db8c5-735d-44c6-ad4d-0c1e645a772f\"},\"revision\":4,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] concurrent 0\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"ac8db8c5-735d-44c6-ad4d-0c1e645a772f\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] concurrent 0\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"ac8db8c5-735d-44c6-ad4d-0c1e645a772f\"},\"uuid\":\"ac8db8c5-735d-44c6-ad4d-0c1e645a772f\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":5,\"uuid\":\"ac8db8c5-735d-44c6-ad4d-0c1e645a772f\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "agent-1",
+      "digest": "a51c431e0ae073063fbe262f4f043b2bee6d41464f789e234e7dd2b85eb20e01",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"e27beafe-9d57-4cc1-a6e8-a393ab4702a4\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"e27beafe-9d57-4cc1-a6e8-a393ab4702a4\"},\"revision\":5,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] concurrent 1\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"e27beafe-9d57-4cc1-a6e8-a393ab4702a4\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] concurrent 1\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"e27beafe-9d57-4cc1-a6e8-a393ab4702a4\"},\"uuid\":\"e27beafe-9d57-4cc1-a6e8-a393ab4702a4\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":6,\"uuid\":\"e27beafe-9d57-4cc1-a6e8-a393ab4702a4\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "agent-2",
+      "digest": "6a28a1b53dea8df7a2b223cad6948746fa5337ac94a495d2f6cb77cf025fb9c7",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"d6d3f686-d5b8-4c86-88fd-d3324562b98c\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"d6d3f686-d5b8-4c86-88fd-d3324562b98c\"},\"revision\":6,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] concurrent 2\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"d6d3f686-d5b8-4c86-88fd-d3324562b98c\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] concurrent 2\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"d6d3f686-d5b8-4c86-88fd-d3324562b98c\"},\"uuid\":\"d6d3f686-d5b8-4c86-88fd-d3324562b98c\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":7,\"uuid\":\"d6d3f686-d5b8-4c86-88fd-d3324562b98c\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    }
+  ],
+  "notices": [],
+  "attempts": [],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "7"
+    }
+  ]
+}

@@ -38,7 +38,22 @@ HTTP API, MCP and image/NL interpretation. Linux notifier acceptance was tested 
 the feasibility experiment. No real scheduler is installed; the current environment
 has an offline user systemd manager. Mac build and real deployment remain pending.
 
-Round 06 residual P1: external delivery results need a claim generation/ownership
-check before periodic automation. A late original notifier must not overwrite a
-claim already reclassified by another process. This remains outside the approved
-manual-pilot scope, alongside production backups and conflict resolution.
+Rounds 07–08 close the residual claim-ownership issue with persistent attempt IDs,
+conditional notice finalization and preserved late outcomes. Results from an old
+owner cannot replace uncertain/obsolete state or a newer claim. The v2 auxiliary
+schema migrates v1 without changing task records; stop old-version processes first.
+Inherited sending rows expire to uncertain and never trigger automatic resend.
+
+Notifications coalesce conditions per entity and share its repeat interval across
+reasons, including escalation from stale to due. The current conservative policy
+may delay that escalation; choosing exceptions is deferred until real-use design.
+A global rolling five-minute budget defaults to three attempts across processes;
+failed attempts consume budget too, so urgent events have no absolute delivery
+priority once it is exhausted. Ordering is event, due, snooze, chat, stale, then
+episode timestamp and UUID. Backward clock jumps preserve suppression. Missed
+pulses do not create historical delivery jobs; expired events are omitted.
+
+System validation uses real CLI processes, Taskwarrior and notify-send against an
+isolated instrumented D-Bus receiver. Its seven-day logical-clock scenario does not
+advance Taskwarrior's own clock or prove suspension/scheduler/graphical behavior.
+See [the evidence and remaining boundaries](e2e-linux.md).

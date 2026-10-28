@@ -1,0 +1,14 @@
+[
+  {
+    "id": 0,
+    "description": "[FICTICIO] lunes",
+    "due": "20261102T150000Z",
+    "end": "20261102T153100Z",
+    "entry": "20261030T150000Z",
+    "modified": "20261028T010719Z",
+    "priority": "M",
+    "status": "completed",
+    "uuid": "201aafc0-7e7c-4fe8-a824-8bb84cfe3da9",
+    "urgency": 10.139
+  }
+]

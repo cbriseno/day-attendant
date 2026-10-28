@@ -1,0 +1,105 @@
+{
+  "operations": [
+    {
+      "key": "task",
+      "digest": "8bbf4f8fe8049ef813f66456f987c2015a6b80a5b0216af28b2bca70757d8e98",
+      "action": "task_add",
+      "plan": "{\"effect\":{\"meta_add\":[\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\",\"general\",null,null,null,\"2026-10-30T15:00:00Z\",\"2026-10-30T15:00:00Z\",null,null]},\"result\":{\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"},\"revision\":0,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] lunes\",\"due\":\"20261102T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"},\"before\":null,\"create\":{\"description\":\"[FICTICIO] lunes\",\"due\":\"20261102T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"},\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":1,\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "snooze",
+      "digest": "eda82b8f4a4e5f70c2bdc8eaaf1538b689913a66647eae342df6eb8b7b1c2e5f",
+      "action": "task_snooze",
+      "plan": "{\"effect\":{},\"result\":{\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"},\"revision\":1,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] lunes\",\"due\":\"20261102T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\",\"wait\":\"20261102T150000Z\"},\"before\":{\"description\":\"[FICTICIO] lunes\",\"due\":\"20261102T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"},\"patch\":{\"start\":null,\"wait\":\"20261102T150000Z\"},\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":2,\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "event",
+      "digest": "31c1fc4bcc93a6d75d17dc95da61c157df216a89b67b5e215e21e63d1b8b0f63",
+      "action": "event_add",
+      "plan": "{\"effect\":{\"event_add\":[\"0fbbd571-a274-45c3-9311-a47890c2a282\",\"[FICTICIO] viernes\",\"2026-10-30T15:10:00Z\",\"2026-10-30T16:00:00Z\",null,\"2026-10-30T15:10Z\"]},\"result\":{\"uuid\":\"0fbbd571-a274-45c3-9311-a47890c2a282\"},\"revision\":2,\"steps\":[]}",
+      "status": "confirmed",
+      "result": "{\"revision\":3,\"uuid\":\"0fbbd571-a274-45c3-9311-a47890c2a282\"}",
+      "error": null,
+      "created_at": "2026-10-30T15:00:00Z"
+    },
+    {
+      "key": "done",
+      "digest": "0685726ebc965d45b228e3690fac33df5f7a7494ad3a9d387aed2ed06814c79a",
+      "action": "task_done",
+      "plan": "{\"effect\":{},\"result\":{\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"},\"revision\":3,\"steps\":[{\"after\":{\"description\":\"[FICTICIO] lunes\",\"due\":\"20261102T150000Z\",\"end\":\"20261102T153100Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"completed\",\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"},\"before\":{\"description\":\"[FICTICIO] lunes\",\"due\":\"20261102T150000Z\",\"entry\":\"20261030T150000Z\",\"priority\":\"M\",\"status\":\"pending\",\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\",\"wait\":\"20261102T150000Z\"},\"patch\":{\"end\":\"20261102T153100Z\",\"start\":null,\"status\":\"completed\",\"wait\":null},\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"}]}",
+      "status": "confirmed",
+      "result": "{\"revision\":4,\"uuid\":\"201aafc0-7e7c-4fe8-a824-8bb84cfe3da9\"}",
+      "error": null,
+      "created_at": "2026-11-02T15:31:00Z"
+    }
+  ],
+  "notices": [
+    {
+      "id": "ea01a860366b95bf6fe64856470381039c73f6e1f47674d37406a4610af42baa",
+      "episode": "2026-10-30T15:10:00Z",
+      "entity": "0fbbd571-a274-45c3-9311-a47890c2a282",
+      "kind": "event",
+      "status": "obsolete",
+      "attempts": 1,
+      "accepted_at": "2026-10-30T15:00:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-10-30T15:00:00Z",
+      "active_attempt_id": null
+    },
+    {
+      "id": "ff07967bc551f533c5d5cd4cb7037e8a1e3f6b65eed8394103731d82311028de",
+      "episode": "2026-11-02T15:00:00Z",
+      "entity": "201aafc0-7e7c-4fe8-a824-8bb84cfe3da9",
+      "kind": "due",
+      "status": "obsolete",
+      "attempts": 2,
+      "accepted_at": "2026-11-02T15:31:00Z",
+      "retry_at": null,
+      "error": "",
+      "claimed_at": "2026-11-02T15:31:00Z",
+      "active_attempt_id": null
+    }
+  ],
+  "attempts": [
+    {
+      "id": 1,
+      "notice_id": "ea01a860366b95bf6fe64856470381039c73f6e1f47674d37406a4610af42baa",
+      "at": "2026-10-30T15:00:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    },
+    {
+      "id": 2,
+      "notice_id": "ff07967bc551f533c5d5cd4cb7037e8a1e3f6b65eed8394103731d82311028de",
+      "at": "2026-11-02T15:00:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    },
+    {
+      "id": 3,
+      "notice_id": "ff07967bc551f533c5d5cd4cb7037e8a1e3f6b65eed8394103731d82311028de",
+      "at": "2026-11-02T15:31:00Z",
+      "status": "accepted",
+      "error": "",
+      "late_outcome": null
+    }
+  ],
+  "frames": [],
+  "state": [
+    {
+      "key": "revision",
+      "value": "4"
+    }
+  ]
+}

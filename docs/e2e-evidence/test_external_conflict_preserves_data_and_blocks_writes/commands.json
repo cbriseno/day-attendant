@@ -1,0 +1,45 @@
+[
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] original",
+      "--key",
+      "conflict"
+    ],
+    "fault": {
+      "E2E_CRASH": "after_task_0"
+    },
+    "exit": 75,
+    "stdout": "",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "recover"
+    ],
+    "fault": null,
+    "exit": 0,
+    "stdout": "{\"schema_version\": 1, \"ok\": true, \"operation_id\": \"77159235-4aed-4c4c-812d-bd674fbcee15\", \"data\": {\"unresolved\": [{\"key\": \"conflict\", \"action\": \"task_add\", \"status\": \"conflict\", \"error\": \"A participant changed; no additional step was attempted.\"}], \"revision\": 0}, \"error\": null}\n",
+    "stderr": "",
+    "direct": false
+  },
+  {
+    "at": "2026-10-30T15:00:00+00:00",
+    "argv": [
+      "task",
+      "add",
+      "[FICTICIO] blocked",
+      "--key",
+      "blocked"
+    ],
+    "fault": null,
+    "exit": 2,
+    "stdout": "{\"schema_version\": 1, \"ok\": false, \"operation_id\": \"blocked\", \"data\": null, \"error\": {\"code\": \"recovery_required\", \"message\": \"An operation needs reconciliation.\", \"details\": {\"operations\": [{\"key\": \"conflict\", \"action\": \"task_add\", \"status\": \"conflict\", \"error\": \"A participant changed; no additional step was attempted.\"}]}}}\n",
+    "stderr": "",
+    "direct": false
+  }
+]
