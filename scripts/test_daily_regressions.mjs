@@ -12,7 +12,8 @@ const group=process.argv[3]||'all';
 assert.ok(['all','details','dates'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
-const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2026-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
+// Historical DST fixtures remain stable as jurisdictions change future rules.
+const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2025-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
 const requests=[],settings=[];
 const server=createServer(async(req,res)=>{
  try{
@@ -112,7 +113,7 @@ try{
   console.log('Details action regressions passed');
  }
  if(group==='all'||group==='dates'){
-  for(const instant of ['2026-11-01T07:30:21Z','2026-11-01T08:30:21Z','2026-11-01T10:30:21Z']){
+  for(const instant of ['2025-11-02T07:30:21Z','2025-11-02T08:30:21Z','2025-11-02T10:30:21Z']){
    target.due=instant;state.revision++;await refresh();await detail();await click('#edit-card');
    const before=requests.length;await fill('card-title','Title with '+instant);await submit('card-dialog');await saved('card-dialog');
    assert.equal(requests.length,before+1);assert.equal(requests.at(-1).payload.title,'Title with '+instant);
@@ -133,7 +134,7 @@ try{
    assert.equal(state.notification_policy.pausedUntil,instant);
    state.timezone='America/Edmonton';state.profile.timezone=state.timezone;state.revision++;await refresh();
   }
-  for(const invalid of ['2026-11-01T01:45','2026-03-08T02:30']){
+  for(const invalid of ['2025-11-02T01:45','2025-03-09T02:30']){
    await detail();await click('#edit-card');await fill('card-title','Draft retained');await fill('card-due',invalid);
    let before=requests.length;await submit('card-dialog');await failed('card-dialog');assert.equal(requests.length,before);
    assert.equal(await evaluate("document.getElementById('card-title').value"),'Draft retained');await close();
@@ -186,7 +187,7 @@ try{
  const cardSelector=`[data-task-id="${target.id}"]`;
  const cardState=()=>evaluate(`(()=>{const card=document.querySelector(${JSON.stringify(cardSelector)});return {reason:card.querySelector('.blocked-label')?.textContent,actionDisabled:card.querySelector('.state-action').disabled,snoozeDisabled:card.querySelector('[data-action=snooze]').disabled,pendingDisabled:card.querySelector('[data-action=pending]').disabled,detailDisabled:card.querySelector('[data-action=detail]').disabled}})()`);
  for(const mode of ['todo','active','snoozed']){
-  target.state=mode;target.until=mode==='snoozed'?'2026-10-29T12:00:00Z':null;await refresh();
+  target.state=mode;target.until=mode==='snoozed'?'2025-10-29T12:00:00Z':null;await refresh();
   const expected={reason:'Blocked · '+a.title,actionDisabled:mode==='todo',snoozeDisabled:false,pendingDisabled:false,detailDisabled:false};
   assert.deepEqual(await cardState(),expected);
   await evaluate(`globalThis.previousCard=document.querySelector(${JSON.stringify(cardSelector)})`);
@@ -209,28 +210,29 @@ try{
  state.readOnly=false;target.blocked=false;target.blockedBy=[];state.proposals=captureProposals;await refresh();
  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(cardSelector+' .blocked-label')})===null && !document.querySelector(${JSON.stringify(cardSelector+' .state-action')}).disabled`),true);
 
- state.calendar_events=Array.from({length:13},(_,i)=>({uuid:randomUUID(),title:'Commitment '+(i+1),start_at:'2026-10-28T11:00:00Z',end_at:i===0?'2026-10-28T12:00:10Z':'2026-10-29T13:00:00Z'}));await refresh();
+ state.calendar_events=Array.from({length:13},(_,i)=>({uuid:randomUUID(),title:'Commitment '+(i+1),start_at:'2025-10-28T11:00:00Z',end_at:i===0?'2025-10-28T12:00:10Z':'2025-10-29T13:00:00Z'}));await refresh();
  assert.equal(await evaluate("document.querySelectorAll('#calendar-area .daily-row').length"),13);
  const oldTime=await evaluate("document.querySelector('#calendar-area .daily-row p').textContent");state.timezone='UTC';state.profile.timezone='UTC';await refresh();assert.notEqual(await evaluate("document.querySelector('#calendar-area .daily-row p').textContent"),oldTime);
- state.now='2026-10-28T12:00:11Z';await refresh();assert.equal(await evaluate("document.querySelectorAll('#calendar-area .daily-row').length"),12);
+ state.now='2025-10-28T12:00:11Z';await refresh();assert.equal(await evaluate("document.querySelectorAll('#calendar-area .daily-row').length"),12);
  await click('#calendar-area .daily-row:last-child .link-button');assert.equal(await evaluate("document.getElementById('capture-title').value"),'Commitment 13');await fill('capture-title','Edited thirteenth');await submit('capture-dialog');await saved('capture-dialog');assert.equal(state.calendar_events.at(-1).title,'Edited thirteenth');
+ await wait("document.querySelector('#calendar-area .daily-row:last-child .link-button').textContent==='Edited thirteenth'");
  await click('#calendar-area .daily-row:last-child .btn');await wait("!document.getElementById('calendar-area').textContent.includes('Edited thirteenth')");assert.equal(state.calendar_events.length,12);
  state.timezone='America/Edmonton';state.profile.timezone=state.timezone;await refresh();
  assert.equal(await evaluate("new Date().getTimezoneOffset()"),0);
- for(const date of ['2026-11-01T07:30:00Z','2026-11-01T08:30:00Z'])assert.equal(await evaluate(`dayUI.ambiguous(new Date(${JSON.stringify(date)}))`),true);
- assert.equal(await evaluate("dayUI.ambiguous(dayUI.parseLocal('2026-11-01T03:30'))"),false);
- assert.notEqual(await evaluate("dayUI.localValue(dayUI.parseLocal('2026-03-08T02:30'))"),'2026-03-08T02:30');
+ for(const date of ['2025-11-02T07:30:00Z','2025-11-02T08:30:00Z'])assert.equal(await evaluate(`dayUI.ambiguous(new Date(${JSON.stringify(date)}))`),true);
+ assert.equal(await evaluate("dayUI.ambiguous(dayUI.parseLocal('2025-11-02T03:30'))"),false);
+ assert.notEqual(await evaluate("dayUI.localValue(dayUI.parseLocal('2025-03-09T02:30'))"),'2025-03-09T02:30');
  for(const id of ['capture-due','capture-observed','capture-start','capture-end']){
   await click('#capture-open');await fill('capture-title','Date validation');
-  if(id==='capture-start'||id==='capture-end'){await fill('capture-kind','event');await fill('capture-start','2026-11-01T03:30');await fill('capture-end','2026-11-01T04:30')}
-  await fill(id,id==='capture-observed'?'2025-11-02T01:30':'2026-11-01T01:30');const before=requests.length;await submit('capture-dialog');await failed('capture-dialog');assert.equal(requests.length,before);
-  await fill(id,id==='capture-observed'?'2025-11-02T03:30':id==='capture-end'?'2026-11-01T04:30':'2026-11-01T03:30');await submit('capture-dialog');await saved('capture-dialog');assert.equal(requests.length,before+1);
+  if(id==='capture-start'||id==='capture-end'){await fill('capture-kind','event');await fill('capture-start','2025-11-02T03:30');await fill('capture-end','2025-11-02T04:30')}
+  await fill(id,id==='capture-observed'?'2024-11-03T01:30':'2025-11-02T01:30');const before=requests.length;await submit('capture-dialog');await failed('capture-dialog');assert.equal(requests.length,before);
+  await fill(id,id==='capture-observed'?'2024-11-03T03:30':id==='capture-end'?'2025-11-02T04:30':'2025-11-02T03:30');await submit('capture-dialog');await saved('capture-dialog');assert.equal(requests.length,before+1);
  }
- await detail();await click('#edit-card');await fill('card-due','2026-11-01T01:30');let before=requests.length;await submit('card-dialog');await failed('card-dialog');assert.equal(requests.length,before);await fill('card-due','2026-11-01T03:30');await submit('card-dialog');await saved('card-dialog');assert.equal(target.due,'2026-11-01T10:30:00.000Z');
- await click('#settings-open');await fill('policy-pause','2026-11-01T01:30');await submit('settings-dialog');await failed('settings-dialog');await fill('policy-pause','2026-11-01T03:30');await submit('settings-dialog');await saved('settings-dialog');
- await click('#context-open');await fill('context-minutes','10');await fill('context-until','2026-11-01T01:30');before=requests.length;await submit('context-dialog');await wait("!document.getElementById('context-error').hidden");assert.equal(requests.length,before);await fill('context-until','2026-11-01T03:30');await submit('context-dialog');await saved('context-dialog');
- await click(`[data-id="${target.id}"][data-action="snooze"]`);await click('#date-mode');await fill('snooze-date','2026-11-01T01:30');assert.equal(await evaluate("document.getElementById('snooze-apply').disabled"),true);await fill('snooze-date','2026-11-01T03:30');assert.equal(await evaluate("document.getElementById('snooze-apply').disabled"),false);await click('#snooze-apply');await saved('snooze-dialog');
- state.timezone='Australia/Lord_Howe';await refresh();assert.equal(await evaluate("dayUI.ambiguous(dayUI.parseLocal('2026-04-05T01:45'))"),true);
+ await detail();await click('#edit-card');await fill('card-due','2025-11-02T01:30');let before=requests.length;await submit('card-dialog');await failed('card-dialog');assert.equal(requests.length,before);await fill('card-due','2025-11-02T03:30');await submit('card-dialog');await saved('card-dialog');assert.equal(target.due,'2025-11-02T10:30:00.000Z');
+ await click('#settings-open');await fill('policy-pause','2025-11-02T01:30');await submit('settings-dialog');await failed('settings-dialog');await fill('policy-pause','2025-11-02T03:30');await submit('settings-dialog');await saved('settings-dialog');
+ await click('#context-open');await fill('context-minutes','10');await fill('context-until','2025-11-02T01:30');before=requests.length;await submit('context-dialog');await wait("!document.getElementById('context-error').hidden");assert.equal(requests.length,before);await fill('context-until','2025-11-02T03:30');await submit('context-dialog');await saved('context-dialog');
+ await click(`[data-id="${target.id}"][data-action="snooze"]`);await click('#date-mode');await fill('snooze-date','2025-11-02T01:30');assert.equal(await evaluate("document.getElementById('snooze-apply').disabled"),true);await fill('snooze-date','2025-11-02T03:30');assert.equal(await evaluate("document.getElementById('snooze-apply').disabled"),false);await click('#snooze-apply');await saved('snooze-dialog');
+ state.timezone='Australia/Lord_Howe';await refresh();assert.equal(await evaluate("dayUI.ambiguous(dayUI.parseLocal('2025-04-06T01:45'))"),true);
  for(const locale of ['en','es']){
   await fill('locale-choice',locale);
   for(const status of ['done','retired']){

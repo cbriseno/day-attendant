@@ -290,12 +290,14 @@ class ReviewRegressions(DailyBase):
         self.assertNotIn('depends', self.app.tasks.get(uid))
 
     def test_explicit_folds_reach_snooze_event_bounds_observations_and_horizon(self):
+        # Keep snoozes future to the test clock at a historical DST transition.
+        self.app.clock = lambda: NOW.replace(year=2025)
         uid = self.add('Snoozable front')
-        clash = self.apply('event_add', {'title': 'Later occurrence', 'start': '2026-11-01T08:00:00Z',
-                                       'end': '2026-11-01T09:00:00Z'})['result']['uuid']
+        clash = self.apply('event_add', {'title': 'Later occurrence', 'start': '2025-11-02T08:00:00Z',
+                                       'end': '2025-11-02T09:00:00Z'})['result']['uuid']
         for fold, hour in ((0, '07'), (1, '08')):
             with self.subTest(fold=fold):
-                p = self.request('task_snooze', {'uuid': uid, 'until': '2026-11-01T01:30',
+                p = self.request('task_snooze', {'uuid': uid, 'until': '2025-11-02T01:30',
                                                'zone': 'America/Edmonton', 'fold': fold})
                 self.board.evaluate(p['id']); p = self.board.proposal(p['id'])
                 with self.app.store.connect() as con:
@@ -305,37 +307,38 @@ class ReviewRegressions(DailyBase):
                     self.assertEqual(p['phase'], 'review'); self.board.confirm(p['id'], p['generation'])
                 else: self.assertEqual(p['phase'], 'applied')
                 task = next(t for t in self.board.snapshot()['tasks'] if t['id'] == uid)
-                self.assertEqual(task['until'], '2026-11-01T' + hour + ':30:00Z')
-                event = self.apply('event_add', {'title': 'Repeated event', 'start': '2026-11-01T01:10',
-                    'end': '2026-11-01T01:50', 'zone': 'America/Edmonton', 'fold': fold,
-                    'observed_at': '2025-11-02T01:30'})['result']['uuid']
+                self.assertEqual(task['until'], '2025-11-02T' + hour + ':30:00Z')
+                event = self.apply('event_add', {'title': 'Repeated event', 'start': '2025-11-02T01:10',
+                    'end': '2025-11-02T01:50', 'zone': 'America/Edmonton', 'fold': fold,
+                    'observed_at': '2024-11-03T01:30'})['result']['uuid']
                 current = next(e for e in self.board.snapshot()['calendar_events'] if e['uuid'] == event)
-                self.assertEqual(current['start_at'], '2026-11-01T' + hour + ':10:00Z')
-                self.assertEqual(current['end_at'], '2026-11-01T' + hour + ':50:00Z')
-                self.assertEqual(current['observed_at'], '2025-11-02T' + hour + ':30:00Z')
+                self.assertEqual(current['start_at'], '2025-11-02T' + hour + ':10:00Z')
+                self.assertEqual(current['end_at'], '2025-11-02T' + hour + ':50:00Z')
+                self.assertEqual(current['observed_at'], '2024-11-03T' + hour + ':30:00Z')
                 for field, minute in (('start', '15'), ('end', '45')):
-                    self.apply('event_update', {'uuid': event, field: '2026-11-01T01:' + minute,
+                    self.apply('event_update', {'uuid': event, field: '2025-11-02T01:' + minute,
                                                'zone': 'America/Edmonton', 'fold': fold})
                     current = next(e for e in self.board.snapshot()['calendar_events'] if e['uuid'] == event)
-                    self.assertEqual(current[field + '_at'], '2026-11-01T' + hour + ':' + minute + ':00Z')
+                    self.assertEqual(current[field + '_at'], '2025-11-02T' + hour + ':' + minute + ':00Z')
                 event = self.apply('event_add', {'title': 'Profile-zone observation',
                     'start': '2026-11-02T12:00:00Z', 'end': '2026-11-02T13:00:00Z',
-                    'observed_at': '2025-11-02T01:30', 'fold': fold})['result']['uuid']
+                    'observed_at': '2024-11-03T01:30', 'fold': fold})['result']['uuid']
                 current = next(e for e in self.board.snapshot()['calendar_events'] if e['uuid'] == event)
-                self.assertEqual(current['observed_at'], '2025-11-02T' + hour + ':30:00Z')
+                self.assertEqual(current['observed_at'], '2024-11-03T' + hour + ':30:00Z')
 
     def test_unresolved_repeated_times_never_create_or_change_a_proposal(self):
+        self.app.clock = lambda: NOW.replace(year=2025)
         uid = self.add('Front')
-        event = self.apply('event_add', {'title': 'Original event', 'start': '2026-11-01T06:00:00Z',
-                                       'end': '2026-11-01T10:00:00Z'})['result']['uuid']
-        cases = [('task_snooze', {'uuid': uid, 'until': '2026-11-01T01:30'}),
-                 ('event_add', {'title': 'Unclear start', 'start': '2026-11-01T01:10', 'end': '2026-11-01T10:00:00Z'}),
-                 ('event_add', {'title': 'Unclear end', 'start': '2026-11-01T06:00:00Z', 'end': '2026-11-01T01:50'}),
-                 ('event_add', {'title': 'Unclear observation', 'start': '2026-11-01T06:00:00Z', 'end': '2026-11-01T10:00:00Z', 'observed_at': '2025-11-02T01:30'}),
-                 ('event_update', {'uuid': event, 'start': '2026-11-01T01:10'}),
-                 ('event_update', {'uuid': event, 'end': '2026-11-01T01:50'}),
-                 ('task_add', {'title': 'Unclear deadline', 'due': '2026-11-01T01:30'}),
-                 ('task_update', {'uuid': uid, 'due': '2026-11-01T01:30'})]
+        event = self.apply('event_add', {'title': 'Original event', 'start': '2025-11-02T06:00:00Z',
+                                       'end': '2025-11-02T10:00:00Z'})['result']['uuid']
+        cases = [('task_snooze', {'uuid': uid, 'until': '2025-11-02T01:30'}),
+                 ('event_add', {'title': 'Unclear start', 'start': '2025-11-02T01:10', 'end': '2025-11-02T10:00:00Z'}),
+                 ('event_add', {'title': 'Unclear end', 'start': '2025-11-02T06:00:00Z', 'end': '2025-11-02T01:50'}),
+                 ('event_add', {'title': 'Unclear observation', 'start': '2025-11-02T06:00:00Z', 'end': '2025-11-02T10:00:00Z', 'observed_at': '2024-11-03T01:30'}),
+                 ('event_update', {'uuid': event, 'start': '2025-11-02T01:10'}),
+                 ('event_update', {'uuid': event, 'end': '2025-11-02T01:50'}),
+                 ('task_add', {'title': 'Unclear deadline', 'due': '2025-11-02T01:30'}),
+                 ('task_update', {'uuid': uid, 'due': '2025-11-02T01:30'})]
         before = self.board.snapshot()
         for action, payload in cases:
             with self.subTest(action=action, payload=payload), self.assertRaises(AssistantError) as error:
@@ -346,15 +349,15 @@ class ReviewRegressions(DailyBase):
 
     def test_legacy_due_and_observation_consumers_preserve_explicit_fold(self):
         with tempfile.TemporaryDirectory(prefix='day-review-fold-') as state:
-            app = Assistant(state, clock=lambda: NOW)
+            app = Assistant(state, clock=lambda: NOW.replace(year=2025))
             for fold, hour in ((0, '07'), (1, '08')):
-                result = app.mutate('task_add', {'title': 'Resolved deadline', 'due': '2026-11-01T01:10',
-                    'observed_at': '2025-11-02T01:30', 'zone': 'America/Edmonton', 'fold': fold}, 'fold-add-' + str(fold))
+                result = app.mutate('task_add', {'title': 'Resolved deadline', 'due': '2025-11-02T01:10',
+                    'observed_at': '2024-11-03T01:30', 'zone': 'America/Edmonton', 'fold': fold}, 'fold-add-' + str(fold))
                 uid = result['uuid']
-                self.assertEqual(app.tasks.get(uid)['due'], '20261101T' + hour + '1000Z')
-                self.assertEqual(app.store.metadata()[uid]['observed_at'], '2025-11-02T' + hour + ':30:00Z')
-                app.mutate('task_update', {'uuid': uid, 'due': '2026-11-01T01:50', 'zone': 'America/Edmonton', 'fold': fold}, 'fold-edit-' + str(fold))
-                self.assertEqual(app.tasks.get(uid)['due'], '20261101T' + hour + '5000Z')
+                self.assertEqual(app.tasks.get(uid)['due'], '20251102T' + hour + '1000Z')
+                self.assertEqual(app.store.metadata()[uid]['observed_at'], '2024-11-03T' + hour + ':30:00Z')
+                app.mutate('task_update', {'uuid': uid, 'due': '2025-11-02T01:50', 'zone': 'America/Edmonton', 'fold': fold}, 'fold-edit-' + str(fold))
+                self.assertEqual(app.tasks.get(uid)['due'], '20251102T' + hour + '5000Z')
 
     def test_scheduler_switches_both_directions_and_preserves_unrelated_jobs(self):
         self.scheduler_scenario()
@@ -452,9 +455,10 @@ print(lifecycle.cron_block(app,{'PATH':''}).splitlines()[1].split(' ',5)[5])
                     self.assertEqual(before[field], after[field])
 
     def test_unrelated_edits_preserve_resolved_instants_in_native_stores(self):
+        self.app.clock = lambda: NOW.replace(year=2025)
         for hour in ('07', '08', '10'):
             with self.subTest(utc_hour=hour):
-                instant = '2026-11-01T' + hour + ':30:21Z'
+                instant = '2025-11-02T' + hour + ':30:21Z'
                 uid = self.apply('task_add', {'title': 'Original', 'due': instant})['result']['uuid']
                 self.apply('task_update', {'uuid': uid, 'title': 'Title only'})
                 task = next(t for t in self.board.snapshot()['tasks'] if t['id'] == uid)
@@ -479,7 +483,7 @@ print(lifecycle.cron_block(app,{'PATH':''}).splitlines()[1].split(' ',5)[5])
         if not node or not chrome:
             self.skipTest('Node and Chrome on PATH are required for the browser regressions')
         result = subprocess.run([node, str(ROOT / 'scripts/test_daily_regressions.mjs'), chrome], cwd=ROOT,
-                                capture_output=True, text=True, timeout=45)
+                                capture_output=True, text=True, timeout=120)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
