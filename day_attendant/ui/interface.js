@@ -17,6 +17,7 @@ const clockIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy=
 const arrowIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 const gripIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01"/></svg>';
 const priorityIcon=p=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19v-3"/><path d="M12 19v-7"'+(p==='low'?' opacity=".3"':'')+'/><path d="M18 19V8"'+(p==='high'?'':' opacity=".3"')+'/></svg>';
+const linkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 6 .5l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10.5a4 4 0 0 0-6-.5l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2"/></svg>';
 const formatted=(key,values)=>tr(key).replace(/\{(\w+)\}/g,(_,name)=>new Intl.NumberFormat(formatLocale()).format(values[name]));
 const concernMessage=c=>c.message_key?formatted(c.message_key,c.message_params):c.message;
 // Stable failure codes map to plain copy; internal error text is diagnostic and never shown.
@@ -41,7 +42,7 @@ function messageText(item){
 }
 const origins=new WeakMap();
 let flow,snoozing=null,selected=null,editingProposal=null,snoozeMode='duration',previewTarget=null,expandedProposal=null,lastSeenEvent=null,lastRequestedProposal=null,lastGuidanceNotice=null;
-let phaseCache=new Map(),collapsedProposals=new Set();
+let phaseCache=new Map(),collapsedProposals=new Set(),dependencyFocus=null;
 let detailRevision,snoozeRevision;
 const notice=text=>$('status').textContent=text;
 const task=id=>flow.snapshot().tasks.find(t=>t.id===id);
@@ -70,6 +71,43 @@ const sectionIds=section=>[...$('board').querySelectorAll('.task')].filter(c=>c.
 // The visible order applies at once; saving waits for a pause and keeps the revision the person saw.
 function placeOrder(id,ids,to){const data=flow.snapshot(),open=data.tasks.filter(t=>!['done','retired'].includes(t.state)),order=globalThis.dayOrdering.manualIds(open,localOrder||data.taskOrder||[]),next=globalThis.dayOrdering.move(order,ids,id,to);if(next.join()===order.join())return false;if(localOrder===null)orderBase=data.revision;localOrder=next;render();clearTimeout(orderTimer);orderTimer=setTimeout(saveOrder,350);return true}
 async function saveOrder(){if(orderSaving){orderTimer=setTimeout(saveOrder,150);return}const order=localOrder;if(!order)return;orderSaving=true;try{const p=await flow.request('order_update',{order},undefined,orderBase);orderBase=p?.result?.revision??flow.snapshot().revision}catch(error){localOrder=null;orderBase=null;notice(error.message);render();return}finally{orderSaving=false}if(localOrder===order){localOrder=null;orderBase=null;render()}}
+// Blocked and blocking cards name their counterparts; a chip highlights those direct links.
+const titles=(ids,data)=>ids.map(id=>data.tasks.find(r=>r.id===id)?.title||id).join(', ');
+function dependencyChips(t,data){const blocks=data.tasks.filter(r=>r.blockedBy.includes(t.id)).map(r=>r.id),chip=(kind,label)=>'<button type="button" class="dependency-chip '+kind+'" data-id="'+t.id+'" data-action="dependencies" aria-pressed="false" title="'+esc(tr('show_dependencies'))+'">'+linkIcon+'<span>'+esc(label)+'</span></button>';const chips=(t.blocked?chip('blocked-label',tr('blocked_prefix')+titles(t.blockedBy,data)):'')+(blocks.length?chip('blocking-label',tr('blocks_prefix')+titles(blocks,data)):'');return chips?'<div class="dependency-chips">'+chips+'</div>':''}
+const dependencyEdges=data=>dependencyFocus?data.tasks.flatMap(r=>r.blockedBy.filter(p=>p===dependencyFocus||r.id===dependencyFocus).map(p=>[p,r.id])):[];
+const dependencyLines=document.createElementNS('http://www.w3.org/2000/svg','svg');dependencyLines.classList.add('dependency-lines');dependencyLines.setAttribute('aria-hidden','true');$('board').after(dependencyLines);
+const dependencyResize=new ResizeObserver(()=>drawDependencies());
+function showDependencies(data=flow.snapshot()){
+ const edges=dependencyEdges(data),board=$('board');if(!edges.length)dependencyFocus=null;
+ board.classList.toggle('dependency-focus',!!dependencyFocus);
+ for(const card of board.querySelectorAll('[data-task-id]')){
+  const id=card.dataset.taskId,role=id===dependencyFocus?'source':edges.some(([p,d])=>p===id&&d===dependencyFocus)?'prerequisite':edges.some(([p,d])=>d===id&&p===dependencyFocus)?'dependent':'';
+  if((card.dataset.dependencyRole||'')!==role){if(role)card.dataset.dependencyRole=role;else delete card.dataset.dependencyRole;card.querySelector('.dependency-role')?.remove();if(role&&role!=='source')card.querySelector('.task-title').insertAdjacentHTML('afterend','<span class="dependency-role">'+esc(tr('dependency_'+role))+'</span>')}
+  for(const chip of card.querySelectorAll('[data-action=dependencies]'))if(chip.getAttribute('aria-pressed')!==String(role==='source'))chip.setAttribute('aria-pressed',String(role==='source'));
+ }
+ dependencyResize.disconnect();if(dependencyFocus){dependencyResize.observe(board);board.querySelectorAll('[data-dependency-role]').forEach(card=>dependencyResize.observe(card))}
+ drawDependencies(data);
+}
+// Lines join cards across columns, or run in a side gutter wide enough to read; phone widths keep the highlight only.
+function drawDependencies(data=flow.snapshot()){
+ const board=$('board'),svg=dependencyLines,edges=dependencyEdges(data);svg.replaceChildren();svg.style.display='none';
+ if(!edges.length||board.clientWidth<600)return;
+ const box=board.getBoundingClientRect(),area=svg.parentElement.getBoundingClientRect(),cards=[...board.querySelectorAll('[data-task-id]')].map(c=>c.getBoundingClientRect()).filter(r=>r.width);
+ const rect=id=>{const card=board.querySelector('[data-task-id="'+id+'"]');return card?.getClientRects().length?card.getBoundingClientRect():null};
+ const room=r=>r.left-Math.max(0,...cards.filter(c=>c.right<=r.left).map(c=>c.right)),anchor=r=>r.top-box.top+Math.min(r.height/2,30);
+ let gutter=0;const paths=[];
+ for(const [p,d] of edges){const a=rect(p),b=rect(d);if(!a||!b)continue;const y1=anchor(a),y2=anchor(b);
+  if(a.right<=b.left||b.right<=a.left){const forward=a.right<=b.left,x1=(forward?a.right:a.left)-box.left,x2=(forward?b.left:b.right)-box.left,dx=Math.max(24,Math.abs(x2-x1)/2)*(forward?1:-1);paths.push(`M${x1} ${y1}C${x1+dx} ${y1} ${x2-dx} ${y2} ${x2} ${y2}`);continue}
+  const space=Math.min(room(a),room(b));if(space<14)continue;
+  const depth=Math.min(space-4,12+6*gutter++),x=Math.min(a.left,b.left)-box.left,s=Math.sign(y2-y1)||1,r=Math.min(6,depth/2,Math.abs(y2-y1)/2);
+  paths.push(`M${x} ${y1}H${x-depth+r}Q${x-depth} ${y1} ${x-depth} ${y1+s*r}V${y2-s*r}Q${x-depth} ${y2} ${x-depth+r} ${y2}H${x}`);
+ }
+ if(!paths.length)return;
+ Object.assign(svg.style,{display:'block',left:box.left-area.left+'px',top:box.top-area.top+'px',width:box.width+'px',height:box.height+'px'});
+ svg.innerHTML='<defs><marker id="dependency-arrow" viewBox="0 0 6 6" refX="5.5" refY="3" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L6 3L0 6z"/></marker></defs>'+paths.map(d=>'<path d="'+d+'" marker-end="url(#dependency-arrow)"/>').join('');
+}
+function toggleDependencies(id){dependencyFocus=dependencyFocus===id?null:id;showDependencies()}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&dependencyFocus&&!document.querySelector('dialog[open]'))toggleDependencies(dependencyFocus)});
 function render(data=flow.snapshot()) {
  if(drag)return;
  const active=document.activeElement,focusTask=active?.dataset?.id,focusAction=active?.dataset?.action,focusProposal=active?.dataset?.proposal,reviewAction=active?.dataset?.reviewAction;
@@ -84,9 +122,10 @@ function render(data=flow.snapshot()) {
   const rows=data.tasks.filter(t=>t.state===state),sections=globalThis.dayOrdering.arrange(rows,orderView,{order:localOrder||data.taskOrder||[],suggestion:data.orderSuggestion?.result});
   return '<section class="lane" data-state="'+state+'"><header class="lane-heading"><span class="state-dot" aria-hidden="true"></span><h2>'+label+'</h2><span class="lane-count">'+rows.length+'</span></header><div class="lane-cards">'+sections.map(s=>(orderView==='group'?groupHeading(s):'')+s.tasks.map(t=>{
    const p=proposals.find(p=>p.intent.taskId===t.id);
-   return '<article class="task '+(state==='active'?'in-progress':'')+'" data-task-id="'+t.id+'" data-section="'+esc(state+':'+s.key)+'"><div>'+cardTags(t,s,data)+'<button type="button" class="task-title" data-id="'+t.id+'" data-action="detail" aria-label="'+tr("view_details")+': '+esc(t.title)+'" aria-haspopup="dialog"><span>'+esc(t.title)+'</span>'+arrowIcon+'</button>'+suggestionReason(t,data)+(t.blocked?'<span class="blocked-label">'+esc(tr('blocked_prefix')+t.blockedBy.map(id=>data.tasks.find(r=>r.id===id)?.title||id).join(', '))+'</span>':'')+'<p class="task-context">'+esc(t.context)+'</p><p class="task-meta">'+(t.due?'<span class="task-due" title="'+esc(full(t.due))+tr("due")+esc(short(t.due))+'</span>':'')+(t.until?'<span class="task-wait" title="'+esc(full(t.until))+tr("resume")+esc(short(t.until))+'</span>':'')+(t.awaiting?tr("waiting_for_a_reply"):'')+(data.context.availableMinutes!==null&&Number.isFinite(t.remainingMinutes)?'<span>'+t.remainingMinutes+tr("min_remaining_declared_estimate"):'')+'</p>'+(p?'<button class="pending-badge" type="button"'+(data.readOnly?' disabled':'')+' data-id="'+t.id+tr("data_action_pending_pending_change"):'')+'</div><div class="actions"><button type="button" class="btn state-action" data-id="'+t.id+'" data-action="'+(state==='todo'?'activate':'todo')+'"'+(data.readOnly||state==='todo'&&t.blocked?' disabled':'')+'>'+(state==='todo'?tr("start"):tr("to_do"))+'</button><button type="button" class="btn" data-id="'+t.id+'" data-action="snooze"'+(data.readOnly?' disabled':'')+' aria-haspopup="dialog">'+clockIcon+tr("snooze_6f15c5");
+   return '<article class="task '+(state==='active'?'in-progress':'')+'" data-task-id="'+t.id+'" data-section="'+esc(state+':'+s.key)+'"><div>'+cardTags(t,s,data)+'<button type="button" class="task-title" data-id="'+t.id+'" data-action="detail" aria-label="'+tr("view_details")+': '+esc(t.title)+'" aria-haspopup="dialog"><span>'+esc(t.title)+'</span>'+arrowIcon+'</button>'+suggestionReason(t,data)+dependencyChips(t,data)+'<p class="task-context">'+esc(t.context)+'</p><p class="task-meta">'+(t.due?'<span class="task-due" title="'+esc(full(t.due))+tr("due")+esc(short(t.due))+'</span>':'')+(t.until?'<span class="task-wait" title="'+esc(full(t.until))+tr("resume")+esc(short(t.until))+'</span>':'')+(t.awaiting?tr("waiting_for_a_reply"):'')+(data.context.availableMinutes!==null&&Number.isFinite(t.remainingMinutes)?'<span>'+t.remainingMinutes+tr("min_remaining_declared_estimate"):'')+'</p>'+(p?'<button class="pending-badge" type="button"'+(data.readOnly?' disabled':'')+' data-id="'+t.id+tr("data_action_pending_pending_change"):'')+'</div><div class="actions"><button type="button" class="btn state-action" data-id="'+t.id+'" data-action="'+(state==='todo'?'activate':'todo')+'"'+(data.readOnly||state==='todo'&&t.blocked?' disabled':'')+'>'+(state==='todo'?tr("start"):tr("to_do"))+'</button><button type="button" class="btn" data-id="'+t.id+'" data-action="snooze"'+(data.readOnly?' disabled':'')+' aria-haspopup="dialog">'+clockIcon+tr("snooze_6f15c5");
   }).join('')).join('')+(rows.length?'':tr("nothing_here"))+'</div></section>';
  }).join('');
+ showDependencies(data);
  const closed=data.tasks.filter(t=>['done','retired'].includes(t.state));$('closed-count').textContent=closed.length;$('closed').innerHTML=closed.map(t=>'<p class="closed-row"><button type="button" class="link-button" data-closed-id="'+t.id+'">'+esc(t.title)+'</button> · '+(t.state==='done'?tr("completed"):tr("retired"))+'</p>').join('');
  const shown=proposals.filter(p=>p.phase!=='evaluating'||p.concerns.length||data.mode!=='normal');
  $('review-area').hidden=!shown.length;$('review-count').textContent=shown.length===1?tr("1_pending_change"):shown.length+tr("pending_changes");
@@ -146,7 +185,7 @@ function openDetail(id,origin,editEstimate=false){const t=task(id);if(!t)return;
 $('estimate-save').onclick=async()=>{const raw=$('estimate-input').value,value=raw.trim()?Number(raw):null;try{await flow.setEstimate(selected,value,detailRevision);notice(tr("estimate_updated_the_responsibility_keeps_it"));$('detail-dialog').close('declared')}catch(error){$('estimate-error').hidden=false;$('estimate-error').textContent=error.message}};
 $('detail-retire').onclick=()=>{$('retire-confirm').hidden=false;$('confirm-retire').focus()};$('keep-task').onclick=()=>{$('retire-confirm').hidden=true;$('detail-retire').focus()};
 $('closed').onclick=e=>{const b=e.target.closest('[data-closed-id]');if(b)openDetail(b.dataset.closedId,b)};
-$('board').onclick=e=>{const b=e.target.closest('[data-action]');if(!b)return;const {id,action}=b.dataset;if(action==='snooze')openSnooze(id,b);else if(action==='detail')openDetail(id,b);else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
+$('board').onclick=e=>{const b=e.target.closest('[data-action]');if(!b){if(dependencyFocus&&!e.target.closest('.task'))toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='dependencies')toggleDependencies(id);else if(action==='snooze')openSnooze(id,b);else if(action==='detail')openDetail(id,b);else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
 $('reviews').onclick=async e=>{const summary=e.target.closest('summary');if(summary){const d=summary.parentElement;if(d.open)collapsedProposals.add(d.dataset.proposal);else collapsedProposals.delete(d.dataset.proposal);}const b=e.target.closest('[data-review-action]');if(!b)return;const p=flow.snapshot().proposals.find(p=>p.id===b.dataset.proposal);if(!p)return;if(Number(b.dataset.generation)!==p.generation){notice(tr("the_review_changed_read_the_current_state"));return;}const action=b.dataset.reviewAction;if(action==='cancel'){await flow.cancel(p.id);notice(tr("change_canceled_the_responsibility_keeps_its"))}if(action==='retry')safely(()=>flow.retry(p.id));if(action==='continue')safely(()=>flow.commit(p.id,{generation:p.generation}));if(action==='without')safely(()=>flow.commit(p.id,{generation:p.generation,withoutReview:true}));if(action==='adjust'){if(p.intent.action==='snooze')openSnooze(p.intent.taskId,b,p);else if(p.concerns.some(c=>c.code==='capacity'))openDetail(p.intent.taskId,b,true);else openContext(b)}};
 $('reviews').addEventListener('toggle',e=>{if(!e.target.matches('details'))return;const id=e.target.dataset.proposal;if(e.target.open){collapsedProposals.delete(id);expandedProposal=id}else collapsedProposals.add(id)},true);
 $('undo').onclick=()=>safely(()=>flow.undo($('undo').dataset.event));

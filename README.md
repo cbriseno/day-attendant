@@ -55,7 +55,9 @@ an open UI or LLM session. Open the UI on demand with `service open`.
 - Snooze for minutes, hours, calendar days or an exact local time. Return directly to
   To do from an active or snoozed front. Snoozing preserves the deadline.
 - Edit blocking prerequisites and symmetric, nonblocking related links in Details.
-  The board shows why a responsibility is blocked; Details shows both directions.
+  Board cards show what blocks a responsibility and what it blocks. Selecting either
+  indicator highlights the linked cards and, where the layout leaves room (not at phone
+  widths), draws connecting lines; Escape clears it. Details shows both directions.
   Completing a prerequisite unlocks dependents without starting them. Retiring it
   does not fulfill it. Cycles and missing references are rejected.
 - Add and edit calendar commitments in the same interface. Relevant calendar changes
