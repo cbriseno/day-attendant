@@ -18,6 +18,14 @@ from .profiles import CLAUDE_EFFORTS,DEFAULT_EFFORT,turn_timeout
 from .instructions import PERSONAL_ASSISTANT
 
 
+# Claude Code has no model-list command; these are the exact IDs its sessions report.
+MODELS=('claude-fable-5-1','claude-opus-5-5','claude-sonnet-5-5','claude-haiku-5-5')
+
+
+def catalog():
+    return [{'model':model,'isDefault':False,'efforts':list(CLAUDE_EFFORTS),'defaultEffort':None} for model in MODELS]
+
+
 def subscription_environment():
     env=dict(os.environ)
     # Never let an inherited API/provider setting redirect subscription usage.
@@ -35,7 +43,7 @@ class ClaudeBridge:
         self.workspace=str(Path(workspace).resolve())
         self.effort=effort or DEFAULT_EFFORT
         if self.effort not in CLAUDE_EFFORTS:raise AssistantError('agent_effort_unavailable','Claude Code does not offer this reasoning level; no other level was selected.')
-        self.catalog=None
+        self.catalog=catalog()
         self.binary=binary or shutil.which('claude')
         if not self.binary:raise AssistantError('agent_missing','Claude Code is not installed.')
         self.environment=subscription_environment()

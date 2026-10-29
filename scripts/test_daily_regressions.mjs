@@ -14,7 +14,7 @@ const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:n
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
 const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2025-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
-const requests=[],settings=[],chats=[],clears=[];
+const requests=[],settings=[],chats=[],clears=[];let catalogs=null;
 const server=createServer(async(req,res)=>{
  try{
   if(req.url.startsWith('/api/')){
@@ -45,6 +45,8 @@ const server=createServer(async(req,res)=>{
     chats.push(body);const at=state.now;
     state.messages.push({key:body.key,role:'user',text:body.text,status:'completed',at,attachments:[]},{key:body.key+':assistant',role:'assistant',text:'Controlled reply.',status:'completed',at,attachments:[]});
     data={key:body.key,status:'completed'};
+   }else if(req.url==='/api/models'){
+    data=catalogs||{codex:[],claude:[],errors:{}};
    }else if(req.url==='/api/chat/clear'){
     clears.push(body);state.messages=[];data={key:body.key,status:'cleared'};
    }else if(req.url==='/api/backups')data={backups:[]};
@@ -188,6 +190,17 @@ try{
   state.agent={connected:false,model:null,error:'The selected model does not offer this reasoning level; no other level was selected.',errorCode:'agent_effort_unavailable'};await refresh();
   assert.equal(await evaluate("document.getElementById('bridge-state').textContent"),'El modelo elegido no ofrece este nivel de razonamiento. Elige otro nivel.');
   await fill('locale-choice','en');state.profile.model='controlled';delete state.profile.effort;state.agent={connected:true,model:'controlled'};await refresh();
+  // The model is a real selector per harness: every Codex model, and only Claude models after switching.
+  catalogs={codex:[{model:'controlled',isDefault:true,efforts:['low','medium'],defaultEffort:'medium'},{model:'gpt-terra',isDefault:false,efforts:['low','high'],defaultEffort:'high'},{model:'gpt-luna',isDefault:false,efforts:['medium'],defaultEffort:'medium'}],
+   claude:[{model:'claude-opus-test',isDefault:false,efforts:['low','medium','high','xhigh','max'],defaultEffort:null}],errors:{}};
+  const models="[...document.getElementById('setting-model').options].map(o=>o.value)";
+  await click('#settings-open');await wait(`${models}.length===4`);
+  assert.deepEqual(await evaluate(models),['','controlled','gpt-terra','gpt-luna']);assert.equal(await evaluate("document.getElementById('setting-model').value"),'controlled');
+  await fill('setting-model','gpt-terra');assert.deepEqual(await evaluate(efforts),['low','high']);
+  await fill('setting-harness','claude');assert.deepEqual(await evaluate(models),['','claude-opus-test']);assert.equal(await evaluate("document.getElementById('setting-model').value"),'');
+  await fill('setting-model','claude-opus-test');const chosen=settings.length;await submit('settings-dialog');await saved('settings-dialog');
+  assert.equal(settings[chosen].values.harness,'claude');assert.equal(settings[chosen].values.model,'claude-opus-test');
+  state.profile.harness='codex';state.profile.model='controlled';catalogs=null;await refresh();
  }
  if(group==='all'){
  for(const [action,control,key] of [['dependency_update','edit-dependencies','dependsOn'],['related_update','edit-related','relatedTo']]){

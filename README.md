@@ -75,9 +75,11 @@ Technical invalidity cannot be bypassed by acknowledging a consequence.
 
 ## Harnesses and portable continuity
 
-Choose Codex or Claude Code, an exact model ID and a reasoning level in Settings, or
-use `profile configure` (`init` also accepts `--harness`, `--model` and `--effort`).
-An empty model selects the installed default once and saves the resolved identifier.
+Choose Codex or Claude Code, a model from that harness's list and a reasoning level in
+Settings, or use `profile configure` (`init` also accepts `--harness`, `--model` and
+`--effort`). Codex lists its models through its app-server (no model turn); Claude Code
+has no list command, so Settings offers its current exact IDs. The installed default
+selects the harness default once and saves the resolved identifier.
 Codex offers the levels its catalog lists for the model; Claude Code offers low,
 medium, high, xhigh and max. An unset level uses medium on Claude Code; on Codex it
 uses medium when the model offers it, otherwise the model's default level. A model turn
