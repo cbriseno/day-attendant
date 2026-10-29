@@ -98,7 +98,10 @@ typing `/clear`, starts over: earlier messages stay stored locally but are no lo
 shown or sent, while tasks, calendar, context and per-task notes stay. Switching or
 restarting a harness keeps the current conversation without importing global
 histories. A very long conversation can reach the provider's context window; use
-`/clear` instead of relying on silent truncation.
+`/clear` instead of relying on silent truncation. Under the message box, a status line
+shows the context the harness reported for its latest reply and the selected model's
+context window; without such a report it says there is no data. Enter sends and
+Shift+Enter adds a line; on touch keyboards Enter adds a line and a send button appears.
 
 ## Backups and recovery
 

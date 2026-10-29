@@ -15,6 +15,7 @@ import time
 import tomllib
 
 from .errors import AssistantError
+from .harnesses import context_usage
 from .profiles import DEFAULT_EFFORT, turn_timeout
 
 from .instructions import PERSONAL_ASSISTANT as INSTRUCTIONS
@@ -208,6 +209,7 @@ class CodexBridge:
             if started:
                 started(turn_id)
             final_text = None
+            usage = None
             while time.monotonic() - begin < timeout:
                 if canceled and canceled.is_set():
                     self.interrupt(thread_id, turn_id)
@@ -223,6 +225,11 @@ class CodexBridge:
                     continue
                 if params.get("turnId") not in (None, turn_id):
                     continue
+                if method == "thread/tokenUsage/updated":
+                    # The latest request's tokens are the context this conversation occupies.
+                    report = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), dict) else {}
+                    last = report.get("last") if isinstance(report.get("last"), dict) else {}
+                    usage = context_usage(last.get("totalTokens"), report.get("modelContextWindow"))
                 if method == "item/completed":
                     item = params["item"]
                     if item.get("type") == "agentMessage":
@@ -239,7 +246,8 @@ class CodexBridge:
                     except (ValueError, TypeError) as error:
                         raise AssistantError("agent_invalid_output", "The assistant returned an invalid response.") from error
                     return {"output": output, "thread_id": thread_id, "turn_id": turn_id,
-                            "model": self.model, "seconds": round(time.monotonic()-begin, 3), "status": "completed","provider":self.provider}
+                            "model": self.model, "seconds": round(time.monotonic()-begin, 3), "status": "completed","provider":self.provider,
+                            "usage": usage}
             self.interrupt(thread_id, turn_id)
             raise AssistantError("agent_timeout", "The contextual review timed out.")
         finally:

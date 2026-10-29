@@ -39,6 +39,21 @@ result.update(control.get('result',{}));print(json.dumps(result),flush=True)
         for result in [{'is_error':True,'result':'Quota exhausted'},{'structured_output':None},{'terminal_reason':'max_turns'},{'subtype':'error_max_turns'}]:
             self.control_as(result=result)
             with self.assertRaises(AssistantError):self.turn()
+    def test_context_usage_is_the_last_reported_request_and_model_window(self):
+        self.assertIsNone(self.turn()['usage'])
+        iterations=[{'input_tokens':5,'output_tokens':1,'cache_read_input_tokens':0,'cache_creation_input_tokens':0},
+                    {'input_tokens':2,'output_tokens':30,'cache_read_input_tokens':900,'cache_creation_input_tokens':68}]
+        usage={'input_tokens':7,'output_tokens':31,'iterations':iterations}
+        self.control_as(result={'usage':usage,'modelUsage':{'exact-model':{'contextWindow':200000}}})
+        self.assertEqual(self.turn()['usage'],{'contextTokens':1000,'contextWindow':200000})
+        # Another model's window or a zero window is not this session's window.
+        self.control_as(result={'usage':usage,'modelUsage':{'other-model':{'contextWindow':200000}}})
+        self.assertEqual(self.turn()['usage'],{'contextTokens':1000,'contextWindow':None})
+        self.control_as(result={'usage':{'input_tokens':10,'output_tokens':2},'modelUsage':{'exact-model':{'contextWindow':0}}})
+        self.assertEqual(self.turn()['usage'],{'contextTokens':12,'contextWindow':None})
+        for usage in ({'output_tokens':2},{'iterations':['unexpected']},'unexpected'):
+            self.control_as(result={'usage':usage,'modelUsage':{'exact-model':{'contextWindow':200000}}})
+            self.assertIsNone(self.turn()['usage'])
     def test_unexpected_native_capability_and_model_change_are_rejected(self):
         for control in [{'tools':['StructuredOutput','Bash']},{'mcp':[{'name':'external'}]},{'external':True},{'model':'different-model'},{'malformed':True}]:
             self.control_as(**control)
