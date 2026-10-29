@@ -3,7 +3,8 @@
 const $=id=>document.getElementById(id),root=document.documentElement;
 let locale='en';try{locale=localStorage.getItem('day-attendant-locale')||'en'}catch{}if(!['en','es'].includes(locale))locale='en';
 const tr=key=>globalThis.dayTranslations[locale]?.[key]??globalThis.dayTranslations.en[key]??key;
-const errorText=(code,message)=>tr('error_'+code)!=='error_'+code?tr('error_'+code):message;
+const known=code=>tr('error_'+code)!=='error_'+code;
+const errorText=(code,message)=>known(code)?tr('error_'+code):message;
 const formatLocale=()=>locale==='es'?'es-MX':'en-US';
 function translateChrome(){root.lang=locale;document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=tr(e.dataset.i18n));for(const attr of ['aria-label','placeholder','title'])document.querySelectorAll('[data-i18n-'+attr+']').forEach(e=>e.setAttribute(attr,tr(e.getAttribute('data-i18n-'+attr))));}
 let NOW=new Date();let zone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
@@ -15,7 +16,28 @@ function parseLocal(raw){const base=Date.parse(raw+'Z');if(!Number.isFinite(base
 const clockIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>';
 const arrowIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 const linkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 6 .5l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10.5a4 4 0 0 0-6-.5l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2"/></svg>';
-const concernMessage=c=>c.message_key?tr(c.message_key).replace(/\{(\w+)\}/g,(_,key)=>new Intl.NumberFormat(formatLocale()).format(c.message_params[key])):c.message;
+const formatted=(key,values)=>tr(key).replace(/\{(\w+)\}/g,(_,name)=>new Intl.NumberFormat(formatLocale()).format(values[name]));
+const concernMessage=c=>c.message_key?formatted(c.message_key,c.message_params):c.message;
+// Stable failure codes map to plain copy; internal error text is diagnostic and never shown.
+const failureReasons={agent_invalid_evidence:'reason_invalid_evidence',agent_invalid_output:'reason_invalid_output',agent_invalid_intent:'reason_invalid_intent',
+ agent_missed_known_concern:'reason_missed_concern',agent_timeout:'reason_timeout',agent_interrupted:'reason_interrupted',review_interrupted:'reason_interrupted',
+ attachment_corrupt:'reason_attachment',agent_auth_required:'reason_auth',agent_restart_required:'reason_restart',
+ agent_model_unavailable:'reason_model',agent_model_changed:'reason_model',agent_effort_unavailable:'reason_model',
+ agent_unavailable:'reason_unavailable',agent_disconnected:'reason_unavailable',agent_missing:'reason_unavailable',agent_version_unsupported:'reason_unavailable',
+ agent_config_unsupported:'reason_unavailable',agent_workspace_mismatch:'reason_unavailable',agent_isolation_unverified:'reason_unavailable'};
+const failureReason=code=>tr(failureReasons[code]||'reason_failed');
+const creates=action=>['add','task_add'].includes(action);
+function messageText(item){
+ if(item.role!=='assistant')return item.text;
+ let data;try{data=JSON.parse(item.data||'null')||{}}catch{data={}}
+ if(data.kind==='context_notice')return item.status==='incomplete'?tr('context_notice_incomplete')+' '+failureReason(data.code):item.status==='stale'?tr('context_notice_stale'):['pending','evaluating'].includes(item.status)?tr('context_notice_pending'):item.text;
+ if(data.notice==='existing_proposals')return tr('chat_existing_proposals');
+ if(item.status==='stale')return tr('chat_state_changed');
+ if(item.status!=='incomplete')return item.text;
+ if(data.code==='restart_interrupted')return tr('chat_restart_interrupted');
+ if(data.system_code)return tr('chat_response_interrupted');
+ return tr('chat_incomplete')+' '+(known(data.code)?tr('error_'+data.code):tr('chat_failed_generic'))+(data.proposal_ids?.length?'':' '+tr('chat_incomplete_saved_nothing'));
+}
 const origins=new WeakMap();
 let flow,snoozing=null,selected=null,editingProposal=null,snoozeMode='duration',previewTarget=null,expandedProposal=null,lastSeenEvent=null,lastRequestedProposal=null,lastGuidanceNotice=null;
 let phaseCache=new Map(),collapsedProposals=new Set(),dependencyFocus=null;
@@ -91,12 +113,24 @@ function render(data=flow.snapshot()) {
   const target=p.intent.action==='snooze'?tr("resume_c19473")+esc(full(p.intent.until))+'</p>':'';
   const due=!current&&t?.due&&p.intent.action==='snooze'?tr("due_3dc108")+esc(full(t.due))+'. </p>':'';
   const alternative=p.review?.output?.alternatives?.join(' ')||(p.concerns.some(c=>c.code==='capacity')?tr("you_can_correct_the_remaining_effort_reduce_"):p.concerns.some(c=>c.code==='rest_goal')?tr("you_can_preserve_your_rest_and_resume_later"):tr("you_can_choose_another_time_or_review_the_co"));
-  let buttons='<button type="button" class="btn ghost" data-proposal="'+p.id+'" data-generation="'+p.generation+tr("data_review_action_cancel_cancel_change");
-  if(p.phase==='review'){const capacity=p.concerns.some(c=>c.code==='capacity'),restOnly=p.concerns.every(c=>c.code==='rest_goal');buttons=(restOnly?'':'<button type="button" class="btn" data-proposal="'+p.id+'" data-generation="'+p.generation+'" data-review-action="adjust">'+(p.intent.action==='snooze'?tr("adjust_time"):capacity?tr("correct_estimate"):tr("adjust_context"))+'</button>')+buttons+'<button type="button" class="btn decision-confirm" data-proposal="'+p.id+'" data-generation="'+p.generation+'" data-review-action="continue">'+(p.intent.action==='snooze'?tr("snooze_anyway"):tr("keep_my_decision"))+'</button>';}
-  if(p.phase==='unavailable')buttons='<button type="button" class="btn" data-proposal="'+p.id+'" data-generation="'+p.generation+tr("data_review_action_retry_retry")+buttons+'<button type="button" class="btn" data-proposal="'+p.id+'" data-generation="'+p.generation+tr("data_review_action_without_apply_without_a_c");
-  if(p.phase==='stale')buttons='<button type="button" class="btn primary" data-proposal="'+p.id+'" data-generation="'+p.generation+'" data-review-action="retry">'+tr("review_again")+'</button>'+buttons;
-  if(p.phase==='invalid')buttons='<button type="button" class="btn" data-proposal="'+p.id+'" data-generation="'+p.generation+'" data-review-action="adjust">'+tr("adjust")+'</button>'+buttons;
-  return '<details class="decision" data-proposal="'+p.id+'" data-generation="'+p.generation+'" '+(isOpen?'open':'')+'><summary><span><strong>'+esc((actionLabel[p.intent.action]||tr(p.intent.action))+' · '+(t?.title||p.intent.payload?.title||''))+'</strong><span class="decision-phase">'+phaseLabel[p.phase]+tr("codex_contextual_review")+(!current&&p.review?.output?.message?'<p>'+esc(p.review.output.message)+'</p>':'')+target+due+(facts?'<ul class="decision-facts">'+facts+'</ul>':'')+(p.error?'<p class="decision-error">'+esc(p.error)+'</p>':'')+(p.phase==='review'?'<p class="decision-alternative">'+alternative+'</p>':'')+(p.phase==='unavailable'?tr("this_is_not_an_approval_retry_leave_it_pendi"):'')+'<div class="decision-actions">'+buttons+'</div></div></details>';
+  const adds=creates(p.intent.action),insufficient=p.error_code==='review_insufficient',failed=p.phase==='unavailable'&&!insufficient;
+  // A failed review of a new undated, unprioritized task leaves little to protect: saving it is the obvious next step.
+  const lowRisk=failed&&adds&&!p.intent.payload?.due&&!p.intent.payload?.priority&&!p.concerns.length;
+  const button=(action,label,kind='btn')=>'<button type="button" class="'+kind+'" data-proposal="'+p.id+'" data-generation="'+p.generation+'" data-review-action="'+action+'">'+esc(label)+'</button>';
+  const cancel=button('cancel',tr('choice_cancel_change'),'btn ghost');
+  let buttons=cancel,choices='';
+  if(p.phase==='review'){const capacity=p.concerns.some(c=>c.code==='capacity'),restOnly=p.concerns.every(c=>c.code==='rest_goal');buttons=(restOnly?'':button('adjust',p.intent.action==='snooze'?tr("adjust_time"):capacity?tr("correct_estimate"):tr("adjust_context")))+cancel+button('continue',p.intent.action==='snooze'?tr("snooze_anyway"):tr("keep_my_decision"),'btn decision-confirm');}
+  if(p.phase==='unavailable'){
+   const without=adds?'create_without_review':'apply_without_review',order=lowRisk?['retry_review',without]:[without,'retry_review'];
+   buttons=cancel+order.map((choice,i)=>button(choice==='retry_review'?'retry':'without',tr('choice_'+choice),failed&&i===order.length-1?'btn primary':'btn')).join('');
+   choices=(lowRisk?'<p class="decision-alternative">'+esc(tr('low_risk_hint'))+'</p>':'')+'<ul class="decision-choices">'+[...order].reverse().concat('cancel_change').map(choice=>'<li><strong>'+esc(tr('choice_'+choice))+'</strong>: '+esc(tr('explain_'+choice))+'</li>').join('')+'</ul><p class="decision-alternative">'+esc(tr('explain_leave_pending'))+'</p>';
+  }
+  if(p.phase==='stale')buttons=cancel+button('retry',tr("review_again"),'btn primary');
+  if(p.phase==='invalid')buttons=button('adjust',tr("adjust"))+cancel;
+  const reason=failed?failureReason(p.error_code)+(p.error_code==='agent_missed_known_concern'?'':' '+tr('review_failure_not_about_request')):p.phase==='stale'?tr('stale_explanation'):'';
+  const label=p.phase==='unavailable'?tr(insufficient?'review_needs_clarification':'review_could_not_complete'):phaseLabel[p.phase];
+  const pending='<p class="decision-pending">'+esc(tr(adds?'not_created_yet':'not_applied_yet'))+'</p>';
+  return '<details class="decision" data-proposal="'+p.id+'" data-generation="'+p.generation+'" '+(isOpen?'open':'')+'><summary><span><strong>'+esc((actionLabel[p.intent.action]||tr(p.intent.action))+' · '+(t?.title||p.intent.payload?.title||''))+'</strong><span class="decision-phase">'+esc(label)+tr("codex_contextual_review")+pending+(!current&&p.review?.output?.message?'<p>'+esc(p.review.output.message)+'</p>':'')+target+due+(facts?'<ul class="decision-facts">'+facts+'</ul>':'')+(reason?'<p class="decision-error">'+esc(reason)+'</p>':'')+(p.phase==='review'?'<p class="decision-alternative">'+alternative+'</p>':'')+choices+'<div class="decision-actions">'+buttons+'</div></div></details>';
  }).join('');
  const last=data.events.at(-1);
  if(last&&last.id!==lastSeenEvent){lastSeenEvent=last.id;const t=data.tasks.find(t=>t.id===last.taskId);notice((last.action==='restore'?tr("change_undone"):(actionLabel[last.action]||tr(last.action))+' · '+(t?.title||tr("my_context")))+(last.reviewComplete?'':tr("contextual_review_incomplete")));}
@@ -171,7 +205,9 @@ class RemoteFlow{
  async setEstimate(id,value,revision){return this.request('continuity_update',{uuid:id,remainingMinutes:value},undefined,revision)}
  async setContext(value,revision){return this.request('context_update',{availableMinutes:value.availableMinutes,availableUntil:value.availableUntil,rest:value.rest},undefined,revision)}
 }
-function renderMessages(messages){const box=$('messages'),oldScroll=box.scrollTop,nearEnd=box.scrollHeight-box.clientHeight-box.scrollTop<70;box.replaceChildren();for(const item of messages){const el=document.createElement('div');el.className='message'+(item.role==='user'?' user':'');const h=document.createElement('strong');h.textContent=item.role==='user'?tr("you"):item.status==='incomplete'?tr("assistant_incomplete_response"):tr("assistant");const p=document.createElement('p');p.textContent=item.text;el.append(h,p);if(item.role==='user'&&item.status==='incomplete'){const retry=document.createElement('button');retry.type='button';retry.className='btn';retry.textContent=tr('retry_reply');retry.onclick=()=>safely(async()=>{await api('/api/chat/retry',{key:item.key});await flow.refresh()});el.append(retry)}if(item.status==='pending'){const status=document.createElement('p');status.className='small muted';status.textContent=tr("the_assistant_is_responding");el.append(status)}box.append(el)}if(nearEnd)box.scrollTop=box.scrollHeight;else box.scrollTop=oldScroll;const guidance=messages.findLast(m=>{try{return JSON.parse(m.data||'null')?.kind==='context_notice'}catch{return false}});if(guidance){const signature=guidance.id+':'+guidance.status+':'+guidance.text;if(signature!==lastGuidanceNotice){lastGuidanceNotice=signature;notice(guidance.text)}}}
+function renderMessages(messages){const box=$('messages'),oldScroll=box.scrollTop,nearEnd=box.scrollHeight-box.clientHeight-box.scrollTop<70;box.replaceChildren();for(const item of messages){const el=document.createElement('div');el.className='message'+(item.role==='user'?' user':'');const h=document.createElement('strong');h.textContent=item.role==='user'?tr("you"):item.status==='incomplete'?tr("assistant_incomplete_response"):tr("assistant");const p=document.createElement('p');p.textContent=messageText(item);el.append(h,p);if(item.role==='user'&&item.status==='incomplete'){const retry=document.createElement('button');retry.type='button';retry.className='btn';retry.textContent=tr('retry_reply');retry.onclick=()=>safely(async()=>{await api('/api/chat/retry',{key:item.key});await flow.refresh()});el.append(retry)}if(item.status==='pending'){const status=document.createElement('p');status.className='small muted';status.textContent=tr("the_assistant_is_responding");el.append(status)}box.append(el)}if(nearEnd)box.scrollTop=box.scrollHeight;else box.scrollTop=oldScroll;const guidance=messages.findLast(m=>{try{return JSON.parse(m.data||'null')?.kind==='context_notice'}catch{return false}});if(guidance){const signature=guidance.id+':'+guidance.status+':'+guidance.text;if(signature!==lastGuidanceNotice){lastGuidanceNotice=signature;notice(messageText(guidance))}}}
+// Chat receipts point here: open the pending change where it can be decided.
+function showProposal(id){collapsedProposals.delete(id);expandedProposal=id;render();const reveal=()=>{const d=[...$('reviews').querySelectorAll('details')].find(d=>d.dataset.proposal===id);if(!d)return;d.open=true;d.scrollIntoView({block:'nearest'});d.querySelector('summary').focus({preventScroll:true})};if(!$('chat-dialog').open)return reveal();$('chat-dialog').addEventListener('close',()=>requestAnimationFrame(reveal),{once:true});chatOpen=false;placeChat()}
 async function clearConversation(){await api('/api/chat/clear',{key:crypto.randomUUID()});await flow.refresh()}
 $('chat-clear').onclick=()=>safely(clearConversation);
 $('send-message').onclick=()=>safely(async()=>{const input=$('conversation-input'),text=input.value.trim();if(!text)return;$('send-message').disabled=true;try{if(text==='/clear'){await clearConversation();if(input.value.trim()===text)input.value='';return}await deliver('/api/chat',{text});if(input.value.trim()===text)input.value='';await flow.refresh()}finally{$('send-message').disabled=false}});
@@ -184,5 +220,5 @@ addEventListener('hashchange',()=>{if(new URLSearchParams(location.hash.slice(1)
 safely(boot);
 setInterval(()=>safely(()=>flow.refresh()),900);
 globalThis.daySnapshot=()=>structuredClone(flow.snapshot());
-globalThis.dayUI={api,deliver,flow,openDialog,openDetail,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome};
+globalThis.dayUI={api,deliver,flow,openDialog,openDetail,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome,formatted,creates,showProposal};
 })();
