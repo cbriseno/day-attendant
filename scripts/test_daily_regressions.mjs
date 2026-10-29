@@ -223,10 +223,48 @@ try{
  state.messages=[{id:1,key:'capture',role:'user',text:'Capture nine items',status:'completed'}, {id:2,key:'capture:assistant',role:'assistant',text:'Checking the items.',status:'completed',data:JSON.stringify({proposal_ids:state.proposals.map(p=>p.id),unprocessed:['Ninth item remains'],uncertainties:['Which date for the ninth item?']})}];await refresh();
  let receipt=await evaluate("document.querySelector('.receipt-list').textContent");assert.match(receipt,/Ninth item remains/);assert.match(receipt,/Which date/);assert.match(receipt,/Reviewing/);
  const phases=['applied','unavailable','stale','invalid','review','canceled','superseded','unchanged'];state.proposals.forEach((p,i)=>p.phase=phases[i]);await refresh();
- receipt=await evaluate("document.querySelector('.receipt-list').textContent");for(const label of ['Saved','Review incomplete','Context changed','Invalid','Needs review','Canceled','Replaced','Unchanged'])assert.ok(receipt.includes(label),receipt);
+ receipt=await evaluate("document.querySelector('.receipt-list').textContent");for(const label of ['Saved','Item 2 · not created yet: the automatic review could not be completed. Decide in Before applying.','Item 3 · not created yet: the context changed.','Item 4 · not created yet: adjust it','Item 5 · not created yet: a consequence needs your decision','Canceled','Replaced','Unchanged','2 of 8 saved · 4 waiting for you in Before applying.'])assert.ok(receipt.includes(label),receipt);
+ assert.equal(await evaluate("document.querySelectorAll('.receipt-list .link-button').length"),4);
  for(const [phase,label] of [['ready','Ready to save'],['admitted','Admitted; check recovery']]){state.proposals[0].phase=phase;await refresh();assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes(label))}
  state.messages.push({id:3,key:'question',role:'assistant',text:'Please clarify.',status:'completed',data:JSON.stringify({proposal_ids:[],unprocessed:['Unscheduled request'],uncertainties:['Who is the person?']})});await refresh();
  assert.match(await evaluate("document.getElementById('messages').textContent"),/Unscheduled request.*Who is the person/s);
+ // A failed review never shows internal error text; it says nothing was created yet and what each choice does.
+ const raw='The concern is not grounded in the supplied evidence.';
+ const failedReview=state.proposals[1];Object.assign(failedReview,{error:raw,error_code:'agent_invalid_evidence',review:null});
+ const panel=()=>evaluate(`(()=>{const d=[...document.querySelectorAll('#reviews details')].find(d=>d.dataset.proposal===${JSON.stringify(failedReview.id)});return d&&{text:d.textContent,open:d.open,buttons:[...d.querySelectorAll('.decision-actions button')].map(b=>[b.textContent,b.dataset.reviewAction,b.classList.contains('primary')])}})()`);
+ await refresh();
+ await evaluate(`document.querySelector('#reviews details[open]')?.removeAttribute('open')`);
+ await evaluate(`[...document.querySelectorAll('.receipt-list .link-button')][0].click()`);
+ let shownPanel=await panel();assert.equal(shownPanel.open,true);
+ assert.equal(await evaluate(`document.activeElement===[...document.querySelectorAll('#reviews details')].find(d=>d.dataset.proposal===${JSON.stringify(failedReview.id)}).querySelector('summary')`),true);
+ assert.ok(!shownPanel.text.includes(raw),shownPanel.text);
+ for(const copy of ['Automatic review could not be completed','This task has not been created yet.',"The assistant's review cited information it had not been given",'not a problem found in what you asked for','This is a low-risk change','Create without review: saves the task as you asked','Retry review: asks the assistant to review it again','Cancel change: discards it'])assert.ok(shownPanel.text.includes(copy),copy+' in '+shownPanel.text);
+ assert.deepEqual(shownPanel.buttons,[['Cancel change','cancel',false],['Retry review','retry',false],['Create without review','without',true]]);
+ await fill('locale-choice','es');await refresh();shownPanel=await panel();
+ assert.ok(!shownPanel.text.includes(raw),shownPanel.text);
+ for(const copy of ['No se pudo completar la revisión automática','Esta tarea aún no se ha creado.','citó información que no se le había dado','no un problema encontrado en lo que pediste','Crear sin revisión: guarda la tarea'])assert.ok(shownPanel.text.includes(copy),copy+' in '+shownPanel.text);
+ assert.deepEqual(shownPanel.buttons,[['Cancelar cambio','cancel',false],['Reintentar revisión','retry',false],['Crear sin revisión','without',true]]);
+ assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes('Item 2 · aún no se creó: no se pudo completar la revisión automática. Decide en «Antes de aplicar».'));
+ await fill('locale-choice','en');
+ // A dated change keeps retrying the review as the primary step.
+ failedReview.intent.payload.due='2025-10-30T12:00:00Z';await refresh();shownPanel=await panel();
+ assert.deepEqual(shownPanel.buttons,[['Cancel change','cancel',false],['Create without review','without',false],['Retry review','retry',true]]);assert.ok(!shownPanel.text.includes('low-risk'));
+ delete failedReview.intent.payload.due;
+ // An insufficient verdict is the assistant's own question, not a failure.
+ Object.assign(failedReview,{error:null,error_code:'review_insufficient',review:{output:{verdict:'insufficient',message:'Which project is this feedback for?',alternatives:[]}}});await refresh();shownPanel=await panel();
+ for(const copy of ['The assistant needs a clarification','This task has not been created yet.','Which project is this feedback for?'])assert.ok(shownPanel.text.includes(copy),copy);
+ assert.ok(!shownPanel.text.includes('failure of the review'));assert.equal(shownPanel.buttons.some(b=>b[2]),false);
+ assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes('Item 2 · not created yet: the assistant needs a clarification.'));
+ Object.assign(failedReview,{error:'Changed by admitted proposal:'+randomUUID(),error_code:'context_changed',phase:'stale',review:null});await refresh();shownPanel=await panel();
+ assert.ok(!shownPanel.text.includes('Changed by admitted proposal'));assert.ok(shownPanel.text.includes('Something relevant changed after the review started'));
+ Object.assign(failedReview,{phase:'unavailable',error:raw,error_code:'agent_invalid_evidence'});
+ // Chat failures are localized by code too.
+ state.messages.push({id:4,key:'broken',role:'user',text:'Add three tasks',status:'incomplete'},{id:5,key:'broken:assistant',role:'assistant',text:'The response is incomplete. The intent is not grounded in the current human message.',status:'incomplete',data:JSON.stringify({code:'agent_invalid_intent',proposal_ids:[]})});await refresh();
+ let chatText=await evaluate("document.getElementById('messages').textContent");
+ assert.ok(!chatText.includes('not grounded'),chatText);assert.ok(chatText.includes('The reply could not be completed. The assistant proposed something that does not match your message. Nothing from it was saved.'),chatText);
+ await fill('locale-choice','es');await refresh();chatText=await evaluate("document.getElementById('messages').textContent");
+ assert.ok(chatText.includes('No se pudo completar la respuesta. El asistente propuso algo que no coincide con tu mensaje. No se guardó nada de ella.'),chatText);
+ await fill('locale-choice','en');state.messages.splice(-2);await refresh();
 
  const captureProposals=state.proposals;
  state.proposals=[{id:randomUUID(),intent:{action:'task_update',payload:{uuid:target.id,title:'Pending title'}},phase:'unavailable',generation:0,facts:[]}];
