@@ -186,7 +186,7 @@ Current human message:\n'''+encoded(text)+'\nSelected state and portable continu
             if message['status']!='incomplete':return dict(message)
             previous=con.execute('SELECT id,phase FROM proposals WHERE message_key=? ORDER BY rowid',(key,)).fetchall()
             if previous:
-                data={'proposal_id':previous[0]['id'],'proposal_ids':[r['id'] for r in previous]}
+                data={'proposal_id':previous[0]['id'],'proposal_ids':[r['id'] for r in previous],'notice':'existing_proposals'}
                 text='This request already has durable proposals. Review their current results; it was not sent as new actions.'
                 con.execute("UPDATE messages SET text=?,status='completed',data=? WHERE key=?",(text,encoded(data),key+':assistant'))
                 con.execute("UPDATE messages SET status='completed',data=? WHERE key=?",(encoded(data),key))

@@ -45,6 +45,23 @@ ALLOWED = {
 PENDING = ("evaluating", "review", "unavailable", "stale", "invalid")
 
 
+def review_schema(evidence):
+    """The review contract with refs limited to the evidence keys supplied for this review."""
+    schema = json.loads(json.dumps(REVIEW_SCHEMA))
+    schema["properties"]["concerns"]["items"]["properties"]["refs"]["items"]["enum"] = sorted(evidence)
+    return schema
+
+
+def error_code(proposal, failures):
+    """Stable reason for a pending proposal, so interfaces never show internal error text."""
+    if proposal["phase"] == "stale":return "context_changed"
+    if proposal["phase"] != "unavailable":return None
+    failed = failures.get(proposal["id"])
+    if failed and failed[0] == proposal["generation"]:return failed[1]
+    if proposal["review"] and proposal["review"].get("output", {}).get("verdict") == "insufficient":return "review_insufficient"
+    return "review_interrupted"
+
+
 class Connected:
     def __init__(self, app, bridge=None):
         self.app = app
@@ -225,6 +242,9 @@ class Connected:
         with self.store.connect() as con:
             continuation = {r["uuid"]: json.loads(r["data"]) for r in con.execute("SELECT * FROM continuity")}
             proposals = [self.unpack(r) for r in con.execute("SELECT * FROM proposals ORDER BY rowid")]
+            failures = {r["proposal_id"]: (r["generation"], json.loads(r["result"] or "{}").get("code") or "review_failed")
+                        for r in con.execute("SELECT proposal_id,generation,result FROM evaluations WHERE status='failed' ORDER BY id")}
+            for proposal in proposals:proposal["error_code"] = error_code(proposal, failures)
             facts = [dict(r) for r in con.execute("SELECT * FROM facts ORDER BY id")]
             # Only the current conversation is shown and sent; /clear keeps older messages stored locally.
             conversation=self.store.state_value('conversation') or {}
@@ -563,11 +583,11 @@ class Connected:
             prompt = """Review this pending intent before application; execute nothing. Ground consequences in concrete evidence, never in a universal active-front count. front_activate marks a responsibility as an active front for tracking and later alternation; it does NOT assert that its next step is executable now or that a reply arrived. awaiting=true alone is a legitimate active front and does not justify a barrier. Native blocking dependencies are checked by the service separately.
 For authorization_source=authenticated_typed_request, the exact typed UI/CLI action is already the authenticated operator's explicit instruction. No second prose instruction is required. For interpreted_human_message, verify EVERY proposed field against the exact current human message, selected image content, and clearly relevant prior human requests in human_context. Assistant suggestions do not authorize themselves. A current clarification may complete a specific prior human request, but vague acceptance without unambiguous scope is insufficient. A quoted substring and userAuthorized are not sufficient proof of scope; extra fields, negated changes or ambiguity require insufficient and a concrete clarification. This also applies to context/continuity declarations. service_metadata.zone is the existing workspace timezone used to interpret an explicitly requested date, not a separate task-field edit requiring a second instruction.
 Authorizing an intent never acknowledges its consequences. known_concerns are detected, UNACCEPTED conflicts. Address every known code and its exact evidence refs with verdict=review, never allow. acknowledged_consequences are specific accepted bases, not category-wide permission. capacityAlreadyReviewed refers ONLY to the same aggregate capacity_signature. Never suppress a distinct task or completion-window concern because it shares a category.
-Respect legitimate rest, unrecorded progress, uncertainty and autonomy. Allow unambiguous captures and requests without a supported consequence, without routine confirmation. Use exact refs from evidence. Do not invent facts. Respond in the current human message's language; default to English for typed actions with no prose request.
+Respect legitimate rest, unrecorded progress, uncertainty and autonomy. Allow unambiguous captures and requests without a supported consequence, without routine confirmation. Every concern ref must be an exact key of the evidence object; user_request, intent, tasks, human_context, proposed_task and other input fields are context, not refs. A worry that no evidence key supports is not a concern: leave it out of concerns and, if useful, mention it in uncertainties. Do not invent facts. Respond in the current human message's language; default to English for typed actions with no prose request.
 """+encoded({k:v for k,v in inputs.items() if k!='plan'})
             images=self.message_images(proposal.get('message_key'))
             kwargs={'images':images} if images else {}
-            result=bridge.turn(thread,prompt,REVIEW_SCHEMA,canceled=canceled,**kwargs)
+            result=bridge.turn(thread,prompt,review_schema(inputs["evidence"]),canceled=canceled,**kwargs)
             result=dict(result,provider=getattr(bridge,'provider',self.store.state_value('profile',{}).get('harness')))
             self.pin_model(result,inputs['epoch'])
             review = self.validate_review(result["output"], inputs)
@@ -687,7 +707,7 @@ Respect legitimate rest, unrecorded progress, uncertainty and autonomy. Allow un
             try:
                 with self.store.lock():
                     self.store.assert_writable();bridge=self.require_agent();epoch=self.store.epoch()
-                result=bridge.turn(bridge.thread(),'Give informational, empathetic guidance after a human context correction. The declaration is already saved; propose no mutation and no barrier. Ground any concern in evidence, acknowledge uncertainty about unrecorded progress, and offer a useful small next step or renegotiation.\n'+encoded(inputs),REVIEW_SCHEMA)
+                result=bridge.turn(bridge.thread(),'Give informational, empathetic guidance after a human context correction. The declaration is already saved; propose no mutation and no barrier. Ground any concern in evidence: every ref must be an exact key of the evidence object. Acknowledge uncertainty about unrecorded progress, and offer a useful small next step or renegotiation.\n'+encoded(inputs),review_schema(inputs['evidence']))
                 result=dict(result,provider=getattr(bridge,'provider',self.store.state_value('profile',{}).get('harness')))
                 self.pin_model(result,epoch)
                 output=self.validate_review(result['output'],inputs)
@@ -695,7 +715,7 @@ Respect legitimate rest, unrecorded progress, uncertainty and autonomy. Allow un
                 status='completed';data={'kind':'context_notice','result':result,'review_status':'complete','epoch':epoch}
             except Exception as error:
                 text='Your correction was saved. Contextual guidance is incomplete: '+str(error)[:300]
-                status='incomplete';data={'kind':'context_notice','error':str(error)[:300],'review_status':'incomplete'}
+                status='incomplete';data={'kind':'context_notice','code':getattr(error,'code','review_failed'),'error':str(error)[:300],'review_status':'incomplete'}
             with self.store.lock(),self.store.connect() as con:
                 snapshot=self._snapshot()
                 current=self._capacity(snapshot['tasks'],snapshot['context'])

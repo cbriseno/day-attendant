@@ -123,7 +123,8 @@ actors before and after backup, successful recovery and both reconciliation retr
 The same focused test invokes `scripts/test_daily_regressions.mjs` in an isolated
 headless Chrome with controlled HTTP responses and no model. It executes the actual
 UI scripts to check editor snapshots and stale submissions, persistent capture
-questions and changing receipts, every date-field family in a profile zone different
+questions and changing receipts, localized review-failure outcomes that never show
+internal error text, every date-field family in a profile zone different
 from the browser, calendar expiry/zone changes and access past twelve commitments,
 and localized completed/retired details without translating card content.
 
