@@ -172,7 +172,7 @@ try{
   const shown=n=>wait(`document.querySelectorAll('#messages .message').length===${n}`);
   await fill('conversation-input','First message');await click('#send-message');await shown(2);
   await fill('conversation-input','/clear');await click('#send-message');await shown(0);
-  assert.equal(chats.length,1);assert.equal(clears.length,1);assert.equal(await evaluate("document.getElementById('conversation-input').value"),'');
+  assert.equal(chats.length,1);assert.equal(clears.length,1);await wait("document.getElementById('conversation-input').value===''");
   await fill('conversation-input','Another message');await click('#send-message');await shown(2);await click('#chat-clear');await shown(0);
   assert.equal(chats.length,2);assert.equal(clears.length,2);assert.notEqual(clears[0].key,clears[1].key);
   // Reasoning choices follow the model catalog for Codex and the fixed Claude Code set.
@@ -223,7 +223,8 @@ try{
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chip(a,'blocking-label'))}).textContent`),'Bloquea · '+target.title+', B');
   await fill('locale-choice','en');await shows(fromA);
   await click('#board-view');await shows(fromA);
-  assert.equal(await evaluate("[...document.querySelectorAll('.dependency-lines > path')].every(p=>p.getAttribute('d').includes('C'))"),true,'Board columns use curved cross-column links');
+  // Lines redraw after the board relayout; list-mode gutter lines also count two until then.
+   await wait("(()=>{const paths=[...document.querySelectorAll('.dependency-lines > path')];return paths.length===2&&paths.every(p=>p.getAttribute('d').includes('C'))})()").catch(()=>assert.fail('Board columns use curved cross-column links'));
   for(const width of [390,320]){await size(width,844);await shows({...fromA,lines:0});assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,'Dependency chips fit at '+width+'px')}
   await size(1440,1000);await shows(fromA);
   await click('#list-view');await shows(fromA);
