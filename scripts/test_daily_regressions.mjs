@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
@@ -236,6 +236,39 @@ try{
   await fill('setting-model','claude-opus-test');const chosen=settings.length;await submit('settings-dialog');await saved('settings-dialog');
   assert.equal(settings[chosen].values.harness,'claude');assert.equal(settings[chosen].values.model,'claude-opus-test');
   state.profile.harness='codex';state.profile.model='controlled';catalogs=null;await refresh();
+ }
+ if(group==='all'||group==='dependencies'){
+  // Dependency chips only change the view: direct links are highlighted, and lines appear where there is room.
+  const before=requests.length,chip=(t,kind)=>`[data-task-id="${t.id}"] .${kind}`,size=(width,height)=>rpc('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<600},sessionId);
+  const view=`(()=>{const ids=${JSON.stringify([a,target,b,c].map(t=>t.id))};return JSON.stringify({focus:document.getElementById('board').classList.contains('dependency-focus'),roles:ids.map(id=>document.querySelector('[data-task-id="'+id+'"]').dataset.dependencyRole||null),tags:[...document.querySelectorAll('#board .dependency-role')].map(e=>e.textContent),pressed:[...new Set([...document.querySelectorAll('#board [aria-pressed=true]')].map(e=>e.closest('[data-task-id]').dataset.taskId))],lines:document.querySelectorAll('.dependency-lines > path').length})})()`;
+  const shows=expected=>wait(`${view}===${JSON.stringify(JSON.stringify(expected))}`).catch(async error=>{throw Error(error.message+' '+await evaluate(view))});
+  const none={focus:false,roles:[null,null,null,null],tags:[],pressed:[],lines:0};
+  await size(1440,1000);a.state='active';for(const t of [target,b]){t.state='todo';t.dependsOn=[a.id];t.blockedBy=[a.id];t.blocked=true}state.revision++;await refresh();
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chip(a,'blocking-label'))}).textContent`),'Blocks · '+target.title+', B');
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chip(target,'blocked-label'))}).textContent`),'Blocked · A');
+  assert.equal(await evaluate(`document.querySelector('[data-task-id="${c.id}"] .dependency-chip')`),null);await shows(none);
+  const fromA={focus:true,roles:['source','dependent','dependent',null],tags:['Depends on it','Depends on it'],pressed:[a.id],lines:2};
+  await click(chip(a,'blocking-label'));await shows(fromA);
+  state.revision++;await refresh();await shows(fromA);
+  await fill('locale-choice','es');await shows({...fromA,tags:['Depende de esta','Depende de esta']});
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chip(a,'blocking-label'))}).textContent`),'Bloquea · '+target.title+', B');
+  await fill('locale-choice','en');await shows(fromA);
+  await click('#board-view');await shows(fromA);
+  assert.equal(await evaluate("[...document.querySelectorAll('.dependency-lines > path')].every(p=>p.getAttribute('d').includes('C'))"),true,'Board columns use curved cross-column links');
+  for(const width of [390,320]){await size(width,844);await shows({...fromA,lines:0});assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,'Dependency chips fit at '+width+'px')}
+  await size(1440,1000);await shows(fromA);
+  await click('#list-view');await shows(fromA);
+  await click(chip(target,'blocked-label'));await shows({focus:true,roles:['prerequisite','source',null,null],tags:['Prerequisite'],pressed:[target.id],lines:1});
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");await shows(none);
+  await click(chip(a,'blocking-label'));await shows(fromA);await click(chip(a,'blocking-label'));await shows(none);
+  await click(chip(a,'blocking-label'));await shows(fromA);await click('#board');await shows(none);
+  state.readOnly=true;await refresh();assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chip(a,'blocking-label'))}).disabled`),false);
+  await click(chip(a,'blocking-label'));await shows(fromA);
+  for(const t of [target,b]){t.dependsOn=[];t.blockedBy=[];t.blocked=false}state.readOnly=false;state.revision++;await refresh();
+  await shows(none);assert.equal(await evaluate("document.querySelector('#board .dependency-chip')"),null);
+  assert.equal(requests.length,before,'Showing dependencies never sends a request');
+  a.state='todo';state.revision++;await refresh();await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
+  console.log('Dependency indicator regressions passed');
  }
  if(group==='all'){
  for(const [action,control,key] of [['dependency_update','edit-dependencies','dependsOn'],['related_update','edit-related','relatedTo']]){

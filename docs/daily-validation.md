@@ -134,7 +134,9 @@ an external prerequisite change, and explicit fold 0/1 through native temporal
 effects and calendar horizons. Ambiguous requests without a fold remain rejected.
 Browser cases check blocker reasons and disabled controls after pending-badge and
 locale renders, unchanged-poll DOM stability, and localized provenance labels with
-unchanged stored values.
+unchanged stored values. Dependency indicators are checked as view-only: blocked and
+blocking chips, highlighted direct links across re-renders and locales, lines in
+board and list layouts, none at phone widths without horizontal overflow, and clearing.
 
 Browser and native-store cases also cover every Details action against an externally
 changed opening revision, with no replacement action or native effect. Unrelated
