@@ -26,11 +26,13 @@ let serial=0;const pending=new Map();ws.addEventListener('message',e=>{const d=J
 const rpc=(method,params={})=>new Promise((resolve,reject)=>{const id=++serial;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}))});
 const evaluate=async expression=>{const r=await rpc('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value};
 async function clickSelector(selector){const point=await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e||!e.getClientRects().length)throw Error('Missing or hidden control');e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await rpc('Input.dispatchMouseEvent',{type:'mouseMoved',...point});await rpc('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',buttons:1,clickCount:1});await rpc('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',buttons:0,clickCount:1});await pause(80)}
+// Enter in the focused message box sends; there is no send button on pointer devices.
+async function pressEnter(){await rpc('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r'});await rpc('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});}
 async function fill(selector,text){await clickSelector(selector);await rpc('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});await rpc('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});if(text)await rpc('Input.insertText',{text});else{await rpc('Input.dispatchKeyEvent',{type:'keyDown',key:'Backspace',code:'Backspace',windowsVirtualKeyCode:8});await rpc('Input.dispatchKeyEvent',{type:'keyUp',key:'Backspace',code:'Backspace',windowsVirtualKeyCode:8});}}
 async function sync(){await pause(1100);}
 const action=(id,name)=>`[data-id="${id}"][data-action="${name}"]`;
 async function uiAction(id,name,expectedState){const before=await snap();if(before.tasks.find(t=>t.id===id).state===expectedState)return before;await clickSelector(action(id,name));const d=await until(d=>d.tasks.find(t=>t.id===id).state===expectedState);await sync();return d;}
-async function chat(text){if(await evaluate("document.querySelector('#chat-toggle').getAttribute('aria-expanded')==='false'"))await clickSelector('#chat-toggle');await fill('#conversation-input',text);await clickSelector('#send-message');return until(d=>d.messages.some(m=>m.role==='user'&&m.text===text&&m.status!=='pending'));}
+async function chat(text){if(await evaluate("document.querySelector('#chat-toggle').getAttribute('aria-expanded')==='false'"))await clickSelector('#chat-toggle');await fill('#conversation-input',text);await pressEnter();return until(d=>d.messages.some(m=>m.role==='user'&&m.text===text&&m.status!=='pending'));}
 try {
  await rpc('Page.navigate',{url:connection.origin+'/#session='+connection.token});await rpc('Page.reload');await pause(1000);await sync();
  const before=await snap();const databaseCounts=()=>sql("print(json.dumps({t:c.execute('SELECT count(*) FROM '+t).fetchone()[0] for t in ['evaluations','facts','decisions','proposals','messages']}))");
@@ -70,8 +72,8 @@ try {
  const title='[SYNTHETIC] Delivery receipt '+report.run_id.slice(0,8),text='Add a task titled "'+title+'". Do not set a due date.';
  const originalTasks=(await snap()).tasks.length;
  if(await evaluate("document.querySelector('#chat-toggle').getAttribute('aria-expanded')==='false'"))await clickSelector('#chat-toggle');
- await fill('#conversation-input',text);await clickSelector('#send-message');await pause(400);
- const retained=await evaluate("document.querySelector('#conversation-input').value");await clickSelector('#send-message');
+ await fill('#conversation-input',text);await pressEnter();await pause(400);
+ const retained=await evaluate("document.querySelector('#conversation-input').value");await pressEnter();
  const final=await until(s=>s.tasks.some(t=>t.title===title));await sync();const sent=await evaluate('window.__lostReply.keys');
  record('lost-chat-reply-reuses-identity',{draftRetainedAfterLostReply:retained===text,twoDeliveries:sent.length===2,sameKey:sent[0]===sent[1],oneUserMessage:final.messages.filter(m=>m.role==='user'&&m.key===sent[0]).length===1,oneTask:final.tasks.filter(t=>t.title===title).length===1,oneTaskAdded:final.tasks.length===originalTasks+1});
  await evaluate('window.fetch=window.__realFetch');

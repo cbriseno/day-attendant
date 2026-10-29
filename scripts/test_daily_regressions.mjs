@@ -171,6 +171,41 @@ try{
   assert.equal(chats.length,1);assert.equal(clears.length,1);assert.equal(await evaluate("document.getElementById('conversation-input').value"),'');
   await fill('conversation-input','Another message');await click('#send-message');await shown(2);await click('#chat-clear');await shown(0);
   assert.equal(chats.length,2);assert.equal(clears.length,2);assert.notEqual(clears[0].key,clears[1].key);
+  // Enter sends, Shift+Enter adds a line, and Enter that commits an input-method composition never sends.
+  const typed="document.getElementById('conversation-input').value";
+  const press=async(modifiers=0,code=13)=>{await evaluate("document.getElementById('conversation-input').focus()");for(const type of ['keyDown','keyUp'])await rpc('Input.dispatchKeyEvent',{type,key:'Enter',code:'Enter',windowsVirtualKeyCode:code,modifiers,...(type==='keyDown'&&code===13?{text:'\r'}:{})},sessionId)};
+  assert.equal(await evaluate("document.getElementById('send-message').getClientRects().length"),0);
+  if(await evaluate("document.getElementById('chat-toggle').getAttribute('aria-expanded')==='false'"))await click('#chat-toggle');
+  await fill('conversation-input','Line one');await press(8);assert.equal(await evaluate(typed),'Line one\n');assert.equal(chats.length,2);
+  await evaluate("document.getElementById('conversation-input').value+='Line two'");await press(0,229);assert.equal(chats.length,2);
+  await evaluate("document.getElementById('conversation-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true,cancelable:true}))");assert.equal(chats.length,2);
+  await press();await shown(2);assert.equal(chats.at(-1).text,'Line one\nLine two');assert.equal(await evaluate(typed),'');
+  await press();assert.equal(chats.length,3);assert.equal(await evaluate(typed),'');
+  // A reply in progress keeps the draft instead of sending it twice.
+  state.messages.push({key:'pending-reply',role:'user',text:'Waiting',status:'pending',at:state.now,attachments:[]});await refresh();
+  await fill('conversation-input','Not yet');await press();assert.equal(chats.length,3);assert.equal(await evaluate(typed),'Not yet');state.messages.pop();await refresh();
+  // Touch keyboards keep Enter for new lines; the send button stays reachable there.
+  await rpc('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1},sessionId);await rpc('Emulation.setEmulatedMedia',{features:[{name:'pointer',value:'coarse'},{name:'hover',value:'none'}]},sessionId);
+  assert.equal(await evaluate("matchMedia('(hover:none) and (pointer:coarse)').matches"),true);
+  assert.equal(await evaluate("document.getElementById('send-message').getClientRects().length>0&&document.getElementById('composer-hint').getClientRects().length===0"),true);
+  await press();assert.equal(chats.length,3);assert.equal(await evaluate(typed),'Not yet\n');state.messages=[];await refresh();await click('#send-message');await wait('dayUI.flow.snapshot().messages.length===2');assert.equal(chats.at(-1).text,'Not yet');
+  await rpc('Emulation.setEmulatedMedia',{features:[]},sessionId);await rpc('Emulation.setTouchEmulationEnabled',{enabled:false},sessionId);
+  // The status line shows only what the harness reported for the current model; never a zero for missing data.
+  const status=()=>evaluate("document.getElementById('context-status').textContent.replace(/\\s/g,' ')");
+  const reply=(usage,extra={})=>({key:'r:assistant',role:'assistant',text:'Reply',status:'completed',at:state.now,attachments:[],data:JSON.stringify({provider:'codex',model:'controlled',usage,...extra})});
+  state.messages=[];await refresh();assert.equal(await status(),'Context: no data');
+  state.messages=[reply({contextTokens:9706,contextWindow:475000})];await refresh();assert.equal(await status(),'Context 9.7K / 475K · 97% free');
+  assert.equal(await evaluate("document.getElementById('context-status').classList.contains('tight')"),false);
+  state.messages.push({key:'s',role:'user',text:'Next',status:'incomplete',at:state.now,attachments:[]},{key:'s:assistant',role:'assistant',text:'Incomplete',status:'incomplete',at:state.now,attachments:[],data:JSON.stringify({code:'agent_error'})});await refresh();
+  assert.equal(await status(),'Context 9.7K / 475K · 97% free');
+  state.messages=[reply({contextTokens:190000,contextWindow:200000})];await refresh();assert.equal(await status(),'Context 190K / 200K · 5% free');
+  assert.equal(await evaluate("document.getElementById('context-status').classList.contains('tight')"),true);
+  state.messages=[reply({contextTokens:1200,contextWindow:null})];await refresh();assert.equal(await status(),'Context 1.2K used · window not reported');
+  state.messages=[reply(null)];await refresh();assert.equal(await status(),'Context: no data');
+  state.messages=[reply({contextTokens:1200,contextWindow:200000},{model:'previous-model'})];await refresh();assert.equal(await status(),'Context: no data');
+  state.messages=[reply({contextTokens:9706,contextWindow:475000})];await refresh();await fill('locale-choice','es');
+  assert.equal(await status(),'Contexto 9.7 k / 475 k · 97% libre');assert.equal(await evaluate("document.getElementById('composer-hint').textContent"),'Enter para enviar · Mayús+Enter para nueva línea');
+  await fill('locale-choice','en');state.messages=[];await refresh();await click('#chat-close');
   // Reasoning choices follow the model catalog for Codex and the fixed Claude Code set.
   const efforts="[...document.getElementById('setting-effort').options].map(o=>o.value)";
   await click('#settings-open');assert.deepEqual(await evaluate(efforts),['low','high']);assert.equal(await evaluate("document.getElementById('setting-effort').value"),'high');

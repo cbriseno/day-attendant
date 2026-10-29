@@ -13,6 +13,15 @@ class Harness(Protocol):
     def close(self): ...
 
 
+def context_usage(used, window):
+    """Context occupied by a turn, exactly as its harness reported it; None when unreported."""
+    count=lambda value:value if isinstance(value,int) and not isinstance(value,bool) and value>=0 else None
+    used,window=count(used),count(window)
+    if used is None:return None
+    # A zero or missing window is unknown, never an empty window.
+    return {'contextTokens':used,'contextWindow':window or None}
+
+
 def discover_catalog(provider, workspace):
     """Model choices for a harness. Codex lists them through model/list; no turn is started."""
     if provider=='claude':

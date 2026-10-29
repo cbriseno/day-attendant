@@ -12,6 +12,7 @@ import time
 import uuid
 
 from .errors import AssistantError
+from .harnesses import context_usage
 from .profiles import CLAUDE_EFFORTS,DEFAULT_EFFORT,turn_timeout
 
 # Shared behavioral contract, independent of either native transport.
@@ -24,6 +25,19 @@ MODELS=('claude-fable-5-1','claude-opus-5-5','claude-sonnet-5-5','claude-haiku-5
 
 def catalog():
     return [{'model':model,'isDefault':False,'efforts':list(CLAUDE_EFFORTS),'defaultEffort':None} for model in MODELS]
+
+
+def result_usage(result,model):
+    """Context occupied by the turn's last model request and the model's window, as Claude reports them."""
+    usage=result.get('usage') if isinstance(result.get('usage'),dict) else {}
+    iterations=usage.get('iterations') if isinstance(usage.get('iterations'),list) else []
+    last=(iterations or [usage])[-1]
+    if not isinstance(last,dict):return None
+    parts=[last.get('input_tokens'),last.get('output_tokens')]+[last.get(k,0) for k in ('cache_creation_input_tokens','cache_read_input_tokens')]
+    used=sum(parts) if all(isinstance(x,int) and not isinstance(x,bool) for x in parts) else None
+    models=result.get('modelUsage') if isinstance(result.get('modelUsage'),dict) else {}
+    window=models.get(model).get('contextWindow') if isinstance(models.get(model),dict) else None
+    return context_usage(used,window)
 
 
 def subscription_environment():
@@ -161,7 +175,8 @@ class ClaudeBridge:
             output=result.get('structured_output')
             if not isinstance(output,dict):raise AssistantError('agent_invalid_output','Claude returned no structured object.')
             return {'output':output,'model':self.model,'provider':self.provider,'thread_id':thread_id,
-                    'turn_id':result.get('uuid') or str(uuid.uuid4()),'seconds':round(time.monotonic()-begin,3),'status':'completed'}
+                    'turn_id':result.get('uuid') or str(uuid.uuid4()),'seconds':round(time.monotonic()-begin,3),'status':'completed',
+                    'usage':result_usage(result,self.model)}
         except (OSError,subprocess.TimeoutExpired) as error:
             raise AssistantError('agent_disconnected','The Claude process did not complete.') from error
         finally:
