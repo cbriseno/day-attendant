@@ -162,6 +162,7 @@ def parser():
     p = command(board, "undo", True)
     p.add_argument("fact_id", type=int)
     command(board, "clear", True)
+    command(board, "suggest", True)
     p = command(board, "chat", True)
     p.add_argument("text")
     p.add_argument("--image",action="append",default=[])
@@ -329,6 +330,8 @@ def main(argv=None):
                 data = client(state, "/api/chat", {"text": args.text, "key": args.key,'attachments':refs,'capture_only':args.capture_only})
             elif args.command == "clear":
                 data = client(state, "/api/chat/clear", {"key": args.key})
+            elif args.command == "suggest":
+                data = client(state, "/api/suggestion", {"key": args.key})
             elif args.command == "undo":
                 data = client(state, "/api/undo", {"fact_id": args.fact_id, "key": args.key, "expected_revision": getattr(args,"expect",None)})
             else:

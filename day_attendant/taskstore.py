@@ -79,6 +79,8 @@ class TaskStore:
                     parse(row[field])
             if row.get('priority') not in (None, 'H', 'M', 'L'):
                 raise ValueError('priority')
+            if not isinstance(row.get('project', ''), str):
+                raise ValueError('project')
             refs = row.get('depends', [])
             if not isinstance(refs, list) or len(refs) != len(set(refs)):
                 raise ValueError('depends')

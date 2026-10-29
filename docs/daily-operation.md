@@ -52,12 +52,25 @@ day-attendant --json board request related_update \
   --payload '{"uuid":"FIRST_UUID","relatedTo":["SECOND_UUID"]}' --key human-related-001
 day-attendant --json board chat 'Capture these selected responsibilities' \
   --image /absolute/selected-notes.png --capture-only --key capture-001
+day-attendant --json board request task_update \
+  --payload '{"uuid":"TASK_UUID","group":"Office move"}' --key human-group-001 --expect 12
+day-attendant --json board request order_update \
+  --payload '{"order":["FIRST_UUID","SECOND_UUID"]}' --key human-order-001 --expect 13
+day-attendant --json board suggest --key human-suggest-001
 ```
 
 Dependency and related updates replace that entity's corresponding list. Preserve
 links the human did not ask to remove. Related links are symmetric and nonblocking.
 Use permanent UUIDs, never positional or numeric task IDs. New items in a capture receive UUIDs
 independently; requested links between new items need a follow-up using assigned IDs.
+
+`group` is an optional short label (project, initiative or category) on `task_add` and
+`task_update`; an empty string removes it. `order_update` replaces the human's display
+order (`taskOrder` in `board list`) and is saved without a model review. Use it only when
+the human arranges their list; it never changes priority, group or state, and tasks
+missing from it follow by priority. `board suggest` asks the selected model once for a
+suggested order (`orderSuggestion`); `stale` means tasks or context changed since.
+Requesting it again with the same key reuses the stored result.
 
 `board list` returns current proposal phases and individual outcomes. A batch is not
 one all-or-nothing business transaction: its interpretations are validated/persisted

@@ -9,12 +9,12 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','ordering'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
 const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2025-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
-const requests=[],settings=[],chats=[],clears=[];let catalogs=null;
+const requests=[],settings=[],chats=[],clears=[],suggestions=[];let catalogs=null;
 const server=createServer(async(req,res)=>{
  try{
   if(req.url.startsWith('/api/')){
@@ -26,7 +26,8 @@ const server=createServer(async(req,res)=>{
     const p=body.payload,t=state.tasks.find(t=>t.id===p.uuid);
     if(body.action==='dependency_update')t.dependsOn=p.dependsOn;
     if(body.action==='related_update')t.relatedTo=p.relatedTo;
-    if(body.action==='task_update')for(const key of ['title','priority','due','context','next','awaiting'])if(key in p)t[key]=p[key];
+    if(body.action==='task_update')for(const key of ['title','priority','due','context','next','awaiting','group'])if(key in p)t[key]=p[key];
+    if(body.action==='order_update')state.taskOrder=p.order;
     const nextState={front_activate:'active',front_todo:'todo',task_done:'done',front_retire:'retired',task_reopen:'todo'}[body.action];
     if(nextState)t.state=nextState;
     if(body.action==='context_update')Object.assign(state.context,p);
@@ -49,10 +50,13 @@ const server=createServer(async(req,res)=>{
     data=catalogs||{codex:[],claude:[],errors:{}};
    }else if(req.url==='/api/chat/clear'){
     clears.push(body);state.messages=[];data={key:body.key,status:'cleared'};
+   }else if(req.url==='/api/suggestion'){
+    suggestions.push(body);const order=[...state.tasks].filter(t=>t.state==='todo').reverse().map(t=>({id:t.id,reason:'Controlled reason for '+t.title}));
+    state.orderSuggestion={request:{key:body.key,status:'completed'},result:{key:body.key,at:state.now,message:'Controlled suggestion message.',order},stale:false};data=state.orderSuggestion;
    }else if(req.url==='/api/backups')data={backups:[]};
    res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:true,data}));return;
   }
-  const filename={'/':'index.html','/interface.js':'interface.js','/daily.js':'daily.js','/locales.js':'locales.js'}[req.url];
+  const filename={'/':'index.html','/interface.js':'interface.js','/daily.js':'daily.js','/locales.js':'locales.js','/ordering.js':'ordering.js'}[req.url];
   if(!filename){res.writeHead(404);res.end();return}
   res.writeHead(200,{'Content-Type':filename.endsWith('.js')?'application/javascript':'text/html'});res.end(await readFile(path.join(root,'day_attendant/ui',filename)));
  }catch(error){res.writeHead(500);res.end(String(error))}
@@ -329,6 +333,90 @@ try{
   }
  }
  console.log('Daily UI regressions passed: snapshot revisions, capture outcomes, dates, calendar and localization');
+ }
+ if(group==='all'||group==='ordering'){
+  // Views and drags only rearrange the display: no priority, group or state change and no model call.
+  await rpc('Emulation.setDeviceMetricsOverride',{width:1280,height:2400,deviceScaleFactor:1,mobile:false},sessionId);
+  Object.assign(target,{title:'Target task',state:'todo',priority:'medium',group:'Office move',createdAt:'2025-10-20T00:00:00Z'});
+  Object.assign(a,{state:'todo',priority:'high',group:'Home',createdAt:'2025-10-21T00:00:00Z'});
+  Object.assign(b,{state:'todo',priority:'low',group:null,createdAt:'2025-10-22T00:00:00Z'});
+  Object.assign(c,{state:'todo',priority:'high',group:'office move',createdAt:'2025-10-23T00:00:00Z'});
+  state.taskOrder=[];state.orderSuggestion=null;state.readOnly=false;state.agent={connected:true,model:'controlled'};state.revision++;
+  await close();await fill('locale-choice','en');await fill('order-choice','priority');await refresh();
+  const lane="[...document.querySelectorAll('.lane[data-state=\"todo\"] .task')].map(e=>e.dataset.taskId)";
+  const texts=selector=>evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].map(e=>e.textContent)`);
+  const settle=async(predicate,message)=>{const deadline=Date.now()+5000;while(Date.now()<deadline){if(predicate())return;await new Promise(r=>setTimeout(r,15))}throw Error('Timed out: '+message)};
+  const priorities=()=>state.tasks.map(t=>t.priority).join();
+  assert.deepEqual(await evaluate(lane),[a.id,c.id,target.id,b.id]);
+  assert.deepEqual(await texts('.lane[data-state="todo"] .priority-pill'),['Priority: High','Priority: High','Priority: Medium','Priority: Low']);
+  assert.deepEqual(await texts('.lane[data-state="todo"] .group-chip'),['Group: Home','Group: office move','Group: Office move']);
+  assert.match(await evaluate("document.getElementById('order-note').textContent"),/High priority first/);
+  const quiet=requests.length,storedPriorities=priorities();
+  for(const [view,expected] of [['manual',[a.id,c.id,target.id,b.id]],['newest',[c.id,b.id,a.id,target.id]],['group',[a.id,c.id,target.id,b.id]],['suggested',[a.id,c.id,target.id,b.id]],['priority',[a.id,c.id,target.id,b.id]]]){
+   await fill('order-choice',view);assert.deepEqual(await evaluate(lane),expected,view);
+   assert.equal(await evaluate("document.querySelectorAll('.drag-handle').length>0"),['manual','group','priority'].includes(view),view+' handles');
+   if(view==='group'){assert.deepEqual(await texts('.lane[data-state="todo"] .group-heading'),['Home1','office move2','No group1']);assert.equal(await evaluate("document.querySelectorAll('.lane[data-state=\"todo\"] .group-chip').length"),0)}
+  }
+  assert.equal(requests.length,quiet);assert.equal(suggestions.length,0);assert.equal(priorities(),storedPriorities);
+  assert.equal(await evaluate("localStorage.getItem('day-attendant-order')"),'priority');
+  // Keyboard: arrows move a task inside its priority and save only the display order.
+  const handle=id=>`.drag-handle[data-id="${id}"]`;
+  let revision=state.revision;await evaluate(`document.querySelector(${JSON.stringify(handle(c.id))}).focus()`);
+  await evaluate(`document.querySelector(${JSON.stringify(handle(c.id))}).dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}))`);
+  assert.deepEqual(await evaluate(lane),[c.id,a.id,target.id,b.id]);
+  assert.match(await evaluate("document.getElementById('status').textContent"),/position 1 of 2/);
+  await settle(()=>requests.length===quiet+1,'keyboard order request');
+  assert.deepEqual(requests.at(-1),{action:'order_update',payload:{order:[c.id,a.id,target.id,b.id]},key:requests.at(-1).key,expected_revision:revision});
+  await wait(`document.activeElement?.dataset.id===${JSON.stringify(c.id)}&&document.activeElement.dataset.action==='move'`);
+  await evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}))`);await new Promise(r=>setTimeout(r,500));
+  assert.equal(requests.length,quiet+1);assert.equal(priorities(),storedPriorities);
+  // Pointer: a real mouse drag in My order places the task first.
+  const mouse=(type,point,buttons)=>rpc('Input.dispatchMouseEvent',{type,x:point.x,y:point.y,button:'left',buttons,clickCount:type==='mouseMoved'?0:1},sessionId);
+  const point=(selector,edge)=>evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:${edge==='top'?'r.top+3':edge==='bottom'?'r.bottom+40':'r.y+r.height/2'}}})()`);
+  async function dragTo(from,to){await mouse('mouseMoved',from,0);await mouse('mousePressed',from,1);for(let i=1;i<=8;i++)await mouse('mouseMoved',{x:from.x,y:from.y+(to.y-from.y)*i/8},1);await mouse('mouseReleased',to,0)}
+  await fill('order-choice','manual');assert.deepEqual(await evaluate(lane),[c.id,a.id,target.id,b.id]);
+  revision=state.revision;await dragTo(await point(handle(b.id)),await point(`.task[data-task-id="${c.id}"]`,'top'));
+  assert.deepEqual(await evaluate(lane),[b.id,c.id,a.id,target.id]);
+  await settle(()=>requests.length===quiet+2,'pointer order request');
+  assert.deepEqual(requests.at(-1).payload,{order:[b.id,c.id,a.id,target.id]});assert.equal(requests.at(-1).expected_revision,revision);
+  // In Priority a drag cannot leave its priority: dropping a high task below a low one keeps it high.
+  await fill('order-choice','priority');assert.deepEqual(await evaluate(lane),[c.id,a.id,target.id,b.id]);
+  await dragTo(await point(handle(c.id)),await point(`.task[data-task-id="${b.id}"]`,'bottom'));
+  assert.deepEqual(await evaluate(lane),[a.id,c.id,target.id,b.id]);
+  await settle(()=>requests.length===quiet+3,'clamped order request');
+  assert.deepEqual(requests.at(-1).payload,{order:[b.id,a.id,c.id,target.id]});
+  assert.ok(requests.slice(quiet).every(r=>r.action==='order_update'));assert.equal(priorities(),storedPriorities);
+  // The suggestion is fetched once on request and reused across view switches.
+  await fill('order-choice','suggested');assert.match(await evaluate("document.getElementById('order-note').textContent"),/No suggestion yet/);
+  await click('#suggest-order');await settle(()=>suggestions.length===1,'suggestion request');await refresh();
+  assert.deepEqual(await evaluate(lane),[c.id,b.id,a.id,target.id]);assert.equal(await evaluate("document.querySelectorAll('.drag-handle').length"),0);
+  assert.match((await texts('.lane[data-state="todo"] .suggestion-reason'))[0],/^1Controlled reason for /);
+  const note=await evaluate("document.getElementById('order-note').textContent");assert.match(note,/Assistant suggestion from/);assert.match(note,/Controlled suggestion message\./);
+  for(const view of ['priority','group','suggested','newest','suggested'])await fill('order-choice',view);
+  assert.equal(suggestions.length,1);assert.equal(requests.length,quiet+3);
+  state.orderSuggestion.stale=true;state.revision++;await refresh();assert.match(await evaluate("document.getElementById('order-note').textContent"),/Tasks changed since then/);
+  // Localized copy; stored group labels are shown as typed.
+  await fill('locale-choice','es');await fill('order-choice','group');
+  assert.deepEqual(await texts('.lane[data-state="todo"] .group-heading'),['Home1','office move2','Sin grupo1']);
+  assert.equal((await texts('.lane[data-state="todo"] .priority-pill'))[0],'Prioridad: Alta');
+  assert.equal(await evaluate("document.querySelector('#order-choice option[value=manual]').textContent"),'Mi orden');
+  assert.match(await evaluate("document.getElementById('order-note').textContent"),/Agrupado por proyecto/);
+  await fill('locale-choice','en');
+  // Group is edited explicitly in the card editor; an empty value removes it.
+  await detail();assert.match(await evaluate("document.getElementById('detail-data').textContent"),/GroupOffice move/);
+  await click('#edit-card');assert.equal(await evaluate("document.getElementById('card-group').value"),'Office move');
+  await fill('card-group','');await submit('card-dialog');await saved('card-dialog');
+  assert.deepEqual(requests.at(-1).payload,{uuid:target.id,group:''});assert.equal(target.group,'');await close();
+  await click('#capture-open');await fill('capture-title','Grouped capture');await fill('capture-group','  Home ');await submit('capture-dialog');await saved('capture-dialog');
+  assert.equal(requests.at(-1).payload.group,'Home');
+  // Read-only profiles show no drag handles, and the narrowest layout does not overflow.
+  state.readOnly=true;state.revision++;await refresh();assert.equal(await evaluate("document.querySelectorAll('.drag-handle').length"),0);
+  state.readOnly=false;state.revision++;await refresh();
+  await rpc('Emulation.setDeviceMetricsOverride',{width:320,height:900,deviceScaleFactor:1,mobile:true},sessionId);await new Promise(r=>setTimeout(r,100));
+  for(const view of ['priority','group','suggested'])await fill('order-choice',view);
+  assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
+  await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);await fill('order-choice','priority');
+  console.log('Ordering regressions passed: views, keyboard and pointer order, priority sections, suggestion reuse, groups and localization');
  }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');await new Promise(resolve=>chrome.exitCode!==null?resolve():chrome.once('exit',resolve));

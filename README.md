@@ -67,6 +67,14 @@ an open UI or LLM session. Open the UI on demand with `service open`.
   capture time remain distinct. The app never opens Teams or an inbox.
 - Keep declared remaining effort, waiting state, where you left off and a next step.
   Silence does not prove inactivity, and zero effort does not complete a task.
+- Every card shows its priority, and an optional group (a project, initiative or
+  category) when it has one. **Order** changes only how cards are shown: by priority
+  (the default), your own order, newest first, grouped, or the order the assistant
+  suggested. No view changes a stored priority, group or state; change those in
+  Edit card. Drag the handle, or focus it and press the arrow keys, to set your own
+  order. It is saved in the profile and also orders tasks of equal priority or the
+  same group. Newest and Suggested accept no drops. A suggestion is computed only when
+  you ask for it, and is reused until you ask again.
 
 The model interprets and reviews; the coordinator writes. Concrete consequences are
 shown before applying a risky change. Missing or failed reasoning is visible, never
@@ -86,8 +94,9 @@ uses medium when the model offers it, otherwise the model's default level. A mod
 may take up to 2 minutes at minimal, low or medium, 5 at high, 10 at xhigh and 15 at max,
 and a contextual review stays valid for the same time unless relevant state changes.
 Starting the service or changing these settings sends no model request; tokens are spent
-only by conversation messages, contextual reviews and the informational guidance after a
-context correction. There is no silent provider/model/account fallback or automatic
+only by conversation messages, contextual reviews, an order suggestion you request and
+the informational guidance after a context correction. Switching views or rearranging
+cards spends none. There is no silent provider/model/account fallback or automatic
 credit activation. The Claude adapter requires the CLI's restricted safe-mode print
 and structured-output capabilities; the tested installation is 2.1.312.
 
