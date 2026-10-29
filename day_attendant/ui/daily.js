@@ -116,7 +116,15 @@ const originalSend=$('send-message').onclick;$('send-message').onclick=()=>{if(!
 function receipts(state){for(const [index,el] of [...$('messages').children].entries()){
  const message=state.messages[index];if(message?.role!=='assistant')continue;let data;try{data=JSON.parse(message.data||'{}')||{}}catch{continue}
  let box=el.querySelector('.receipt-list');if(!box){box=document.createElement('div');box.className='receipt-list';el.append(box)}box.replaceChildren();
- for(const id of data.proposal_ids||[]){const p=state.rawProposals?.find(x=>x.id===id)||state.proposals.find(x=>x.id===id);const row=document.createElement('span');row.textContent=(p?.intent?.payload?.title||p?.intent?.action||id.slice(0,8))+' · '+(p?tr('phase_'+p.phase):text('See activity for outcome','Ver resultado en actividad'));box.append(row)}
+ const ids=data.proposal_ids||[];let saved=0,waiting=0;
+ for(const id of ids){const p=state.rawProposals?.find(x=>x.id===id)||state.proposals.find(x=>x.id===id);const row=document.createElement('span'),title=p?.intent?.payload?.title||p?.intent?.action||id.slice(0,8);
+  if(['applied','unchanged'].includes(p?.phase))saved++;
+  // A proposal waiting for the person says it was not saved and links to where it is decided.
+  if(['unavailable','review','stale','invalid'].includes(p?.phase)){waiting++;const kind=p.phase==='unavailable'&&p.error_code==='review_insufficient'?'insufficient':p.phase;
+   row.textContent=title+' · '+tr('receipt_wait_'+kind+(ui.creates(p.intent.action)?'':'_change'))+' ';const open=document.createElement('button');open.type='button';open.className='link-button';open.textContent=tr('receipt_open');open.onclick=()=>ui.showProposal(id);row.append(open)}
+  else row.textContent=title+' · '+(p?tr('phase_'+p.phase):text('See activity for outcome','Ver resultado en actividad'));
+  box.append(row)}
+ if(waiting){const summary=document.createElement('p');summary.className='receipt-summary';summary.textContent=ui.formatted(waiting===1?'receipt_saved_summary_one':'receipt_saved_summary',{saved,total:ids.length,waiting});box.prepend(summary)}
  for(const [items,label] of [[data.unprocessed,text('Not processed','Sin procesar')],[data.uncertainties,text('Clarification needed','Hace falta aclarar')]])for(const item of items||[]){const row=document.createElement('p');row.textContent=label+': '+item;box.append(row)}
 }}
 function update(state){
