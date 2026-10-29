@@ -157,7 +157,8 @@ Current human message:\n'''+encoded(text)+'\nSelected state and portable continu
                     content='State changed while I was responding. Read the current state and ask again.' if stale else output['message']
                     data={'provider':provider,'model':result['model'],'thread_id':result['thread_id'],'turn_id':result['turn_id'],'seconds':result['seconds'],
                           'observed_revision':snapshot['revision'],'proposal_id':proposals[0]['id'] if proposals else None,
-                          'proposal_ids':[p['id'] for p in proposals],'uncertainties':output['uncertainties'],'unprocessed':output['unprocessed']}
+                          'proposal_ids':[p['id'] for p in proposals],'uncertainties':output['uncertainties'],'unprocessed':output['unprocessed'],
+                          'usage':result.get('usage')}
                     con.execute("INSERT OR IGNORE INTO messages(key,role,text,status,data,at) VALUES(?,'assistant',?,?,?,?)",(key+':assistant',content,'stale' if stale else 'completed',encoded(data),self.board.app.now()))
                     con.execute("UPDATE messages SET status='completed',data=? WHERE key=?",(encoded(data),key))
                 accepted_ids=set()
