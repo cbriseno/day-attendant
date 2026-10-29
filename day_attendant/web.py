@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .harnesses import create_harness
+from .harnesses import create_harness,discover_catalog
 from .connected import Connected
 from .conversation import Conversation
 from .errors import AssistantError
@@ -35,6 +35,7 @@ class LocalServer(ThreadingHTTPServer):
         self.pool=ThreadPoolExecutor(max_workers=3,thread_name_prefix="day-request")
         self.token=secrets.token_urlsafe(32)
         self.harness_lock=threading.Lock()
+        self.catalogs={}
         super().__init__(("127.0.0.1",port),Handler)
         self.origin=f"http://127.0.0.1:{self.server_port}"
 
@@ -45,6 +46,19 @@ class LocalServer(ThreadingHTTPServer):
     def server_close(self):
         super().server_close()
         self.pool.shutdown(wait=False,cancel_futures=True)
+
+    def models(self):
+        """Each harness's own model list, discovered once per service and never guessed."""
+        with self.harness_lock:
+            bridge=self.board.bridge;result={'errors':{}}
+            for provider in ('codex','claude'):
+                if bridge and getattr(bridge,'provider',None)==provider and getattr(bridge,'catalog',None):self.catalogs[provider]=bridge.catalog
+                if provider not in self.catalogs:
+                    workspace=self.board.app.store.path/'agent-workspace';workspace.mkdir(mode=0o700,exist_ok=True)
+                    try:self.catalogs[provider]=discover_catalog(provider,workspace)
+                    except (AssistantError,OSError,ValueError) as error:result['errors'][provider]=getattr(error,'code','agent_unavailable')
+                result[provider]=self.catalogs.get(provider,[])
+            return result
 
     def configure_harness(self):
         with self.harness_lock:
@@ -116,9 +130,10 @@ class Handler(BaseHTTPRequestHandler):
                 data,mime=load(self.server.board.app,match[1]);self.reply(200,data,mime)
             except AssistantError as error:self.reply(404,{'error':{'code':error.code,'message':str(error)}})
             return
-        if self.path in ('/api/state','/api/doctor','/api/backups'):
+        if self.path in ('/api/state','/api/doctor','/api/backups','/api/models'):
             try:
                 if self.path=='/api/doctor':data=self.server.board.app.doctor()
+                elif self.path=='/api/models':data=self.server.models()
                 elif self.path=='/api/backups':
                     from .archives import list_backups
                     data=list_backups(self.server.board.app)

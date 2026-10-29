@@ -172,6 +172,28 @@ class NativeEffort(unittest.TestCase):
         self.assertFalse(agent['connected']);self.assertEqual(agent['errorCode'],'agent_effort_unavailable')
         self.assertIn('reasoning level',agent['error'])
 
+    def test_each_harness_lists_its_own_models_without_starting_a_turn(self):
+        import threading
+        from urllib.request import Request,urlopen
+        with tempfile.TemporaryDirectory(prefix='day-models-') as state:
+            app=Assistant(state);Connected(app).initialize(kind='personal',zone='America/Edmonton')
+            configure(app,{'harness':'claude'},'claude-active')
+            server=LocalServer(app,None);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with patch.dict(os.environ,{'PATH':str(self.folder)+os.pathsep+os.environ['PATH']}):
+                    request=Request(server.origin+'/api/models',headers={'Authorization':'Bearer '+server.token})
+                    with urlopen(request,timeout=30) as response:first=json.load(response)['data']
+                    second=server.models()
+            finally:server.shutdown();thread.join(5);server.server_close()
+        self.assertEqual([m['model'] for m in first['codex']],['fixture-model'])
+        self.assertEqual(first['codex'][0]['defaultEffort'],'high')
+        claude=[m['model'] for m in first['claude']]
+        self.assertIn('claude-opus-5-5',claude);self.assertNotIn('fixture-model',claude)
+        self.assertEqual(second,first);self.assertEqual(first['errors'],{})
+        # Discovery only lists models: one app-server start, no thread and no turn.
+        self.assertEqual(len(self.codex_requests('model/list')),1)
+        self.assertEqual(self.codex_requests('thread/start')+self.codex_requests('turn/start'),[])
+
 
 class SteppingClock:
     """Each reading advances one controlled minute; only the adapters' turn loops read it."""

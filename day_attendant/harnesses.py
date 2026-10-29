@@ -13,6 +13,16 @@ class Harness(Protocol):
     def close(self): ...
 
 
+def discover_catalog(provider, workspace):
+    """Model choices for a harness. Codex lists them through model/list; no turn is started."""
+    if provider=='claude':
+        from .claudebridge import catalog
+        return catalog()
+    bridge=create_harness(provider,workspace)
+    try:return bridge.catalog
+    finally:bridge.close()
+
+
 def create_harness(provider, workspace, model=None, effort=None):
     if provider=='codex':
         from .codexbridge import CodexBridge
