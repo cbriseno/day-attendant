@@ -35,6 +35,15 @@ def continuity_values(payload):
     return value
 
 
+def group_label(value):
+    """A short project, initiative or category label; empty removes it."""
+    if value is None:
+        return None
+    if not isinstance(value,str) or len(value.strip())>120 or any(ord(c)<32 for c in value):
+        raise AssistantError('invalid_group','Use a group label of at most 120 characters on one line.')
+    return value.strip() or None
+
+
 class Assistant:
     def __init__(self, state, clock=utcnow, notifier=platforms.notify, fault=None):
         self.store = Store(state)
@@ -167,6 +176,9 @@ class Assistant:
                    "priority": PRIORITIES[p.get("priority", "medium")]}
             if p.get("due"):
                 row["due"] = wire(instant(p["due"], p.get("zone"), p.get("fold")))
+            group = group_label(p.get("group"))
+            if group:
+                row["project"] = group
             observed = instant(p["observed_at"], p.get("zone"), p.get("fold")) if p.get("observed_at") else None
             if observed and parse(observed) > self.clock():
                 raise AssistantError("future_observation", "Observation time cannot be in the future.")
@@ -185,7 +197,7 @@ class Assistant:
                 if canonical(row) != p["expected_after"]:
                     raise AssistantError("undo_conflict", "The responsibility changed after this fact; nothing was overwritten.")
                 changes = p["patch"]
-                if not changes or set(changes) - {"description", "priority", "due", "wait", "start", "status", "end", "depends"}:
+                if not changes or set(changes) - {"description", "priority", "due", "wait", "start", "status", "end", "depends", "project"}:
                     raise AssistantError("invalid_restore", "The inverse exceeds the fields of that decision.")
                 if changes.get('start',row.get('start')) and changes.get('status',row['status'])=='pending':
                     by_id={item['uuid']:item for item in self.tasks.rows()}
@@ -230,6 +242,8 @@ class Assistant:
                     changes["priority"] = PRIORITIES[p["priority"]]
                 if "due" in p:
                     changes["due"] = wire(instant(p["due"], p.get("zone"), p.get("fold"))) if p["due"] else None
+                if "group" in p:
+                    changes["project"] = group_label(p["group"])
                 if p.get("progress"):
                     plan["effect"]["progress"] = [row["uuid"], now]
                     if row.get("wait") and parse(row["wait"]) <= self.clock():
@@ -253,6 +267,16 @@ class Assistant:
                 current=sorted(r['b'] if r['a']==uid else r['a'] for r in con.execute('SELECT * FROM related WHERE a=? OR b=?',(uid,uid)))
             if current!=wanted:plan['effect']['related_set']=[uid,wanted]
             plan['result']={'uuid':uid}
+        elif action=='order_update':
+            # A display order only; it never changes a task's priority, group or state.
+            refs=p.get('order')
+            if not isinstance(refs,list) or len(refs)>5000 or any(not isinstance(x,str) for x in refs):raise AssistantError('invalid_order','The order must be a bounded list of task UUIDs.')
+            wanted=[self.validate_uuid(x) for x in refs]
+            if len(set(wanted))!=len(wanted):raise AssistantError('invalid_order','Each responsibility can appear only once in the order.')
+            known={r['uuid'] for r in self.tasks.rows()}
+            if any(x not in known for x in wanted):raise AssistantError('task_not_found','The order refers to a missing responsibility.')
+            if wanted!=self.store.state_value('task_order',[]):plan['effect']['order_set']=wanted
+            plan['result']={'order':len(wanted)}
         elif action=='provenance_update':
             uid=self.required(p['uuid'])['uuid'];fields={'source','person','reference','observed_at'}
             if set(p)-fields-{'uuid','zone'}:raise AssistantError('invalid_provenance','Unknown provenance fields.')
@@ -463,6 +487,8 @@ class Assistant:
                 if 'related_set' in effect:
                     uid,refs=effect['related_set'];con.execute('DELETE FROM related WHERE a=? OR b=?',(uid,uid))
                     for other in refs:con.execute('INSERT OR IGNORE INTO related VALUES(?,?)',tuple(sorted((uid,other))))
+                if 'order_set' in effect:
+                    con.execute("INSERT OR REPLACE INTO state VALUES('task_order',?)",(encoded(effect['order_set']),))
                 if "config" in effect:
                     name, value = effect["config"]
                     con.execute("UPDATE config SET value=? WHERE key=?", (value, name))
@@ -504,6 +530,7 @@ class Assistant:
                 status = "blocked"
             view.append({"uuid": uid, "title": row["description"], "status": status,
                          "priority": PUBLIC_PRIORITY.get(row.get("priority"), "medium"),
+                         "group": row.get("project"), "created_at": stamp(parse(row["entry"])) if row.get("entry") else None,
                          "due_at": stamp(parse(row["due"])) if row.get("due") else None,
                          "snoozed_until": stamp(parse(row["wait"])) if row.get("wait") else None,
                          "focused": bool(row.get("start")) and row["status"]=="pending" if self.store.state_value("connected",False) else uid==focused and bool(row.get("start")) and status=="pending",

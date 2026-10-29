@@ -445,3 +445,28 @@ Object.assign(globalThis.dayTranslations.es,{
  error_invalid_provenance:'Los datos de origen son demasiado largos.',error_future_observation:'La hora de observación no puede estar en el futuro.',
  error_fact_not_found:'Ese cambio guardado ya no existe.',error_maintenance:'Hay un mantenimiento en curso. Intenta de nuevo cuando termine.'
 });
+// Order views and groups.
+Object.assign(globalThis.dayTranslations.en,{order_label:'Order',order_priority:'Priority',order_manual:'My order',order_newest:'Newest',order_group:'Group',order_suggested:'Suggested',
+ order_hint_priority:'High priority first. Drag the handle {grip} to arrange tasks of the same priority; change a priority in Edit card.',
+ order_hint_manual:'Your own order, saved in this profile. Drag the handle {grip}, or focus it and press the arrow keys.',
+ order_hint_newest:'Most recently created first. Choose My order to arrange tasks by hand.',
+ order_hint_group:'Grouped by project, initiative or category. Drag the handle {grip} to arrange tasks within a group; change a group in Edit card.',
+ suggestion_none:'No suggestion yet. Asking uses one request to your assistant; switching views never does.',suggestion_from:'Assistant suggestion from {time}.',suggestion_stale:'Tasks changed since then.',
+ suggestion_pending:'The assistant is preparing a suggestion…',suggestion_failed:'The last request did not finish: ',suggest_order:'Suggest an order',suggest_again:'Suggest again',
+ not_in_suggestion:'Not in this suggestion',reorder:'Reorder',reorder_hint:'Drag, or press the up and down arrow keys',moved_to:'Moved to position {n} of {total}.',order_saved:'Order saved',
+ group:'Group',no_group:'No group',order_update:'Order',
+ error_invalid_order:'The order could not be saved. Reload the list and try again.',error_suggestion_busy:'The assistant is already preparing a suggestion.',
+ error_invalid_group:'Use a group label of at most 120 characters on one line.',error_restart_interrupted:'It was interrupted by a restart. Ask again.',
+ error_context_changed:'The assistant settings changed. Ask again.'});
+Object.assign(globalThis.dayTranslations.es,{order_label:'Orden',order_priority:'Prioridad',order_manual:'Mi orden',order_newest:'Más recientes',order_group:'Grupo',order_suggested:'Sugerido',
+ order_hint_priority:'Primero la prioridad alta. Arrastra la manija {grip} para acomodar tareas de la misma prioridad; la prioridad se cambia en Editar tarjeta.',
+ order_hint_manual:'Tu propio orden, guardado en este perfil. Arrastra la manija {grip}, o enfócala y usa las flechas.',
+ order_hint_newest:'Primero lo creado más recientemente. Elige Mi orden para acomodar a mano.',
+ order_hint_group:'Agrupado por proyecto, iniciativa o categoría. Arrastra la manija {grip} para acomodar dentro de un grupo; el grupo se cambia en Editar tarjeta.',
+ suggestion_none:'Aún no hay sugerencia. Pedirla usa una solicitud a tu asistente; cambiar de vista nunca lo hace.',suggestion_from:'Sugerencia del asistente de {time}.',suggestion_stale:'Las tareas cambiaron desde entonces.',
+ suggestion_pending:'El asistente está preparando una sugerencia…',suggestion_failed:'La última solicitud no terminó: ',suggest_order:'Sugerir un orden',suggest_again:'Sugerir de nuevo',
+ not_in_suggestion:'Fuera de esta sugerencia',reorder:'Reordenar',reorder_hint:'Arrastra o usa las flechas arriba y abajo',moved_to:'Movida a la posición {n} de {total}.',order_saved:'Orden guardado',
+ group:'Grupo',no_group:'Sin grupo',order_update:'Orden',
+ error_invalid_order:'No se pudo guardar el orden. Recarga la lista e inténtalo de nuevo.',error_suggestion_busy:'El asistente ya está preparando una sugerencia.',
+ error_invalid_group:'Usa un grupo de máximo 120 caracteres en una sola línea.',error_restart_interrupted:'Se interrumpió por un reinicio. Pídela de nuevo.',
+ error_context_changed:'Cambió la configuración del asistente. Pídela de nuevo.'});

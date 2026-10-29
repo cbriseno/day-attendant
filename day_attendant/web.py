@@ -120,7 +120,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200,(ASSETS/'index.html').read_bytes(),'text/html; charset=utf-8');return
         if self.path=='/favicon.ico':
             self.reply(204,b'', 'image/x-icon');return
-        if self.path in ('/interface.js','/locales.js','/daily.js'):
+        if self.path in ('/interface.js','/locales.js','/daily.js','/ordering.js'):
             self.reply(200,(ASSETS/self.path[1:]).read_bytes(),'text/javascript; charset=utf-8');return
         if not self.authenticated():
             self.reply(401,{'error':{'code':'session_required','message':'Open the local link for this session.'}});return
@@ -185,6 +185,10 @@ class Handler(BaseHTTPRequestHandler):
                 if set(body)-{'text','key','attachments','capture_only'}:raise ValueError('fields')
                 result=self.server.chat.submit(body['text'],body['key'],body.get('attachments'),body.get('capture_only',False))
                 if result['status']=='pending':self.server.pool.submit(self.server.chat.run,body['key'])
+            elif self.path=='/api/suggestion':
+                if set(body)!={'key'}:raise ValueError('fields')
+                result=board.request_suggestion(body['key'])
+                if result['request'].get('key')==body['key'] and result['request'].get('status')=='pending':self.server.pool.submit(board.suggest_order,body['key'])
             elif self.path=='/api/chat/clear':
                 if set(body)!={'key'}:raise ValueError('fields')
                 result=self.server.chat.clear(body['key'])
