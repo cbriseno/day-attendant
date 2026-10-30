@@ -129,6 +129,60 @@ class OrderingTests(unittest.TestCase):
         self.assertEqual(restarted.snapshot()['taskOrder'], order)
         self.assertEqual(self.app.store.state_value('task_order'), order)
 
+    def test_group_color_is_a_reviewless_undoable_presentation_that_changes_no_task(self):
+        self.apply('task_update', {'uuid': self.ids[0], 'group': 'Move house'})
+        self.board.review_changes()
+        before = task_digest(self.app.tasks.rows())
+        turns = len(self.fixture.calls)
+        revision = self.app.store.revision()
+        proposal = self.board.request('group_color_update', {'group': ' move HOUSE ', 'color': 'teal'}, 'color-1', expected_revision=revision)
+        self.assertEqual(proposal['phase'], 'applied')
+        snapshot = self.board.snapshot()
+        self.assertEqual(snapshot['groupColors'], {'move house': 'teal'})
+        self.assertEqual(self.board.request('group_color_update', {'group': ' move HOUSE ', 'color': 'teal'}, 'color-1', expected_revision=revision)['id'], proposal['id'])
+        self.assertEqual(self.app.store.revision(), revision + 1)
+        self.assertEqual(snapshot['revision'], revision + 1)
+        self.assertEqual(task_digest(self.app.tasks.rows()), before)
+        # Like the order, a color is never reviewed and costs no model turn.
+        self.assertIsNone(self.board.review_changes())
+        self.assertEqual((len(self.fixture.calls), self.board.snapshot()['review']['pending']), (turns, 0))
+        self.assertNotIn('group_color_update', FIELDS['action']['enum'])
+        self.assertEqual(self.board.request('group_color_update', {'group': 'Move house', 'color': 'teal'}, 'color-2')['phase'], 'unchanged')
+        self.apply('group_color_update', {'group': 'Home', 'color': 'pink'})
+        self.apply('group_color_update', {'group': 'Move house', 'color': 'orange'})
+        with self.app.store.connect() as con:
+            fact = con.execute('SELECT id FROM facts ORDER BY id DESC LIMIT 1').fetchone()[0]
+        self.assertEqual(self.board.snapshot()['lastFact']['undoable'], True)
+        self.assertEqual(self.board.undo(fact, 'color-undo')['phase'], 'applied')
+        self.assertEqual(self.board.snapshot()['groupColors'], {'move house': 'teal', 'home': 'pink'})
+        # Back to the automatic color, and Undo brings the chosen one back.
+        self.apply('group_color_update', {'group': 'Home', 'color': None})
+        self.assertEqual(self.board.snapshot()['groupColors'], {'move house': 'teal'})
+        with self.app.store.connect() as con:
+            fact = con.execute('SELECT id FROM facts ORDER BY id DESC LIMIT 1').fetchone()[0]
+        self.board.undo(fact, 'color-undo-2')
+        self.assertEqual(self.board.snapshot()['groupColors'], {'move house': 'teal', 'home': 'pink'})
+        # Undo refuses once a later change chose another color for the same group.
+        self.apply('group_color_update', {'group': 'Home', 'color': 'green'})
+        with self.app.store.connect() as con:
+            fact = con.execute('SELECT id FROM facts ORDER BY id DESC LIMIT 1').fetchone()[0]
+        self.apply('group_color_update', {'group': 'home', 'color': 'red'})
+        with self.assertRaises(AssistantError) as raised:
+            self.board.undo(fact, 'color-undo-3')
+        self.assertEqual(raised.exception.code, 'undo_conflict')
+        for payload, code in (({'group': 'Home', 'color': '#ff0000'}, 'invalid_group_color'), ({'group': '', 'color': 'teal'}, 'invalid_group'),
+                              ({'group': 'Two\nlines', 'color': 'teal'}, 'invalid_group'), ({'color': 'teal'}, 'invalid_group_color'),
+                              ({'group': 'Home', 'color': 'teal', 'uuid': self.ids[0]}, 'unsupported_action'), ({'group': 7, 'color': 'teal'}, 'invalid_request')):
+            with self.assertRaises(AssistantError) as raised:
+                self.request('group_color_update', payload)
+            self.assertEqual(raised.exception.code, code)
+        with self.assertRaises(AssistantError) as raised:
+            self.board.request('group_color_update', {'group': 'Home', 'color': 'sky'}, 'color-stale', expected_revision=revision)
+        self.assertEqual(raised.exception.code, 'stale_revision')
+        restarted = Connected(Assistant(self.temp.name, clock=lambda: NOW), self.fixture)
+        restarted.startup()
+        self.assertEqual(restarted.snapshot()['groupColors'], {'move house': 'teal', 'home': 'red'})
+
     def test_rearranging_is_never_reviewed(self):
         clock = [NOW]
         self.app.clock = lambda: clock[0]

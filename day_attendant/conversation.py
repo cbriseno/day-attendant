@@ -2,13 +2,13 @@
 import json
 import threading
 
-from .connected import ALLOWED
+from .connected import ALLOWED, PRESENTATION
 from .errors import AssistantError
 from .service import encoded
 from .taskstore import PRIORITIES
 
-# Manual display order is the person's own arrangement; the conversation never proposes it.
-ACTIONS=[action for action in ALLOWED if action!='order_update']
+# Manual display order and group colors are the person's own arrangement; the conversation never proposes them.
+ACTIONS=[action for action in ALLOWED if action not in PRESENTATION]
 FIELDS={"action":{"type":"string","enum":ACTIONS},
     **{key:{"type":["string","null"]} for key in ('taskId','title','due','until','context','next','source','person','reference','observed_at','start','end','group')},
     'priority':{'type':['string','null'],'enum':[*PRIORITIES,None]},

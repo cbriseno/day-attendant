@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact','snooze','drag'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact','snooze','drag','groups'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
@@ -30,12 +30,13 @@ const server=createServer(async(req,res)=>{
    }else if(req.url==='/api/proposals'){
     requests.push(body);
     if(body.expected_revision!==state.revision){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{code:'stale_revision',message:'State changed; reopen this editor.'}}));return}
-    const p=body.payload,t=state.tasks.find(t=>t.id===p.uuid),beforeTask=t&&{...t},beforeOrder=state.taskOrder;
+    const p=body.payload,t=state.tasks.find(t=>t.id===p.uuid),beforeTask=t&&{...t},beforeOrder=state.taskOrder,beforeColors={...state.groupColors};
     if(body.action==='dependency_update')t.dependsOn=p.dependsOn;
     if(body.action==='related_update')t.relatedTo=p.relatedTo;
     if(body.action==='task_update')for(const key of ['title','priority','due','context','next','awaiting','group'])if(key in p)t[key]=p[key];
     if(body.action==='continuity_update')for(const key of ['context','next','awaiting','remainingMinutes'])if(key in p)t[key]=p[key];
     if(body.action==='order_update')state.taskOrder=p.order;
+    if(body.action==='group_color_update'){state.groupColors={...state.groupColors};if(p.color)state.groupColors[p.group.trim().toLowerCase()]=p.color;else delete state.groupColors[p.group.trim().toLowerCase()]}
     const nextState={front_activate:'active',front_todo:'todo',task_done:'done',front_retire:'retired',task_reopen:'todo'}[body.action];
     if(nextState)t.state=nextState;
     if(body.action==='task_snooze')Object.assign(t,{state:'snoozed',until:p.until});
@@ -44,7 +45,7 @@ const server=createServer(async(req,res)=>{
     if(body.action==='event_cancel')state.calendar_events=state.calendar_events.filter(e=>e.uuid!==p.uuid);
     // The instant group records each change as an undoable fact, as the service does.
     const proposalId=randomUUID();proposalsBefore.set(proposalId,{id:t?.id,before:beforeTask,order:beforeOrder});
-    if(state.instant&&t){const fact=++facts;undoable.set(fact,{id:t.id,before:beforeTask});state.lastFact={id:fact,proposalId,action:body.action,taskId:t.id,undoable:true,undoOf:null,reviewStatus:'deferred'}}
+    if(state.instant&&(t||body.action==='group_color_update')){const fact=++facts;undoable.set(fact,t?{id:t.id,before:beforeTask}:{group:p.group.trim().toLowerCase(),before:beforeColors[p.group.trim().toLowerCase()]});state.lastFact={id:fact,proposalId,action:body.action,taskId:t?.id,undoable:true,undoOf:null,reviewStatus:'deferred'}}
     state.revision++;
     data={id:proposalId,key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[],result:{revision:state.revision}};proposalReplied=Date.now();
    }else if(req.url==='/api/undo'&&body.proposal_ids){
@@ -56,7 +57,7 @@ const server=createServer(async(req,res)=>{
    }else if(req.url==='/api/undo'){
     undos.push(body);const last=undoable.get(Number(body.fact_id));
     const proposalId=randomUUID();
-    if(last){Object.assign(state.tasks.find(t=>t.id===last.id),last.before);state.revision++;state.lastFact={id:++facts,proposalId,action:'task_restore',taskId:last.id,undoable:true,undoOf:Number(body.fact_id),reviewStatus:'deferred'}}
+    if(last){if(last.group!==undefined){if(last.before)state.groupColors[last.group]=last.before;else delete state.groupColors[last.group]}else Object.assign(state.tasks.find(t=>t.id===last.id),last.before);state.revision++;state.lastFact={id:++facts,proposalId,action:'task_restore',taskId:last.id,undoable:true,undoOf:Number(body.fact_id),reviewStatus:'deferred'}}
     data={id:proposalId,phase:'applied',result:{revision:state.revision}};
    }else if(req.url.startsWith('/api/suggestions/')){
     const [,,,id,act]=req.url.split('/'),item=state.suggestions.find(s=>s.id===id);suggestionCalls.push([id,act,body]);
@@ -559,6 +560,7 @@ try{
   await close();await fill('locale-choice','en');await fill('order-choice','priority');await refresh();
   const lane="[...document.querySelectorAll('.lane[data-state=\"todo\"] .task')].map(e=>e.dataset.taskId)";
   const texts=selector=>evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].map(e=>e.textContent)`);
+  const sections="[...document.querySelectorAll('#board .group-section')].map(s=>[s.querySelector('h2').textContent,[...s.querySelectorAll('.task')].map(e=>e.dataset.taskId)])";
   const settle=async(predicate,message)=>{const deadline=Date.now()+5000;while(Date.now()<deadline){if(predicate())return;await new Promise(r=>setTimeout(r,15))}throw Error('Timed out: '+message)};
   const priorities=()=>state.tasks.map(t=>t.priority).join();
   assert.deepEqual(await evaluate(lane),[a.id,c.id,target.id,b.id]);
@@ -569,9 +571,12 @@ try{
   assert.equal(await evaluate(noteHidden),true);
   const quiet=requests.length,storedPriorities=priorities();
   for(const [view,expected] of [['manual',[a.id,c.id,target.id,b.id]],['newest',[c.id,b.id,a.id,target.id]],['group',[a.id,c.id,target.id,b.id]],['suggested',[a.id,c.id,target.id,b.id]],['priority',[a.id,c.id,target.id,b.id]]]){
-   await fill('order-choice',view);assert.deepEqual(await evaluate(lane),expected,view);
+   await fill('order-choice',view);
    assert.equal(await evaluate("document.querySelectorAll('.drag-handle').length>0"),['manual','group','priority'].includes(view),view+' handles');
-   if(view==='group'){assert.deepEqual(await texts('.lane[data-state="todo"] .group-heading'),['Home1','office move2','No group1']);assert.equal(await evaluate("document.querySelectorAll('.lane[data-state=\"todo\"] .group-chip:not(.plain):not(.add), .lane[data-state=\"todo\"] .task .group-dot').length"),0)}
+   // In group order Today shows one section per group across states; the Board keeps group headings in each column.
+   if(view==='group'){assert.deepEqual(await evaluate(sections),[['Home',[a.id]],['office move',[c.id,target.id]],['No group',[b.id]]]);assert.equal(await evaluate("document.querySelectorAll('#board .group-chip:not(.plain):not(.add), #board .task .group-dot').length"),0);
+    await click('#board-view');assert.deepEqual(await evaluate(lane),expected,view);assert.deepEqual(await texts('.lane[data-state="todo"] .group-heading'),['Home1','office move2','No group1']);await click('#list-view')}
+   else assert.deepEqual(await evaluate(lane),expected,view);
   }
   assert.equal(requests.length,quiet);assert.equal(suggestions.length,0);assert.equal(priorities(),storedPriorities);
   assert.equal(await evaluate("localStorage.getItem('day-attendant-order')"),'priority');
@@ -612,7 +617,7 @@ try{
   // The suggestion is fetched once on request and reused across view switches.
   await fill('order-choice','suggested');assert.match(await evaluate("document.getElementById('order-note').textContent"),/No suggestion yet/);
   await click('#suggest-order');await settle(()=>suggestions.length===1,'suggestion request');await refresh();
-  assert.deepEqual(await evaluate(lane),[c.id,b.id,a.id,target.id]);assert.equal(await evaluate("document.querySelectorAll('.drag-handle').length"),0);
+  assert.deepEqual(await evaluate(lane),[c.id,b.id,a.id,target.id]);assert.equal(await evaluate("document.querySelectorAll('#board .drag-handle').length"),0);
   assert.match((await texts('.lane[data-state="todo"] .suggestion-reason'))[0],/^1Controlled reason for /);
   const note=await evaluate("document.getElementById('order-note').textContent");assert.match(note,/Assistant suggestion from/);assert.match(note,/Controlled suggestion message\./);
   for(const view of ['priority','group','suggested','newest','suggested'])await fill('order-choice',view);
@@ -620,8 +625,9 @@ try{
   state.orderSuggestion.stale=true;state.revision++;await refresh();assert.match(await evaluate("document.getElementById('order-note').textContent"),/Tasks changed since then/);
   // Localized copy; stored group labels are shown as typed.
   await fill('locale-choice','es');await fill('order-choice','group');
-  assert.deepEqual(await texts('.lane[data-state="todo"] .group-heading'),['Home1','office move2','Sin grupo1']);
-  assert.equal((await texts('.lane[data-state="todo"] .priority-pill'))[0],'Prioridad: Alta');
+  assert.deepEqual((await evaluate(sections)).map(([name])=>name),['Home','office move','Sin grupo']);
+  assert.deepEqual(await texts('#board .group-section .group-summary'),['0 de 1 hechas','0 de 2 hechas','0 de 1 hechas']);
+  assert.equal((await texts('#board .priority-pill'))[0],'Prioridad: Alta');
   assert.equal(await evaluate("document.querySelector('#order-choice option[value=manual]').textContent"),'Mi orden');
   assert.equal(await evaluate(noteHidden),true);
   await fill('locale-choice','en');
@@ -641,6 +647,58 @@ try{
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
   await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);await fill('order-choice','priority');state.instant=false;
   console.log('Ordering regressions passed: views, keyboard and pointer order, priority sections, suggestion reuse, groups and localization');
+ }
+
+ if(group==='all'||group==='groups'){
+  await close();await fill('locale-choice','en');await fill('order-choice','priority');await click('#list-view');
+  Object.assign(target,{state:'active',group:'Home',due:'2025-10-30T12:00:00Z'});
+  Object.assign(a,{state:'todo',group:'Home',due:'2025-10-29T12:00:00Z'});
+  Object.assign(b,{state:'done',group:'Home'});Object.assign(c,{state:'todo',group:null});
+  const retired={...task('Retired'),state:'retired',group:'Home'};state.tasks=[target,a,b,c,retired];state.groupColors={};state.revision++;await refresh();
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.filter-chip')].map(e=>[e.dataset.filter,e.querySelector('.filter-count').textContent])"),[['*','3'],['group:home','2'],['group:','1']]);
+  const sent=requests.length;
+  await click('.filter-chip[data-filter="group:home"]');
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('#board .task')].map(e=>e.dataset.taskId).sort()"),[target.id,a.id].sort());
+  assert.equal(await evaluate("document.querySelector('.filter-chip[data-filter=\"group:home\"]').getAttribute('aria-pressed')"),'true');
+  await fill('order-choice','group');
+  assert.equal(await evaluate("document.querySelector('.group-summary').textContent"),'1 of 3 done · next: Oct 29, 06:00');
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.group-section:not(.filtered) .group-progress')].map(e=>[e.getAttribute('aria-valuenow'),e.getAttribute('aria-valuemax')])"),[['1','3']]);
+  await click('[data-fold="home"]');assert.equal(await evaluate("document.querySelector('.group-section').classList.contains('collapsed')"),true);
+  assert.equal(await evaluate("document.querySelector('.group-section .task').getClientRects().length"),0);
+  await refresh();assert.equal(await evaluate("document.querySelector('[data-fold=home]').getAttribute('aria-expanded')"),'false');
+  await click('[data-fold="home"]');await fill('order-choice','priority');
+  assert.equal(requests.length,sent,'filtering and folding send no model or write request');
+  const row=`#board [data-task-id="${a.id}"]`;state.instant=true;
+  await click(row+' [data-action=group]');await click('[data-menu-act=group-color][data-value=teal]');
+  assert.equal(await evaluate(`document.querySelector('${row}').style.getPropertyValue('--gc')`),'#12a594','color appears before the response');
+  await serverWait(()=>state.groupColors.home==='teal');await refresh();
+  assert.deepEqual(requests.at(-1).payload,{group:'Home',color:'teal'});
+  assert.equal(await evaluate(`document.querySelector('#board [data-task-id="${target.id}"]').style.getPropertyValue('--gc')`),'#12a594');
+  await wait("document.getElementById('status').textContent==='Group color changed'");
+  // A later color on a different group survives this color's optimistic Undo.
+  state.groupColors.office='pink';state.revision++;await refresh();
+  await click('#undo');assert.equal(await evaluate("daySnapshot().groupColors.home"),undefined);
+  assert.equal(await evaluate("daySnapshot().groupColors.office"),'pink');
+  await serverWait(()=>!state.groupColors.home);await refresh();state.instant=false;
+  await fill('locale-choice','es');await fill('order-choice','group');assert.match(await evaluate("document.querySelector('.group-summary').textContent"),/^1 de 3 hechas · próxima:/);
+  await click('.filter-chip[data-filter="group:"]');assert.equal(await evaluate("document.querySelector('.group-section:not(.filtered) h2').textContent"),'Sin grupo');
+  await click('.filter-chip[data-filter="*"]');await fill('locale-choice','en');await fill('order-choice','priority');
+  // A closed task no longer holds an active filter that would hide everything else.
+  await click('.filter-chip[data-filter="group:home"]');target.state='done';a.state='done';state.revision++;await refresh();
+  assert.equal(await evaluate("document.getElementById('group-filters').hidden"),true);
+  assert.equal(await evaluate("document.querySelectorAll('#board .task').length"),1);
+  c.group='*';state.revision++;await refresh();await click('.filter-chip[data-filter="group:*"]');
+  assert.equal(await evaluate("document.querySelectorAll('#board .task').length"),1,'a group named * is distinct from All');
+  await click('.filter-chip[data-filter="*"]');
+  // A realistic board: measure click through the completed DOM/layout, independent of network latency.
+  state.tasks=[target,a,b,c,...Array.from({length:288},(_,i)=>({...task('Load '+i),group:i%2?'Home':'Work'}))];state.revision++;await refresh();
+  await fill('order-choice','group');
+  const latency=await evaluate(`(()=>{const result={tasks:daySnapshot().tasks.length,filter:[],fold:[]};
+   for(let i=0;i<10;i++){const start=performance.now();document.querySelector('.filter-chip[data-filter="'+(i%2?'*':'group:home')+'"]').click();document.getElementById('board').getBoundingClientRect();result.filter.push(performance.now()-start)}
+   for(let i=0;i<10;i++){const start=performance.now();document.querySelector('[data-fold=home]').click();document.getElementById('board').getBoundingClientRect();result.fold.push(performance.now()-start)}return result})()`);
+  console.log('Groups 292-task DOM/layout latency (ms): '+JSON.stringify(latency));
+  assert.ok(Math.max(...latency.filter,...latency.fold)<300,'group filtering and folding stay within 300 ms');
+  state.tasks=[target,a,b,c];console.log('Groups regressions passed: one-click counts and filters, progress excludes retired, earliest deadline, persistent folding, instant shared color, both locales and exhausted filter');
  }
 
  if(group==='all'||group==='instant'){
@@ -948,19 +1006,29 @@ try{
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   assert.equal(await laneOf(r5.id),'todo');await mouse('mouseReleased',{x:5,y:5},0);await new Promise(r=>setTimeout(r,450));assert.equal(requests.length,sent);
   assert.equal(await evaluate("document.querySelector('#motion-layer .drag-ghost')"),null);
-  // In Group order a drop under another group's heading takes that group; under No group it has none.
+  // In Group order a drop into another group's section takes that group; into No group it has none.
   await click('#list-view');await fill('order-choice','group');await wait(`daySnapshot().revision>=${state.revision}`);
-  sent=requests.length;const noGroup=await center('#board .lane[data-state="todo"] .group-heading[data-group=""]');
+  sent=requests.length;const noGroup=await center('#board .group-section[data-group=""] .lane-heading');
   await drag(await grab(r1.id),{x:noGroup.x,y:noGroup.y+30});
   for(let i=0;i<100&&requests.length<sent+1;i++)await new Promise(r=>setTimeout(r,15));
   assert.deepEqual([requests[sent].action,requests[sent].payload],['task_update',{uuid:r1.id,group:''}]);assert.equal(r1.group,'');
   await wait("document.getElementById('status').textContent.startsWith('No group')");
   await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
-  sent=requests.length;const home=await center('#board .lane[data-state="todo"] .group-heading[data-group="Home"]');
+  sent=requests.length;const home=await center('#board .group-section[data-group="Home"] .lane-heading');
   await drag(await grab(r5.id),{x:home.x,y:home.y+30});
   for(let i=0;i<100&&requests.length<sent+1;i++)await new Promise(r=>setTimeout(r,15));
   assert.deepEqual([requests[sent].action,requests[sent].payload],['task_update',{uuid:r5.id,group:'Home'}]);
-  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);await fill('order-choice','manual');
+  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
+  // A folded section accepts a drop, keeps its tasks hidden, and leaves no lifted copy behind.
+  await click('[data-fold="home"]');sent=requests.length;
+  const foldedHome=await center('#board .group-section[data-group="Home"] .lane-heading');
+  await drag(await grab(r1.id),foldedHome);
+  await serverWait(()=>r1.group==='Home');
+  assert.deepEqual(requests[sent].payload,{uuid:r1.id,group:'Home'});
+  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
+  assert.equal(await evaluate(`document.querySelector('#board [data-task-id="${r1.id}"]').getClientRects().length`),0);
+  await wait("document.querySelector('#motion-layer .drag-ghost')===null");
+  await click('[data-fold="home"]');await fill('order-choice','manual');
   // Transitions: starting a task glides it into its column; finishing one fades a copy out over its
   // old place while the others close the gap; nothing is left behind.
   await click('#board-view');

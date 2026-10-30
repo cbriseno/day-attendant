@@ -487,3 +487,12 @@ Object.assign(globalThis.dayTranslations.es,{port_hint:'Arrastra hasta otra tare
  see_links:'Ver relaciones…',connect_to:'Conectar con…',links_of:'Relaciones de «{title}»',links_blocked_by:'La bloquean (hay que hacerlas antes)',links_blocks:'Esta bloquea a',links_related:'Relacionadas (no bloquean)',links_none:'Ninguna',
  add_requirement:'Agregar requisito…',this_blocks:'Esta bloquea a…',
  connect_pick_prerequisite:'Toca la tarea que debe terminarse antes de «{title}»',connect_pick_dependent:'Toca la tarea que debe esperar a «{title}»'});
+// Groups: filters, foldable sections and colors.
+Object.assign(globalThis.dayTranslations.en,{filter_by_group:'Filter by group',filter_all:'All',group_progress:'{done} of {total} done',group_next:'next: {time}',
+ group_collapse:'Fold {group}',group_expand:'Unfold {group}',group_folded:'folded',group_color_of:'Color of “{group}”',group_color_saved:'Group color changed',
+ color_purple:'Purple',color_teal:'Teal',color_brown:'Brown',color_sky:'Sky blue',color_pink:'Pink',color_red:'Red',color_orange:'Orange',color_indigo:'Indigo',color_green:'Green',color_gray:'Gray',
+ error_invalid_group_color:'Choose a color from the group palette.'});
+Object.assign(globalThis.dayTranslations.es,{filter_by_group:'Filtrar por grupo',filter_all:'Todas',group_progress:'{done} de {total} hechas',group_next:'próxima: {time}',
+ group_collapse:'Plegar {group}',group_expand:'Desplegar {group}',group_folded:'plegado',group_color_of:'Color de «{group}»',group_color_saved:'Color del grupo cambiado',
+ color_purple:'Morado',color_teal:'Verde azulado',color_brown:'Café',color_sky:'Celeste',color_pink:'Rosa',color_red:'Rojo',color_orange:'Naranja',color_indigo:'Índigo',color_green:'Verde',color_gray:'Gris',
+ error_invalid_group_color:'Elige un color de la paleta de grupos.'});

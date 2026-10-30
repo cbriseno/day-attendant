@@ -17,7 +17,7 @@ import uuid
 
 from .errors import AssistantError
 from .profiles import turn_timeout
-from .service import PUBLIC_PRIORITY, Assistant, continuity_values, encoded, fingerprint
+from .service import PUBLIC_PRIORITY, Assistant, continuity_values, encoded, fingerprint, group_key
 from .taskstore import PRIORITIES, canonical
 from .timeutil import instant, parse, stamp, wire
 
@@ -44,6 +44,7 @@ ALLOWED = {
     "dependency_update": {"uuid","dependsOn"},
     "related_update": {"uuid","relatedTo"},
     "order_update": {"order"},
+    "group_color_update": {"group", "color"},
     "provenance_update": {"uuid","source","person","reference","observed_at","zone"},
     "event_add": {"title","start","end","zone","fold","source","person","reference","observed_at"},
     "event_update": {"uuid","title","start","end","zone","fold"},
@@ -57,12 +58,14 @@ RECENT_PROPOSALS = 20
 CONFIRM_FROM_CHAT = {"front_retire"}
 CONFIRMATION = [{"code":"confirmation","message":"Retiring needs your confirmation. It does not complete the responsibility.",
                  "message_key":"confirm_retire_chat","message_params":{},"refs":[]}]
+# The person's own arrangement and colors: applied at once, never reviewed or proposed by the conversation.
+PRESENTATION = ("order_update", "group_color_update")
 FOLLOWUP_DELAY = 2.6  # seconds without new changes before the assistant looks at them
 FOLLOWUP_ACTIONS = ("front_activate", "front_todo", "task_snooze", "task_update")
 BASIS = ("state", "until", "due", "priority", "group", "dependsOn", "blockedBy", "remainingMinutes", "awaiting")
 CONTINUITY_DEFAULTS = {"remainingMinutes": None, "awaiting": False, "context": "", "next": ""}
 # Effects whose previous value a fact keeps, so Undo can restore them.
-RESTORABLE = {"order_set", "context_set", "continuity_set", "related_set", "event_add", "event_meta", "event_patch", "attachments_link"}
+RESTORABLE = {"order_set", "group_color_set", "context_set", "continuity_set", "related_set", "event_add", "event_meta", "event_patch", "attachments_link"}
 
 
 def followup_schema(task_ids):
@@ -376,7 +379,7 @@ class Connected:
         if suggestion:
             suggestion={'request':suggestion['request'],'result':suggestion.get('result')}
             if suggestion['result']:suggestion['stale']=suggestion['result']['fingerprint']!=self._suggestion_input({'tasks':tasks,'context':context})['fingerprint']
-        return {"tasks": tasks, "taskOrder": [uid for uid in self.store.state_value('task_order',[]) if uid in known], "orderSuggestion": suggestion, "context": context,
+        return {"tasks": tasks, "taskOrder": [uid for uid in self.store.state_value('task_order',[]) if uid in known], "groupColors": self.store.state_value('group_colors',{}), "orderSuggestion": suggestion, "context": context,
                 "timezone": self.store.state_value('timezone','America/Edmonton'),
                 "calendar_events":self.store.events(),"notification_policy":self.store.state_value('notification_policy'),
                 "proposals": proposals, "events": facts, "lastFact": self._fact_summary(last) if last else None, "messages": messages,
@@ -422,6 +425,7 @@ class Connected:
         """Values an effect replaces, read before it applies, so Undo restores exactly them."""
         effect,inverse=plan["effect"],{}
         if "order_set" in effect:inverse["order"]=self.store.state_value("task_order",[])
+        if "group_color_set" in effect:inverse["group_color"]=self.store.state_value("group_colors",{}).get(effect["group_color_set"][0])
         if "context_set" in effect:
             current=self.store.state_value("day_context",{"availableMinutes":None,"availableUntil":None,"rest":False})
             inverse["context"]={k:current.get(k) for k in ("availableMinutes","availableUntil","rest","declaredAt")}
@@ -521,7 +525,7 @@ class Connected:
             if validate_only:return {'intent':intent,'validated':True}
             identity = str(uuid.uuid4())
             prefix='calendar:' if action.startswith('event_') else 'dependencies:' if action=='dependency_update' else 'related:' if action=='related_update' else 'metadata:' if action in ('continuity_update','provenance_update') else 'task:'
-            entity=prefix+payload['uuid'] if payload.get('uuid') else 'context' if action=='context_update' else 'order' if action=='order_update' else 'new:'+key
+            entity=prefix+payload['uuid'] if payload.get('uuid') else 'context' if action=='context_update' else 'order' if action=='order_update' else 'group:'+group_key(payload['group']) if action=='group_color_update' else 'new:'+key
             changed=bool(plan["steps"] or plan["effect"])
             waits=changed and origin=='chat' and action in CONFIRM_FROM_CHAT
             phase = "review" if waits else "evaluating" if changed else "unchanged"
@@ -632,7 +636,7 @@ class Connected:
         # Rearranging is presentation only, so the later review never looks at it.
         plan.update(revision=self.store.revision(),proposal_id=identity,action=action,origin=proposal["origin"],
             target_uuid=intent["payload"].get("uuid") or plan["result"].get("uuid"),undo_of=intent["payload"].get("undo_of"),
-            review_complete=False,review_status="not_required" if action=="order_update" else "deferred")
+            review_complete=False,review_status="not_required" if action in PRESENTATION else "deferred")
         if proposal.get('message_key'):
             images=self.message_images(proposal['message_key'])
             if images and plan['target_uuid']:plan['effect']['attachments_link']=[plan['target_uuid'],[i['id'] for i in images]]
@@ -697,6 +701,10 @@ class Connected:
         if "order_set" in effect:
             if self.store.state_value("task_order",[])!=effect["order_set"]:raise conflict
             return "order_update",{"order":inverse["order"],"undo_of":fact_id}
+        if "group_color_set" in effect:
+            name,color=effect["group_color_set"]
+            if self.store.state_value("group_colors",{}).get(name)!=color:raise conflict
+            return "group_color_update",{"group":name,"color":inverse["group_color"],"undo_of":fact_id}
         if "context_set" in effect:
             current=self.store.state_value("day_context",{})
             if any(current.get(k)!=effect["context_set"].get(k) for k in ("availableMinutes","availableUntil","rest")):raise conflict
@@ -768,7 +776,7 @@ class Connected:
 
     def _review_view(self, con):
         cursor=self.store.state_value('review_cursor',0)
-        pending=con.execute("SELECT COUNT(*) FROM facts WHERE id>? AND action!='order_update'",(cursor,)).fetchone()[0]
+        pending=con.execute("SELECT COUNT(*) FROM facts WHERE id>? AND action NOT IN (" + ",".join("?"*len(PRESENTATION)) + ")",(cursor,*PRESENTATION)).fetchone()[0]
         last=con.execute("SELECT status,finished_at,result FROM followups ORDER BY id DESC LIMIT 1").fetchone()
         return {'pending':pending,'running':bool(last and last['status']=='running'),'status':last['status'] if last else None,
                 'finishedAt':last['finished_at'] if last else None,'code':json.loads(last['result'] or '{}').get('code') if last else None}
@@ -937,7 +945,7 @@ class Connected:
             with self.store.connect() as con:
                 rows=[dict(r) for r in con.execute("SELECT id,action,plan,at FROM facts WHERE id>? ORDER BY id",(cursor,))]
             if not rows:return None
-            through=rows[-1]['id'];changes=[self._change(r) for r in rows if r['action']!='order_update']
+            through=rows[-1]['id'];changes=[self._change(r) for r in rows if r['action'] not in PRESENTATION]
             if not changes:
                 with self.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('review_cursor',?)",(encoded(through),))
                 return None

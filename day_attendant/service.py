@@ -44,6 +44,15 @@ def group_label(value):
     return value.strip() or None
 
 
+# A group's color is a name from this palette, so each theme can soften it. Without one, a group takes
+# a color from its label, the same on every device.
+GROUP_COLORS = ('purple', 'teal', 'brown', 'sky', 'pink', 'red', 'orange', 'indigo', 'green', 'gray')
+
+
+def group_key(label):
+    return label.strip().lower()
+
+
 class Assistant:
     def __init__(self, state, clock=utcnow, notifier=platforms.notify, fault=None):
         self.store = Store(state)
@@ -281,6 +290,15 @@ class Assistant:
             if any(x not in known for x in wanted):raise AssistantError('task_not_found','The order refers to a missing responsibility.')
             if wanted!=self.store.state_value('task_order',[]):plan['effect']['order_set']=wanted
             plan['result']={'order':len(wanted)}
+        elif action=='group_color_update':
+            # Presentation only, like the order: it changes no task and is never reviewed.
+            if set(p)-{'group','color'} or 'group' not in p:raise AssistantError('invalid_group_color','Name a group and a color.')
+            label=group_label(p['group'])
+            if not label:raise AssistantError('invalid_group','Name the group to color.')
+            color=p.get('color')
+            if color is not None and color not in GROUP_COLORS:raise AssistantError('invalid_group_color','Choose a color from the group palette.')
+            if self.store.state_value('group_colors',{}).get(group_key(label))!=color:plan['effect']['group_color_set']=[group_key(label),color]
+            plan['result']={'group':label}
         elif action=='provenance_update':
             uid=self.required(p['uuid'])['uuid'];fields={'source','person','reference','observed_at'}
             if set(p)-fields-{'uuid','zone'}:raise AssistantError('invalid_provenance','Unknown provenance fields.')
@@ -493,6 +511,12 @@ class Assistant:
                     for other in refs:con.execute('INSERT OR IGNORE INTO related VALUES(?,?)',tuple(sorted((uid,other))))
                 if 'order_set' in effect:
                     con.execute("INSERT OR REPLACE INTO state VALUES('task_order',?)",(encoded(effect['order_set']),))
+                if 'group_color_set' in effect:
+                    row=con.execute("SELECT value FROM state WHERE key='group_colors'").fetchone()
+                    colors=json.loads(row[0]) if row else {};name,color=effect['group_color_set']
+                    if color is None:colors.pop(name,None)
+                    else:colors[name]=color
+                    con.execute("INSERT OR REPLACE INTO state VALUES('group_colors',?)",(encoded(colors),))
                 if "config" in effect:
                     name, value = effect["config"]
                     con.execute("UPDATE config SET value=? WHERE key=?", (value, name))

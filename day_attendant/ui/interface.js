@@ -14,6 +14,7 @@ const short=value=>{const d=new Date(value);return (localValue(d).slice(0,10)===
 const localValue=d=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));return p.year+'-'+p.month+'-'+p.day+'T'+p.hour+':'+p.minute;};
 function parseLocal(raw){const base=Date.parse(raw+'Z');if(!Number.isFinite(base))return new Date(NaN);let guess=base;for(let i=0;i<4;i++){const wall=Date.parse(localValue(new Date(guess))+'Z');const delta=base-wall;if(!delta)break;guess+=delta;}return new Date(guess)}
 const clockIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>';
+const chevronIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 const arrowIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 const gripIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01"/></svg>';
 const checkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
@@ -59,7 +60,7 @@ function hideToast(){if($('toast').matches(':hover,:focus-within')){toastTimer=s
 const notice=text=>toast(text);
 const task=id=>flow.snapshot().tasks.find(t=>t.id===id);
 const safely=async fn=>{try{return await fn()}catch(error){notice(error.message);return null}};
-let actionLabel,phaseLabel;function refreshLabels(){actionLabel={activate:tr("start"),snooze:tr("snooze"),todo:tr("back_to_to_do"),done:tr("complete"),retire:tr("retire"),restore:tr("undo"),declaration:tr("declaration_updated"),add:tr("create"),update:tr("update"),reopen:tr("reopen"),dependency:tr("dependency_update"),related:tr("related_update")};
+let actionLabel,phaseLabel;function refreshLabels(){actionLabel={activate:tr("start"),snooze:tr("snooze"),todo:tr("back_to_to_do"),done:tr("complete"),retire:tr("retire"),restore:tr("undo"),declaration:tr("declaration_updated"),add:tr("create"),update:tr("update"),reopen:tr("reopen"),dependency:tr("dependency_update"),related:tr("related_update"),group_color:tr("group_color_saved")};
 phaseLabel={evaluating:tr("the_assistant_is_reviewing"),review:tr("phase_waits_for_you"),unavailable:tr("phase_left_waiting"),stale:tr("context_changed"),invalid:tr("phase_not_applied")};
 }
 refreshLabels();
@@ -73,10 +74,12 @@ const DURATION=200,EASE='cubic-bezier(.2,.8,.2,1)',reducedMotion=matchMedia('(pr
 const moving=()=>!reducedMotion.matches;
 const boardCards=()=>[...$('board').querySelectorAll('.task[data-task-id]')];
 const cardOf=id=>$('board').querySelector('.task[data-task-id="'+id+'"]');
-const cardRects=()=>new Map(boardCards().map(c=>[c.dataset.taskId,c.getBoundingClientRect()]));
+const cardRects=()=>new Map(boardCards().filter(c=>c.getClientRects().length).map(c=>[c.dataset.taskId,c.getBoundingClientRect()]));
 // Reads every position first and writes every animation after, so the browser lays out once.
 function playFlip(first,{duration=DURATION+80,delay=0,enter=true}={}){
- const cards=boardCards();for(const card of cards)for(const a of card.getAnimations())a.cancel();
+ // Read animations once before cancelling: alternating getAnimations/cancel per row forces a
+ // style flush for every card on a large board.
+ const all=boardCards(),animations=$('board').getAnimations({subtree:true});for(const a of animations)a.cancel();const cards=all.filter(card=>card.getClientRects().length);
  const moves=cards.map(card=>{const was=first.get(card.dataset.taskId);if(!was)return [card,null];const now=card.getBoundingClientRect();return [card,[was.left-now.left,was.top-now.top]]});
  for(const [card,delta] of moves){
   if(!delta){if(enter)card.animate([{opacity:0,transform:'scale(.98)'},{opacity:1,transform:'none'}],{duration,delay,easing:'ease-out',fill:'backwards'});continue}
@@ -87,35 +90,100 @@ function playFlip(first,{duration=DURATION+80,delay=0,enter=true}={}){
 // Floating copies (a lifted card, a leaving one) live in a layer over the list that shares its styles.
 function motionLayer(){let node=$('motion-layer');if(!node){node=document.createElement('div');node.id='motion-layer';node.className='board motion-layer';node.setAttribute('aria-hidden','true');$('tasks-area').append(node)}node.classList.toggle('is-list',$('board').classList.contains('is-list'));return node}
 const inLayer=(x,y)=>{const r=motionLayer().getBoundingClientRect();return {x:x-r.left,y:y-r.top}};
-function floating(card,rect,kind){const copy=card.cloneNode(true);copy.classList.remove('placeholder','pressing');copy.classList.add(kind);copy.removeAttribute('data-task-id');copy.removeAttribute('data-section');copy.removeAttribute('style');
+function floating(card,rect,kind){const copy=card.cloneNode(true);copy.classList.remove('placeholder','pressing');copy.classList.add(kind);copy.removeAttribute('data-task-id');copy.removeAttribute('data-section');copy.removeAttribute('style');if(card.style.getPropertyValue('--gc'))copy.style.setProperty('--gc',card.style.getPropertyValue('--gc'));
  for(const e of copy.querySelectorAll('[id],[data-id],[data-action]')){e.removeAttribute('id');e.removeAttribute('data-id');e.removeAttribute('data-action')}
  copy.inert=true;const at=inLayer(rect.left,rect.top);Object.assign(copy.style,{width:rect.width+'px',height:rect.height+'px',transform:'translate('+at.x+'px,'+at.y+'px)'});motionLayer().append(copy);return copy}
 function leave(card,rect,finished){const copy=floating(card,rect,'task-leaving');if(finished)copy.classList.add('completing');
  copy.animate([{opacity:1,transform:copy.style.transform},{opacity:0,transform:copy.style.transform+' translateX(16px)'}],{duration:DURATION+60,delay:finished?180:0,easing:'ease-in',fill:'forwards'}).onfinish=()=>copy.remove()}
 // The board is updated in place: an unchanged card keeps its element, focus and any running
 // animation; a changed one is replaced; a moved one is moved. Nothing is rebuilt as a whole.
+let changingGroupView=false;
+const groupViewNodes=new Map();
 function morphBoard(lanes,data){
- const board=$('board'),animate=moving(),first=animate?cardRects():new Map(),old=new Map(boardCards().map(c=>[c.dataset.taskId,c]));
+ const board=$('board'),animate=moving()&&!changingGroupView,first=animate?cardRects():new Map(),old=new Map(boardCards().map(c=>[c.dataset.taskId,c]));
+ if(changingGroupView)for(const a of board.getAnimations({subtree:true}))a.cancel();
  const make=html=>{const t=document.createElement('template');t.innerHTML=html;const node=t.content.firstElementChild;node._html=html;return node};
  lanes.forEach((lane,i)=>{
-  let section=board.children[i];
-  if(section?.dataset.state!==lane.state){section=make('<section class="lane" data-state="'+lane.state+'"><header class="lane-heading"></header><div class="lane-cards"></div></section>');board.insertBefore(section,board.children[i]||null)}
+  let section=board.children[i];const id=lane.id||'state:'+lane.state,cls='lane'+(lane.cls||'');
+  if(section?._lane!==id){section=make('<section class="lane"'+(lane.state?' data-state="'+lane.state+'"':'')+(lane.attrs||'')+'><header class="lane-heading"></header><div class="lane-cards"></div></section>');section._lane=id;board.insertBefore(section,board.children[i]||null)}
+  if(section.className!==cls)section.className=cls;if((section.getAttribute('style')||'')!==(lane.style||''))section.setAttribute('style',lane.style||'');
   const head=section.firstElementChild,box=section.lastElementChild;if(head._html!==lane.head){head.innerHTML=lane.head;head._html=lane.head}
   const extras=new Map([...box.children].filter(n=>n._key).map(n=>[n._key,n]));
-  const wanted=lane.items.map(item=>{let node=item.id?old.get(item.id):extras.get(item.key);if(item.id)old.delete(item.id);if(!node||node._html!==item.html){node=make(item.html);node._key=item.key}return node});
+  const wanted=lane.items.map(item=>{let node=item.id?old.get(item.id)||groupViewNodes.get(item.id):extras.get(item.key);if(item.id)old.delete(item.id);if(!node||node._html!==item.html){node=make(item.html);node._key=item.key}if(item.id)groupViewNodes.set(item.id,node);return node});
   wanted.forEach((node,j)=>{if(box.children[j]!==node)box.insertBefore(node,box.children[j]||null)});
   while(box.children.length>wanted.length)box.lastElementChild.remove();
  });
  while(board.children.length>lanes.length)board.lastElementChild.remove();
+ const openIds=new Set(data.tasks.filter(t=>!['done','retired'].includes(t.state)).map(t=>t.id));for(const id of groupViewNodes.keys())if(!openIds.has(id))groupViewNodes.delete(id);
  if(!animate||!first.size)return;
  // A capture shown before its answer comes back under its saved id: it stays where it was.
  const drafts=[...old].filter(([id])=>id.startsWith('draft:'));
- for(const [id,node] of old){if(id.startsWith('draft:')||!first.has(id))continue;leave(node,first.get(id),data.tasks.find(t=>t.id===id)?.state==='done')}
+ // Filtering only hides open tasks: it must not clone hundreds of rows as if they were completed.
+ const closed=new Set(data.tasks.filter(t=>['done','retired'].includes(t.state)).map(t=>t.id));
+ for(const [id,node] of old){if(id.startsWith('draft:')||!first.has(id)||!closed.has(id))continue;leave(node,first.get(id),data.tasks.find(t=>t.id===id)?.state==='done')}
  for(const [id] of drafts){const title=data.tasks.find(t=>t.id===id)?.title??old.get(id).querySelector('.task-title')?.textContent,saved=data.tasks.find(t=>!first.has(t.id)&&t.title===title&&!t.id.startsWith('draft:'));if(saved)first.set(saved.id,first.get(id))}
- const closing=[...old.keys()].some(id=>!id.startsWith('draft:')&&first.has(id));
+ const closing=[...old.keys()].some(id=>closed.has(id)&&first.has(id));
  playFlip(first,{delay:closing?260:0});
 }
-const groupDot=label=>'<span class="group-dot" style="--group-hue:'+globalThis.dayOrdering.hue(label)+'" aria-hidden="true"></span>';
+// A group shows the color chosen for it in the profile, or one its label gives, the same on every
+// device. Red stays for urgent and overdue unless the person chooses it.
+const GROUP_COLORS={purple:'#8e4ec6',teal:'#12a594',brown:'#ad7f58',sky:'#0090ff',pink:'#d6409f',red:'#e5484d',orange:'#f76b15',indigo:'#3e63dd',green:'#30a46c',gray:'#80838d'};
+const AUTO_COLORS=['purple','teal','brown','sky','pink','orange','indigo','green'];
+let groupColors={};
+const groupKey=label=>(label||'').trim().toLocaleLowerCase();
+const groupColor=label=>label?groupColors[label.trim().toLowerCase()]||AUTO_COLORS[globalThis.dayOrdering.hue(label)%AUTO_COLORS.length]:'gray';
+const groupStyle=label=>'--gc:'+GROUP_COLORS[groupColor(label)];
+const groupDot=label=>'<span class="group-dot" style="'+groupStyle(label)+'" aria-hidden="true"></span>';
+// Color changes update the existing rows and dots; replacing hundreds of cards would interrupt a click.
+function paintGroupColor(data,key){groupColors=data.groupColors||{};const byId=new Map(data.tasks.map(t=>[t.id,t]));
+ for(const node of new Set([...groupViewNodes.values(),...$('board').querySelectorAll('.group-section,.group-heading'),...$('group-filters').children])){
+  const label=node.dataset.taskId?byId.get(node.dataset.taskId)?.group:node.dataset.group;
+  if(node.dataset.filter!=='group:'+key&&groupKey(label)!==key)continue;
+  const color=GROUP_COLORS[groupColor(label||key)],before=node.style.getPropertyValue('--gc');node.style.setProperty('--gc',color);
+  for(const dot of node.querySelectorAll('.group-dot:not(.ungrouped)'))dot.style.setProperty('--gc',color);
+  if(node._html&&before)node._html=node._html.replaceAll('--gc:'+before,'--gc:'+color);
+  if(node.classList.contains('group-section'))node.firstElementChild._html=null;
+ }
+ $('group-filters')._html=null;
+}
+// One click shows a single group, or all of them; the choice and the folded groups stay in this browser.
+let groupFilter='*',foldedGroups=new Set();try{groupFilter=localStorage.getItem('day-attendant-group-filter')??'*';foldedGroups=new Set(JSON.parse(localStorage.getItem('day-attendant-folded-groups')||'[]'))}catch{}
+const shownByFilter=t=>groupFilter==='*'||'group:'+groupKey(t.group)===groupFilter;
+function renderGroupView(){changingGroupView=true;try{render()}finally{changingGroupView=false}}
+function setGroupFilter(value){groupFilter=value;try{localStorage.setItem('day-attendant-group-filter',value)}catch{}
+ // Group sections are already mounted: filtering only changes their visibility and the selected chip.
+ if(orderView==='group'&&$('board').classList.contains('is-list')){
+  for(const a of $('board').getAnimations({subtree:true}))a.cancel();
+  for(const s of $('board').querySelectorAll('.group-section'))s.classList.toggle('filtered',value!=='*'&&value!=='group:'+groupKey(s.dataset.group));
+  for(const b of $('group-filters').querySelectorAll('[data-filter]'))b.setAttribute('aria-pressed',String(b.dataset.filter===value));drawDependencies();return}
+ renderGroupView()}
+function toggleFold(key){if(!foldedGroups.delete(key))foldedGroups.add(key);try{localStorage.setItem('day-attendant-folded-groups',JSON.stringify([...foldedGroups]))}catch{}
+ const section=[...$('board').querySelectorAll('.group-section')].find(s=>groupKey(s.dataset.group)===key);if(!section)return;
+ for(const a of section.getAnimations({subtree:true}))a.cancel();const folded=foldedGroups.has(key),button=section.querySelector('[data-fold]');section.classList.toggle('collapsed',folded);button.setAttribute('aria-expanded',String(!folded));button.setAttribute('aria-label',tr(folded?'group_expand':'group_collapse').replace('{group}',section.querySelector('h2').textContent));section.querySelector('.group-folded').textContent=folded?' · '+tr('group_folded'):'';section.firstElementChild._html=null;drawDependencies()}
+function groupFilters(data){const open=data.tasks.filter(t=>!['done','retired'].includes(t.state)),groups=new Map();
+ for(const t of open){const key=groupKey(t.group);if(!groups.has(key))groups.set(key,{label:(t.group||'').trim()||null,n:0});groups.get(key).n++}
+ if(groupFilter!=='*'&&!groups.has(groupFilter.slice(6)))groupFilter='*';
+ if(![...groups.values()].some(g=>g.label))return '';
+ const chip=(value,label,n,style)=>'<button type="button" class="filter-chip" data-filter="'+esc(value)+'" aria-pressed="'+(groupFilter===value)+'"'+(style?' style="'+style+'"':'')+'>'+label+'<span class="filter-count">'+n+'</span></button>';
+ return chip('*',esc(tr('filter_all')),open.length)+[...groups].sort(([,a],[,b])=>(a.label===null)-(b.label===null)||(a.label??'').localeCompare(b.label??'',undefined,{sensitivity:'base'}))
+  .map(([key,g])=>chip('group:'+key,g.label?groupDot(g.label)+esc(g.label):'<span class="group-dot ungrouped" aria-hidden="true"></span>'+esc(tr('no_group')),g.n,g.label?groupStyle(g.label):'')).join('')}
+// Today in group order: one foldable section per group across states, with its progress and next deadline.
+const STATE_RANK={active:0,todo:1,snoozed:2};
+function groupLanes(data,proposals){
+ const open=data.tasks.filter(t=>t.state in STATE_RANK);
+ const lanes=globalThis.dayOrdering.arrange(open,'group',{order:localOrder||data.taskOrder||[]}).map(s=>{
+  const key=groupKey(s.label),name=s.label||tr('no_group'),folded=foldedGroups.has(key),tasks=[...s.tasks].sort((a,b)=>STATE_RANK[a.state]-STATE_RANK[b.state]);
+  const members=data.tasks.filter(t=>t.state!=='retired'&&groupKey(t.group)===key),done=members.filter(t=>t.state==='done').length,pct=members.length?Math.round(100*done/members.length):0;
+  const next=tasks.filter(t=>t.due).sort((a,b)=>new Date(a.due)-new Date(b.due))[0],progress=formatted('group_progress',{done,total:members.length});
+  const head='<button type="button" class="ib fold" data-fold="'+esc(key)+'" aria-expanded="'+!folded+'" aria-label="'+esc(tr(folded?'group_expand':'group_collapse').replace('{group}',name))+'">'+chevronIcon+'</button>'
+   +'<h2>'+(s.label?groupDot(s.label):'<span class="group-dot ungrouped" aria-hidden="true"></span>')+esc(name)+'</h2><span class="lane-count">'+tasks.length+'</span>'
+   +'<span class="group-progress" role="progressbar" aria-valuemin="0" aria-valuemax="'+members.length+'" aria-valuenow="'+done+'" aria-label="'+esc(progress)+'"><i style="width:'+pct+'%"></i></span>'
+   +'<span class="group-summary">'+esc(progress)+(next?' · <span'+(new Date(next.due)<NOW?' class="late"':'')+' title="'+esc(full(next.due))+'">'+esc(tr('group_next').replace('{time}',short(next.due)))+'</span>':'')+'<span class="group-folded">'+(folded?' · '+esc(tr('group_folded')):'')+'</span></span>';
+  return {id:'group:'+key,cls:' group-section'+(folded?' collapsed':'')+(groupFilter!=='*'&&groupFilter!=='group:'+key?' filtered':''),attrs:' data-group="'+esc(s.label||'')+'"',style:s.label?groupStyle(s.label):'',head,
+   items:tasks.map(t=>({id:t.id,html:taskRow(t,{...s,key:s.key},data,proposals.find(p=>p.intent.taskId===t.id))}))};
+ });
+ return lanes.length?lanes:[{id:'group:none',head:'',items:[{key:'empty',html:'<p class="lane-empty">'+esc(tr('lane_empty'))+'</p>'}]}];
+}
 const PRIORITIES=globalThis.dayOrdering.PRIORITIES;
 // One compact row per task: handle · finish · title and its data · priority · start or pause · snooze · more.
 // The Board uses the same pieces as small cards. Every action is one click; priority is a one-level menu.
@@ -125,7 +193,7 @@ function taskRow(t,s,data,proposal){
  const state=t.state==='active'?'<button type="button" class="ib state-action on" data-id="'+t.id+'" data-action="todo" aria-label="'+label(tr('pause'))+'" title="'+esc(tr('pause'))+'"'+(off?' disabled':'')+'>'+pauseIcon+'</button>'
   :'<button type="button" class="ib state-action" data-id="'+t.id+'" data-action="activate" aria-label="'+label(t.state==='snoozed'?tr('resume_b3bd0b'):tr('start'))+'" title="'+esc(blockedStart?tr('start_blocked'):t.state==='snoozed'?tr('resume_b3bd0b'):tr('start'))+'"'+(off||blockedStart?' disabled':'')+'>'+playIcon+'</button>';
  const open=expanded===t.id&&!t.pending;
- return '<article class="task'+(t.pending?' saving':'')+(open?' expanded':'')+(titleEdit?.id===t.id?' editing':'')+'" data-task-id="'+t.id+'" data-section="'+esc(t.state+':'+s.key)+'"><div class="row-main">'
+ return '<article class="task'+(t.group?' grouped':'')+(t.pending?' saving':'')+(open?' expanded':'')+(titleEdit?.id===t.id?' editing':'')+'"'+(t.group?' style="'+groupStyle(t.group)+'"':'')+' data-task-id="'+t.id+'" data-section="'+esc(t.state+':'+s.key)+'"><div class="row-main">'
   +'<span class="row-grip">'+handle+'</span>'
   +'<button type="button" class="check" data-id="'+t.id+'" data-action="done" aria-label="'+label(tr('complete'))+'" title="'+esc(tr('complete'))+'"'+(off?' disabled':'')+'><span class="box">'+checkIcon+'</span></button>'
   +'<div class="row-text">'+suggestionReason(t,data)+titleCell(t,data)+'<span class="row-meta">'+rowMeta(t,data,proposal)+'</span></div>'
@@ -310,6 +378,8 @@ document.addEventListener('keydown',e=>{if(e.key!=='Escape'||document.querySelec
  else if(dependencyFocus)toggleDependencies(dependencyFocus)},true);
 function render(data=flow.snapshot()) {
  if(drag?.active)return;
+ groupColors=data.groupColors||{};
+ const filters=groupFilters(data);if($('group-filters')._html!==filters){$('group-filters').innerHTML=filters;$('group-filters')._html=filters}$('group-filters').hidden=!filters;
  const active=document.activeElement,focusTask=active?.dataset?.id,focusAction=active?.dataset?.action,focusProposal=active?.dataset?.proposal,reviewAction=active?.dataset?.reviewAction;
  const openIds=[...$('reviews').querySelectorAll('details[open]')].map(d=>d.dataset.proposal);
  const proposals=data.proposals;
@@ -321,8 +391,8 @@ function render(data=flow.snapshot()) {
  if(expanded&&!data.tasks.some(t=>t.id===expanded&&!t.pending&&!['done','retired'].includes(t.state)))expanded=null;
  if(titleEdit&&!data.tasks.some(t=>t.id===titleEdit.id&&!['done','retired'].includes(t.state)))titleEdit=null;
  const typing=typingState();rendering=true;
- morphBoard([['active',tr("active")],['todo',tr("to_do")],['snoozed',tr("snoozed")]].map(([state,label])=>{
-  const rows=data.tasks.filter(t=>t.state===state),sections=globalThis.dayOrdering.arrange(rows,orderView,{order:localOrder||data.taskOrder||[],suggestion:data.orderSuggestion?.result});
+ morphBoard(orderView==='group'&&$('board').classList.contains('is-list')?groupLanes(data,proposals):[['active',tr("active")],['todo',tr("to_do")],['snoozed',tr("snoozed")]].map(([state,label])=>{
+  const rows=data.tasks.filter(t=>t.state===state&&shownByFilter(t)),sections=globalThis.dayOrdering.arrange(rows,orderView,{order:localOrder||data.taskOrder||[],suggestion:data.orderSuggestion?.result});
   const items=sections.flatMap(s=>[...(orderView==='group'?[{key:'heading:'+s.key,html:groupHeading(s)}]:[]),...s.tasks.map(t=>({id:t.id,html:taskRow(t,s,data,proposals.find(p=>p.intent.taskId===t.id))}))]);
   if(!rows.length)items.push({key:'empty',html:'<p class="lane-empty">'+esc(tr('lane_empty'))+'</p>'});
   return {state,head:'<span class="state-dot" aria-hidden="true"></span><h2>'+label+'</h2><span class="lane-count">'+rows.length+'</span>',items};
@@ -523,7 +593,8 @@ function moreMenu(t,data){const off=data.readOnly||t.pending,card=$('board').que
 function groupMenu(t,data){const off=data.readOnly||t.pending,groups=[...new Set(data.tasks.map(x=>x.group).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
  return '<p class="menu-title">'+esc(tr('group'))+'</p><div class="menu-scroll">'+groups.map(g=>menuItem('group',groupDot(g)+esc(g),{value:g,checked:t.group===g,disabled:off})).join('')+'</div>'
   +menuItem('group','<span class="group-dot ungrouped" aria-hidden="true"></span>'+esc(tr('no_group')),{value:'',checked:!t.group,disabled:off})
-  +'<div class="menu-form"><input type="text" class="menu-input" data-menu-input="group" maxlength="120" autocomplete="off" placeholder="'+esc(tr('new_group_placeholder'))+'" aria-label="'+esc(tr('new_group'))+'"'+(off?' disabled':'')+'></div><p class="menu-error" role="alert" hidden></p>'}
+  +'<div class="menu-form"><input type="text" class="menu-input" data-menu-input="group" maxlength="120" autocomplete="off" placeholder="'+esc(tr('new_group_placeholder'))+'" aria-label="'+esc(tr('new_group'))+'"'+(off?' disabled':'')+'></div><p class="menu-error" role="alert" hidden></p>'
+  +(t.group?'<div class="menu-sep" role="separator"></div><p class="menu-title">'+esc(tr('group_color_of').replace('{group}',t.group))+'</p><div class="swatches">'+Object.keys(GROUP_COLORS).map(c=>'<button type="button" class="swatch" role="menuitemradio" aria-checked="'+(groupColor(t.group)===c)+'" data-menu-act="group-color" data-value="'+c+'" style="--c:'+GROUP_COLORS[c]+'" aria-label="'+esc(tr('color_'+c))+'" title="'+esc(tr('color_'+c))+'"'+(data.readOnly?' disabled':'')+'></button>').join('')+'</div>':'')}
 // Deadlines at 18:00 in the profile's zone, or an exact local date and time.
 function localAt(days,hour){const wall=new Date(localValue(NOW).slice(0,10)+'T00:00Z');wall.setUTCDate(wall.getUTCDate()+days);const raw=wall.toISOString().slice(0,10)+'T'+String(hour).padStart(2,'0')+':00',d=parseLocal(raw);return Number.isFinite(d.getTime())&&localValue(d)===raw&&!ambiguous(d)?d:null}
 const dayHint=d=>new Intl.DateTimeFormat(formatLocale(),{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(d);
@@ -572,6 +643,7 @@ function menuAct(b){const {id}=menu,t=task(id),act=b.dataset.menuAct,value=b.dat
  if(act==='group'){if((t.group||'')!==value)request('task_update',{uuid:id,group:value})}
  else if(act==='due'||act==='due-custom'){due=due||value;if(!t.due||new Date(t.due).getTime()!==new Date(due).getTime())request('task_update',{uuid:id,due})}
  else if(act==='due-clear')request('task_update',{uuid:id,due:null});
+ else if(act==='group-color'){if(t.group&&groupColor(t.group)!==value)request('group_color_update',{group:t.group,color:value})}
  else if(act==='duplicate')duplicate(t);
  else if(act==='priority'){if(value!==t.priority)request('task_update',{uuid:id,priority:value})}
  else if(act==='snooze')request('snooze',{taskId:id,until:value});
@@ -597,7 +669,7 @@ document.addEventListener('keydown',e=>{if(!menu||!menu.node.contains(document.a
 addEventListener('scroll',e=>{if(!menu||menu.node.classList.contains('sheet')||!(e.target===document||e.target.contains?.($('board'))))return;const a=anchorOf(menu.id,menu.action),r=a?.getClientRects().length?a.getBoundingClientRect():null;
  if(menu.point||!r||r.bottom<0||r.top>innerHeight)closeMenu(false);else placeMenu(menu.node,a)},true);addEventListener('resize',()=>{if(!document.activeElement?.matches?.('.menu-input'))closeMenu(false)});
 $('board').addEventListener('contextmenu',e=>{const card=e.target.closest('.task');if(!card)return;if(drag){e.preventDefault();return}e.preventDefault();if(menu?.id===card.dataset.taskId&&performance.now()-menu.at<800)return;openMenu(card.dataset.taskId,'more',{x:e.clientX,y:e.clientY})});
-$('board').onclick=e=>{const sb=e.target.closest('[data-suggestion]');if(sb){const {suggestion,suggestionAction}=sb.dataset;bubbleFor=null;safely(async()=>{const started=performance.now();timed(flow.observe(await api('/api/suggestions/'+suggestion+'/'+suggestionAction,{})),started);await flow.refresh();render()});return}if(inlineClick(e))return;const b=e.target.closest('[data-action]');if(!b){const card=e.target.closest('.task');if(card&&!e.target.closest('.assistant-bubble'))toggleExpand(card.dataset.taskId);else if(dependencyFocus&&!card)toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='suggestion'){bubbleFor=bubbleFor===id?null:id;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true});return}if(['priority','snooze','more','group','due'].includes(action)){if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='dependencies'){if(linesFit())toggleDependencies(id);else if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='title'){const t=task(id);if(t&&!t.pending&&!flow.snapshot().readOnly)startTitleEdit(id);else toggleExpand(id)}else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
+$('board').onclick=e=>{const fold=e.target.closest('[data-fold]');if(fold){toggleFold(fold.dataset.fold);return}const sb=e.target.closest('[data-suggestion]');if(sb){const {suggestion,suggestionAction}=sb.dataset;bubbleFor=null;safely(async()=>{const started=performance.now();timed(flow.observe(await api('/api/suggestions/'+suggestion+'/'+suggestionAction,{})),started);await flow.refresh();render()});return}if(inlineClick(e))return;const b=e.target.closest('[data-action]');if(!b){const card=e.target.closest('.task');if(card&&!e.target.closest('.assistant-bubble'))toggleExpand(card.dataset.taskId);else if(dependencyFocus&&!card)toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='suggestion'){bubbleFor=bubbleFor===id?null:id;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true});return}if(['priority','snooze','more','group','due'].includes(action)){if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='dependencies'){if(linesFit())toggleDependencies(id);else if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='title'){const t=task(id);if(t&&!t.pending&&!flow.snapshot().readOnly)startTitleEdit(id);else toggleExpand(id)}else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
 $('reviews').onclick=async e=>{const summary=e.target.closest('summary');if(summary){const d=summary.parentElement;if(d.open)collapsedProposals.add(d.dataset.proposal);else collapsedProposals.delete(d.dataset.proposal);}const b=e.target.closest('[data-review-action]');if(!b)return;const p=flow.snapshot().proposals.find(p=>p.id===b.dataset.proposal);if(!p)return;if(Number(b.dataset.generation)!==p.generation){notice(tr("the_review_changed_read_the_current_state"));return;}const action=b.dataset.reviewAction;if(action==='cancel'){await flow.cancel(p.id);notice(tr("change_canceled_the_responsibility_keeps_its"))}if(action==='retry')safely(()=>flow.retry(p.id));if(action==='continue')safely(()=>flow.commit(p.id,{generation:p.generation}))};
 $('reviews').addEventListener('toggle',e=>{if(!e.target.matches('details'))return;const id=e.target.dataset.proposal;if(e.target.open){collapsedProposals.delete(id);expandedProposal=id}else collapsedProposals.add(id)},true);
 $('undo').onclick=()=>{const id=$('undo').dataset.event,gesture=gestures.get(id);$('undo').hidden=true;safely(()=>gesture?flow.undoGesture(gesture):flow.undo(id))};
@@ -606,7 +678,8 @@ function openContext(origin){const revision=flow.snapshot().revision,c=flow.snap
  $('context-form').onsubmit=async e=>{e.preventDefault();const raw=$('context-minutes').value,until=$('context-until').value;try{let availableUntil=c.availableUntil;if(raw.trim()){if(until!==openingUntil){const date=parseLocal(until);if(!Number.isFinite(date.getTime())||ambiguous(date)||localValue(date)!==until)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"));availableUntil=date.toISOString()}if(!availableUntil)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"))}await flow.setContext({availableMinutes:raw.trim()?Number(raw):null,availableUntil:raw.trim()?availableUntil:null,rest:$('context-rest').checked},revision);$('context-dialog').close('declared')}catch(error){$('context-error').hidden=false;$('context-error').textContent=error.message}};
  openDialog($('context-dialog'),origin,null,null)}
 $('context-open').onclick=e=>openContext(e.currentTarget);$('context-cancel').onclick=()=>$('context-dialog').close('cancel');
-$('list-view').onclick=()=>{$('board').classList.add('is-list');$('list-view').setAttribute('aria-pressed','true');$('board-view').setAttribute('aria-pressed','false')};$('board-view').onclick=()=>{$('board').classList.remove('is-list');$('list-view').setAttribute('aria-pressed','false');$('board-view').setAttribute('aria-pressed','true')};
+$('list-view').onclick=()=>{$('board').classList.add('is-list');$('list-view').setAttribute('aria-pressed','true');$('board-view').setAttribute('aria-pressed','false');render()};$('board-view').onclick=()=>{$('board').classList.remove('is-list');$('list-view').setAttribute('aria-pressed','false');$('board-view').setAttribute('aria-pressed','true');render()};
+$('group-filters').onclick=e=>{const b=e.target.closest('[data-filter]');if(b&&b.dataset.filter!==groupFilter)setGroupFilter(b.dataset.filter)};
 $('order-choice').value=orderView;$('order-choice').onchange=()=>{orderView=$('order-choice').value;try{localStorage.setItem('day-attendant-order',orderView)}catch{}render()};
 $('order-note').onclick=e=>{if(e.target.closest('#suggest-order'))safely(async()=>{await deliver('/api/suggestion',{});notice(tr('suggestion_pending'))})};
 $('board').addEventListener('keydown',e=>{const handle=e.target.closest?.('.drag-handle');if(!handle||!['ArrowUp','ArrowDown'].includes(e.key)||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();const ids=sectionIds(handle.closest('.task').dataset.section),from=ids.indexOf(handle.dataset.id),to=from+(e.key==='ArrowUp'?-1:1);if(to>=0&&to<ids.length&&placeOrder(handle.dataset.id,ids,to))notice(tr('moved_to').replace('{n}',to+1).replace('{total}',ids.length))});
@@ -646,7 +719,7 @@ function moveGhost(x,y){const at=inLayer(x-drag.offX,y-drag.offY);drag.vx=drag.v
  // A slight tilt that follows the motion; a wide row tilts less, so its ends move at most a few pixels.
  const limit=Math.min(5,Math.atan(12/drag.width)*180/Math.PI),tilt=moving()?Math.max(-limit,Math.min(limit,drag.vx*.5)):0;drag.ghost.style.transform='translate('+at.x+'px,'+at.y+'px) rotate('+tilt.toFixed(2)+'deg) scale(1.02)'}
 function laneAt(x,y){let best=null,distance=Infinity;
- for(const lane of $('board').querySelectorAll('.lane')){const r=lane.getBoundingClientRect(),dx=x<r.left?r.left-x:x>r.right?x-r.right:0,dy=y<r.top?r.top-y:y>r.bottom+30?y-r.bottom-30:0,d=dx*3+dy;if(d<distance){distance=d;best=lane}}
+ for(const lane of $('board').querySelectorAll('.lane')){if(!lane.getClientRects().length)continue;const r=lane.getBoundingClientRect(),dx=x<r.left?r.left-x:x>r.right?x-r.right:0,dy=y<r.top?r.top-y:y>r.bottom+30?y-r.bottom-30:0,d=dx*3+dy;if(d<distance){distance=d;best=lane}}
  return best}
 // The slot moves under the pointer and the others glide out of its way. Every position is read
 // before anything changes, so a move costs one layout.
@@ -676,10 +749,10 @@ function finishDrag(commit){
  if(!(commit&&dropCard(d)))render();
  // The lifted copy lands on the card's place, wherever the drop or its refusal left it.
  const card=cardOf(d.id)||d.card;card.getAnimations().forEach(a=>a.finish());
- const rect=card.getBoundingClientRect(),at=inLayer(rect.left,rect.top),ghost=d.ghost;
+ const hidden=!card.getClientRects().length,rect=(hidden?card.closest('.lane')?.querySelector('.lane-heading')||card:card).getBoundingClientRect(),at=inLayer(rect.left,rect.top),ghost=d.ghost;
  const landed=()=>{ghost.remove();for(const c of new Set([card,cardOf(d.id)]))if(c){c.classList.remove('placeholder');c.style.removeProperty('height')}};
  if(!moving()){landed();return}
- ghost.animate([{transform:ghost.style.transform},{transform:'translate('+at.x+'px,'+at.y+'px)'}],{duration:DURATION,easing:EASE,fill:'forwards'}).onfinish=landed;
+ ghost.animate([{transform:ghost.style.transform},{transform:'translate('+at.x+'px,'+at.y+'px)',...(hidden?{opacity:0}:{})}],{duration:DURATION,easing:EASE,fill:'forwards'}).onfinish=landed;
 }
 document.addEventListener('pointerup',e=>{if(e.pointerId===drag?.pointer)finishDrag(true)});
 document.addEventListener('pointercancel',e=>{if(e.pointerId===drag?.pointer)finishDrag(false)});
@@ -689,7 +762,7 @@ function tomorrowAt(hour){const [y,m,d]=localValue(NOW).slice(0,10).split('-').m
 // What the drop means, read from where the card now sits; false when nothing changes.
 function dropCard(d){
  const data=flow.snapshot(),t=data.tasks.find(t=>t.id===d.id),card=d.card;if(!t||!card.isConnected)return false;
- const lane=card.closest('.lane'),state=lane.dataset.state,near=dir=>{let n=card[dir];while(n&&!n.dataset.taskId)n=n[dir];return n&&data.tasks.find(r=>r.id===n.dataset.taskId)};
+ const lane=card.closest('.lane'),state=lane.dataset.state||t.state,near=dir=>{let n=card[dir];while(n&&!n.dataset.taskId)n=n[dir];return n&&data.tasks.find(r=>r.id===n.dataset.taskId)};
  const before=near('previousElementSibling'),after=near('nextElementSibling');let heading=card.previousElementSibling;while(heading&&!heading.classList.contains('group-heading'))heading=heading.previousElementSibling;
  const changes=[],notes=[];
  if(state!==t.state){
@@ -699,7 +772,7 @@ function dropCard(d){
  }
  const patch={};
  if(orderView==='priority'){const priority=globalThis.dayOrdering.adopt(t.priority,before?.priority,after?.priority);if(priority!==t.priority){patch.priority=priority;notes.push(tr('drop_priority').replace('{priority}',tr('priority_'+priority)))}}
- if(orderView==='group'&&heading){const group=heading.dataset.group;if((t.group||'').trim().toLocaleLowerCase()!==group.toLocaleLowerCase()){patch.group=group;notes.push(group?tr('drop_group').replace('{group}',group):tr('drop_no_group'))}}
+ if(orderView==='group'&&(heading||lane.dataset.group!==undefined)){const group=lane.dataset.group??heading.dataset.group;if((t.group||'').trim().toLocaleLowerCase()!==group.toLocaleLowerCase()){patch.group=group;notes.push(group?tr('drop_group').replace('{group}',group):tr('drop_no_group'))}}
  if(Object.keys(patch).length)changes.push(['task_update',{uuid:t.id,...patch}]);
  const order=currentOrder(data),next=['manual','priority','group'].includes(orderView)?globalThis.dayOrdering.place(order,t.id,before?.id,after?.id):order,reordered=next.join()!==order.join();
  if(!changes.length)return setOrder(next);
@@ -717,7 +790,7 @@ function placeChat(){const modal=$('chat-dialog'),panel=$('assistant'),dock=$('c
 $('chat-dialog').addEventListener('close',()=>{if($('chat-dialog').returnValue==='reflow')return;chatOpen=false;placeChat()});$('chat-toggle').onclick=()=>{chatOpen=!chatOpen;placeChat()};$('chat-close').onclick=()=>{chatOpen=false;placeChat();$('chat-toggle').focus({preventScroll:true})};compact.addEventListener('change',placeChat);placeChat();
 
 
-const aliases={front_activate:'activate',front_todo:'todo',task_snooze:'snooze',task_done:'done',front_retire:'retire',task_restore:'restore',task_add:'add',task_update:'update',task_reopen:'reopen',context_update:'declaration',continuity_update:'declaration',order_update:'order',dependency_update:'dependency',related_update:'related'};
+const aliases={front_activate:'activate',front_todo:'todo',task_snooze:'snooze',task_done:'done',front_retire:'retire',task_restore:'restore',task_add:'add',task_update:'update',task_reopen:'reopen',context_update:'declaration',continuity_update:'declaration',order_update:'order',group_color_update:'group_color',dependency_update:'dependency',related_update:'related'};
 const domain={activate:'front_activate',todo:'front_todo',snooze:'task_snooze',done:'task_done',retire:'front_retire'};
 // Reads bypass the HTTP cache: otherwise the browser holds a read behind an identical one in flight.
 async function api(path,body){const response=await fetch(path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:body===undefined?undefined:JSON.stringify(body)});const result=await response.json();if(!response.ok){const error=Error(errorText(result.error?.code,result.error?.message||tr("the_request_could_not_be_completed")));error.code=result.error?.code;error.status=response.status;throw error;}return result.data;}
@@ -747,11 +820,11 @@ class RemoteFlow{
  async load(){const seq=++this.started,settled=!this.sending;this.loading++;try{const raw=await api('/api/state'+(this.tag?'?since='+encodeURIComponent(this.tag):''));if(seq<this.applied||!settled||seq<=this.barrier)return;this.applied=seq;if(this.offline){this.offline=false;notice(tr("connection_restored"))}if(raw.unchanged){if(raw.tag===this.tag)this.tick(raw.now);else this.tag='';return}this.apply(raw)}catch(error){this.offline=true;this.data.agent={...(this.data.agent||{}),connected:false};$('agent-state').textContent=tr("disconnected");delete $('agent-state').dataset.label;throw error}finally{this.loading--}}
  // An unchanged poll only advances the clock; calendar rows are redrawn when one of them ends.
  tick(now){const before=new Date(this.data.now),after=new Date(now);NOW=after;this.data.now=now;if((this.data.calendar_events||[]).some(e=>{const end=new Date(e.end_at);return end>before&&end<=after}))globalThis.dayDaily?.update(this.data)}
- apply(raw){if(!this.localeLoaded&&raw.profile){this.localeLoaded=true;locale=raw.profile.locale||'en';$('locale-choice').value=locale;translateChrome();refreshLabels()}NOW=new Date(raw.now);zone=raw.timezone||zone;const state={...raw,revision:Math.max(raw.revision,this.seen),mode:'connected',rawProposals:raw.proposals,proposals:raw.proposals.filter(p=>['evaluating','review','unavailable','stale','invalid'].includes(p.phase)).map(p=>({...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]})),suggestions:raw.suggestions||[],review:raw.review||{}};this.tag=raw.tag||'';this.data=state;reconcileDeliveries(raw);globalThis.dayDaily?.update(state);const digest=JSON.stringify([state.tasks,state.taskOrder,state.orderSuggestion,state.agent.connected,state.context,state.proposals,state.lastFact,state.suggestions,state.revision,state.readOnly]);if(digest!==this.digest){this.digest=digest;render(state)}const md=JSON.stringify([state.messages,state.suggestions,state.conversation]);if(md!==this.messageDigest){this.messageDigest=md;renderMessages(state.messages,state)}const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};const agentError=state.agent.error&&errorText(state.agent.errorCode,state.agent.error);renderReview(state);$('bridge-state').hidden=state.agent.connected;if(!state.agent.connected)setText($('bridge-state'),agentError||tr('agent_temporarily_unavailable'));renderContextStatus(state);setText($('agent-details'),(state.agent.model||(state.profile?.harness==='claude'?'Claude Code':'Codex'))+' · '+(state.profile?.harness||'codex'));const stateTitle=agentError||$('agent-state').dataset.label||'';if($('agent-state').title!==stateTitle)$('agent-state').title=stateTitle;setText(document.querySelector('.date'),new Intl.DateTimeFormat(formatLocale(),{weekday:'long',day:'numeric',month:'long',timeZone:zone}).format(NOW));}
+ apply(raw){if(!this.localeLoaded&&raw.profile){this.localeLoaded=true;locale=raw.profile.locale||'en';$('locale-choice').value=locale;translateChrome();refreshLabels()}NOW=new Date(raw.now);zone=raw.timezone||zone;const state={...raw,revision:Math.max(raw.revision,this.seen),mode:'connected',rawProposals:raw.proposals,proposals:raw.proposals.filter(p=>['evaluating','review','unavailable','stale','invalid'].includes(p.phase)).map(p=>({...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]})),suggestions:raw.suggestions||[],review:raw.review||{}};this.tag=raw.tag||'';this.data=state;reconcileDeliveries(raw);globalThis.dayDaily?.update(state);const digest=JSON.stringify([state.tasks,state.taskOrder,state.groupColors,state.orderSuggestion,state.agent.connected,state.context,state.proposals,state.lastFact,state.suggestions,state.revision,state.readOnly]);if(digest!==this.digest){this.digest=digest;render(state)}const md=JSON.stringify([state.messages,state.suggestions,state.conversation]);if(md!==this.messageDigest){this.messageDigest=md;renderMessages(state.messages,state)}const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};const agentError=state.agent.error&&errorText(state.agent.errorCode,state.agent.error);renderReview(state);$('bridge-state').hidden=state.agent.connected;if(!state.agent.connected)setText($('bridge-state'),agentError||tr('agent_temporarily_unavailable'));renderContextStatus(state);setText($('agent-details'),(state.agent.model||(state.profile?.harness==='claude'?'Claude Code':'Codex'))+' · '+(state.profile?.harness||'codex'));const stateTitle=agentError||$('agent-state').dataset.label||'';if($('agent-state').title!==stateTitle)$('agent-state').title=stateTitle;setText(document.querySelector('.date'),new Intl.DateTimeFormat(formatLocale(),{weekday:'long',day:'numeric',month:'long',timeZone:zone}).format(NOW));}
  // A revision this page produced itself: the next change it sends already includes its own last one.
  observe(result){const revision=result?.result?.revision??result?.revision;if(Number.isInteger(revision)&&revision>this.seen){this.seen=revision;this.data.revision=Math.max(this.data.revision||0,revision)}return result}
  // Shows a direct change on screen at once; the service's answer and the next read reconcile it.
- preview(body){const p=body.payload,data=this.data;let tasks=data.tasks,context=data.context;
+ preview(body){const p=body.payload,data=this.data;let tasks=data.tasks,context=data.context,colors=data.groupColors;
   const moves={front_activate:{state:'active',until:null},front_todo:{state:'todo',until:null},task_done:{state:'done',until:null},front_retire:{state:'retired',until:null},task_reopen:{state:'todo',until:null}};
   if(moves[body.action]||body.action==='task_snooze'||body.action==='task_update'){
    const fields=moves[body.action]||(body.action==='task_snooze'?{state:'snoozed',until:p.until}:Object.fromEntries(['title','priority','due','group'].filter(k=>k in p).map(k=>[k,k==='group'?p.group||null:p[k]])));
@@ -761,8 +834,9 @@ class RemoteFlow{
   else if(body.action==='dependency_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const done=new Set(tasks.filter(t=>t.state==='done').map(t=>t.id)),blockedBy=p.dependsOn.filter(id=>!done.has(id));tasks=tasks.map(t=>t.id===p.uuid?{...t,dependsOn:[...p.dependsOn],blockedBy,blocked:blockedBy.length>0}:t)}
   else if(body.action==='related_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const wanted=new Set(p.relatedTo);tasks=tasks.map(t=>t.id===p.uuid?{...t,relatedTo:[...p.relatedTo]}:wanted.has(t.id)&&!t.relatedTo.includes(p.uuid)?{...t,relatedTo:[...t.relatedTo,p.uuid]}:!wanted.has(t.id)&&t.relatedTo.includes(p.uuid)?{...t,relatedTo:t.relatedTo.filter(x=>x!==p.uuid)}:t)}
   else if(body.action==='context_update')context={...context,...p};
+  else if(body.action==='group_color_update'){const key=p.group.trim().toLowerCase();colors={...colors};if(p.color)colors[key]=p.color;else delete colors[key];this.data={...data,groupColors:colors};paintGroupColor(this.data,key);return {groupColor:[key,data.groupColors?.[key]]}}
   else return false;
-  this.data={...data,tasks,context};render(this.data);return {tasks:data.tasks,context:data.context}}
+  this.data={...data,tasks,context,groupColors:colors};render(this.data);return {tasks:data.tasks,context:data.context}}
  // Direct changes go out one at a time, each with the newest revision, so quick consecutive
  // clicks never collide with each other; none of them waits for a state read to be sent.
  async send(body,key,expectedRevision){const revision=expectedRevision??this.data.revision;return this.observe(key?await api('/api/proposals',{...body,key,expected_revision:revision}):await deliver('/api/proposals',body,revision,{refresh:false}))}
@@ -775,7 +849,8 @@ class RemoteFlow{
  async retry(id){const started=performance.now();const r=timed(this.observe(await api('/api/proposals/'+id+'/retry',{})),started);await this.refresh();return r}
  async commit(id,options){const started=performance.now();const r=this.observe(await api('/api/proposals/'+id+'/confirm',{generation:options.generation,without_review:!!options.withoutReview}));timings.set(id,{started});await this.refresh();return r}
  async undo(id){const started=performance.now(),view=undoViews.get(String(id));undoViews.delete(String(id));
-  if(view){const back=new Map(view.tasks.map(t=>[t.id,t]));this.data={...this.data,tasks:this.data.tasks.filter(t=>!t.pending&&(back.has(t.id)||t.id!==view.taskId)).map(t=>back.get(t.id)||t),context:view.context};render(this.data)}
+  if(view?.groupColor){const colors={...this.data.groupColors},[key,color]=view.groupColor;if(color)colors[key]=color;else delete colors[key];this.data={...this.data,groupColors:colors};paintGroupColor(this.data,key)}
+  else if(view){const back=new Map(view.tasks.map(t=>[t.id,t]));this.data={...this.data,tasks:this.data.tasks.filter(t=>!t.pending&&(back.has(t.id)||t.id!==view.taskId)).map(t=>back.get(t.id)||t),context:view.context};render(this.data)}
   this.sending++;this.barrier=this.started;const shown=view?performance.now():undefined,sent=this.queue.then(async()=>this.observe(await deliver('/api/undo',{fact_id:id},this.data.revision,{refresh:false})));this.queue=sent.catch(()=>{});
   let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();if(view){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();await this.refresh();return r}
  // Undo of a drop puts the card back at once, then reverts every change the drop saved, newest first.

@@ -58,6 +58,8 @@ day-attendant --json board request task_update \
   --payload '{"uuid":"TASK_UUID","group":"Office move"}' --key human-group-001 --expect 12
 day-attendant --json board request order_update \
   --payload '{"order":["FIRST_UUID","SECOND_UUID"]}' --key human-order-001 --expect 13
+day-attendant --json board request group_color_update \
+  --payload '{"group":"Office move","color":"teal"}' --key human-color-001 --expect 14
 day-attendant --json board suggest --key human-suggest-001
 ```
 
@@ -72,7 +74,17 @@ order (`taskOrder` in `board list`) and is saved without a model review. Use it 
 the human arranges their list; it never changes priority, group or state, and tasks
 missing from it follow by priority. `board suggest` asks the selected model once for a
 suggested order (`orderSuggestion`); `stale` means tasks or context changed since.
+`group_color_update` sets the color a group shows with (`groupColors` in `board list`, keyed
+by the lowercase label): `purple`, `teal`, `brown`, `sky`, `pink`, `red`, `orange`, `indigo`,
+`green` or `gray`, or `null` for the automatic color its label gives. Like the order it is
+the human's presentation, saved without review and with Undo; it changes no task.
 Requesting it again with the same key reuses the stored result.
+
+In the UI, group chips above the tasks filter in one click and count open tasks.
+Today with Order → Group shows foldable sections with completed/total progress
+(retired tasks excluded) and the next open deadline. Dragging into a section,
+including a folded one, changes that task's single group and offers Undo. The
+group menu on a task changes its color for every task in that group.
 
 `board request` applies a valid change in the same call (phase `applied`) or rejects it
 with a stable code (`dependency_cycle`, `invalid_uuid`, `task_not_found`,
