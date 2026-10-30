@@ -82,7 +82,7 @@ function playFlip(first,{duration=DURATION+80,delay=0,enter=true}={}){
   if(!delta){if(enter)card.animate([{opacity:0,transform:'scale(.98)'},{opacity:1,transform:'none'}],{duration,delay,easing:'ease-out',fill:'backwards'});continue}
   const [dx,dy]=delta;if(Math.abs(dx)>=1||Math.abs(dy)>=1)card.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],{duration,delay,easing:EASE,fill:'backwards'});
  }
- if(dependencyFocus)setTimeout(()=>drawDependencies(),duration+delay+20);
+ if(dependencyLines.style.display==='block')setTimeout(()=>drawDependencies(),duration+delay+20);
 }
 // Floating copies (a lifted card, a leaving one) live in a layer over the list that shares its styles.
 function motionLayer(){let node=$('motion-layer');if(!node){node=document.createElement('div');node.id='motion-layer';node.className='board motion-layer';node.setAttribute('aria-hidden','true');$('tasks-area').append(node)}node.classList.toggle('is-list',$('board').classList.contains('is-list'));return node}
@@ -132,7 +132,7 @@ function taskRow(t,s,data,proposal){
   +'<div class="row-actions"><button type="button" class="priority-pill" data-priority="'+esc(t.priority)+'" data-id="'+t.id+'" data-action="priority" aria-haspopup="menu" aria-expanded="false" title="'+esc(tr('change_priority'))+'"'+(off?' disabled':'')+'><span class="visually-hidden">'+esc(tr('priority'))+': </span>'+esc(tr('priority_'+t.priority))+'</button>'
   +state+'<button type="button" class="ib" data-id="'+t.id+'" data-action="snooze" aria-haspopup="menu" aria-expanded="false" aria-label="'+label(tr('snooze'))+'" title="'+esc(tr('snooze'))+'"'+(off?' disabled':'')+'>'+clockIcon+'</button>'
   +'<button type="button" class="ib more" data-id="'+t.id+'" data-action="more" aria-haspopup="menu" aria-expanded="false" aria-label="'+label(tr('more_actions'))+'" title="'+esc(tr('more_actions_hint'))+'">'+moreIcon+'</button></div>'
-  +'<span class="port-slot" aria-hidden="true"></span></div>'+suggestionBubble(t,data)+(open?expandView(t,data):'')+'</article>'}
+  +'<span class="port-slot">'+(off?'':'<button type="button" class="port" data-id="'+t.id+'" tabindex="-1" aria-hidden="true" title="'+esc(tr('port_hint'))+'"></button>')+'</span></div>'+suggestionBubble(t,data)+(open?expandView(t,data):'')+'</article>'}
 // The data line under or beside the title: group, dates, waiting, estimate, dependencies and a pending change.
 function rowMeta(t,data,proposal){const time=(key,value,cls)=>'<span class="'+cls+'" title="'+esc(full(value))+'">'+esc(tr(key).replace('{time}',short(value)))+'</span>';
  const off=data.readOnly||t.pending,menuButton=(action,cls,content,hint)=>'<button type="button" class="'+cls+'" data-id="'+t.id+'" data-action="'+action+'" aria-haspopup="menu" aria-expanded="false" title="'+esc(hint)+'"'+(off?' disabled':'')+'>'+content+'</button>';
@@ -171,12 +171,13 @@ const currentOrder=(data=flow.snapshot())=>globalThis.dayOrdering.manualIds(data
 function placeOrder(id,ids,to){return setOrder(globalThis.dayOrdering.move(currentOrder(),ids,id,to))}
 function setOrder(next){const data=flow.snapshot(),order=currentOrder(data);if(next.join()===order.join())return false;if(localOrder===null)orderBase=data.revision;localOrder=next;render();clearTimeout(orderTimer);orderTimer=setTimeout(saveOrder,350);return true}
 async function saveOrder(){if(orderSaving){orderTimer=setTimeout(saveOrder,150);return}const order=localOrder;if(!order)return;orderSaving=true;try{const p=await flow.request('order_update',{order},undefined,orderBase);orderBase=p?.result?.revision??flow.snapshot().revision}catch(error){localOrder=null;orderBase=null;notice(error.message);render();return}finally{orderSaving=false}if(localOrder===order){localOrder=null;orderBase=null;render()}}
-// Blocked and blocking cards name their counterparts; a chip highlights those direct links.
+// Blocked and blocking cards name their counterparts. On a wide board the chip highlights those
+// direct links; on a phone, where lines do not fit, it opens the task's links as a sheet.
 const titles=(ids,data)=>ids.map(id=>data.tasks.find(r=>r.id===id)?.title||id).join(', ');
 function dependencyChips(t,data){const blocks=data.tasks.filter(r=>r.blockedBy.includes(t.id)).map(r=>r.id),chip=(kind,count,names)=>'<button type="button" class="dependency-chip '+kind+'" data-id="'+t.id+'" data-action="dependencies" aria-pressed="false" aria-label="'+esc(names+' · '+tr('show_dependencies'))+'" title="'+esc(names)+'">'+esc(formatted(count,{n:kind==='blocked-label'?t.blockedBy.length:blocks.length}))+'</button>';return (t.blocked?chip('blocked-label','blocked_by_count',tr('blocked_prefix')+titles(t.blockedBy,data)):'')+(blocks.length?chip('blocking-label','blocks_count',tr('blocks_prefix')+titles(blocks,data)):'')}
 const dependencyEdges=data=>dependencyFocus?data.tasks.flatMap(r=>r.blockedBy.filter(p=>p===dependencyFocus||r.id===dependencyFocus).map(p=>[p,r.id])):[];
 const dependencyLines=document.createElementNS('http://www.w3.org/2000/svg','svg');dependencyLines.classList.add('dependency-lines');dependencyLines.setAttribute('aria-hidden','true');$('board').after(dependencyLines);
-const dependencyResize=new ResizeObserver(()=>drawDependencies());
+const dependencyResize=new ResizeObserver(()=>drawDependencies());dependencyResize.observe($('board'));
 function showDependencies(data=flow.snapshot()){
  const edges=dependencyEdges(data),board=$('board');if(!edges.length)dependencyFocus=null;
  board.classList.toggle('dependency-focus',!!dependencyFocus);
@@ -184,30 +185,129 @@ function showDependencies(data=flow.snapshot()){
   const id=card.dataset.taskId,role=id===dependencyFocus?'source':edges.some(([p,d])=>p===id&&d===dependencyFocus)?'prerequisite':edges.some(([p,d])=>d===id&&p===dependencyFocus)?'dependent':'';
   if((card.dataset.dependencyRole||'')!==role){if(role)card.dataset.dependencyRole=role;else delete card.dataset.dependencyRole;card.querySelector('.dependency-role')?.remove();if(role&&role!=='source')card.querySelector('.row-meta').insertAdjacentHTML('afterbegin','<span class="dependency-role">'+esc(tr('dependency_'+role))+'</span>')}
   for(const chip of card.querySelectorAll('[data-action=dependencies]'))if(chip.getAttribute('aria-pressed')!==String(role==='source'))chip.setAttribute('aria-pressed',String(role==='source'));
+  card.classList.toggle('connect-source',id===connectFrom||id===connectDrag?.from&&!connectDrag?.retarget);
  }
- dependencyResize.disconnect();if(dependencyFocus){dependencyResize.observe(board);board.querySelectorAll('[data-dependency-role]').forEach(card=>dependencyResize.observe(card))}
  drawDependencies(data);
 }
-// Lines join cards across columns, or run in a side gutter wide enough to read; phone widths keep the highlight only.
+// Connectors between open tasks on the board: «from blocks to» (to waits for from) as a blue line
+// with an arrow, and related tasks as a grey dashed one. A task's lines show while the pointer is
+// on it or while it is selected (its chip pressed, its details open, or it is being connected).
+let hoverTask=null,hoverKeep=null,hoverTimer=0,selectedLink=null,connectDrag=null,connectFrom=null,connectDir='blocks';
+const onBoard=t=>!!t&&['active','todo','snoozed'].includes(t.state);
+function boardLinks(data){const byId=new Map(data.tasks.map(t=>[t.id,t])),links=[];
+ for(const t of data.tasks){if(!onBoard(t))continue;
+  for(const p of t.dependsOn||[])if(onBoard(byId.get(p)))links.push({from:p,to:t.id,type:'dep'});
+  for(const r of t.relatedTo||[])if(t.id<r&&onBoard(byId.get(r)))links.push({from:t.id,to:r,type:'rel'})}
+ return links}
+const sameLink=(a,b)=>!!a&&!!b&&a.from===b.from&&a.to===b.to&&a.type===b.type;
+const linesFit=()=>$('board').clientWidth>=600;
+function shownLinks(data){if(!linesFit()||drag?.active)return [];const ids=new Set([dependencyFocus,expanded,hoverTask||hoverKeep,connectFrom,connectDrag?.from].filter(Boolean));
+ return boardLinks(data).filter(l=>!sameLink(l,connectDrag?.retarget)&&(ids.has(l.from)||ids.has(l.to)||sameLink(l,selectedLink)))}
+// Where a line meets a task: its port on the right, or the card's left edge for a column to its left.
+function portAt(id,side,box){const card=cardOf(id);if(!card?.getClientRects().length)return null;const r=card.getBoundingClientRect(),port=card.querySelector('.port'),p=port?.getClientRects().length?port.getBoundingClientRect():null;
+ if(side==='left')return {x:r.left-box.left,y:r.top+r.height/2-box.top,col:r.left};
+ return {x:(p?p.left+p.width/2:r.right)-box.left,y:(p?p.top+p.height/2:r.top+Math.min(r.height,42)/2)-box.top,col:r.left}}
+function curve(a,b,side){if(side){const dx=Math.min(34,18+Math.abs(b.y-a.y)*.12);return 'M'+a.x+' '+a.y+'C'+(a.x+dx)+' '+a.y+' '+(b.x+dx)+' '+b.y+' '+b.x+' '+b.y}
+ const mx=(a.x+b.x)/2;return 'M'+a.x+' '+a.y+'C'+mx+' '+a.y+' '+mx+' '+b.y+' '+b.x+' '+b.y}
+function endpoints(l,box){let a=portAt(l.from,'right',box),b=portAt(l.to,'right',box);if(!a||!b)return null;
+ const across=!$('board').classList.contains('is-list')&&Math.abs(a.col-b.col)>=30;
+ if(across){if(a.col<b.col)b=portAt(l.to,'left',box);else a=portAt(l.from,'left',box)}
+ return {a,b,d:curve(a,b,!across)}}
 function drawDependencies(data=flow.snapshot()){
- const board=$('board'),svg=dependencyLines,edges=dependencyEdges(data);svg.replaceChildren();svg.style.display='none';
- if(!edges.length||board.clientWidth<600)return;
- const box=board.getBoundingClientRect(),area=svg.parentElement.getBoundingClientRect(),cards=[...board.querySelectorAll('[data-task-id]')].map(c=>c.getBoundingClientRect()).filter(r=>r.width);
- const rect=id=>{const card=board.querySelector('[data-task-id="'+id+'"]');return card?.getClientRects().length?card.getBoundingClientRect():null};
- const room=r=>r.left-Math.max(0,...cards.filter(c=>c.right<=r.left).map(c=>c.right)),anchor=r=>r.top-box.top+Math.min(r.height/2,30);
- let gutter=0;const paths=[];
- for(const [p,d] of edges){const a=rect(p),b=rect(d);if(!a||!b)continue;const y1=anchor(a),y2=anchor(b);
-  if(a.right<=b.left||b.right<=a.left){const forward=a.right<=b.left,x1=(forward?a.right:a.left)-box.left,x2=(forward?b.left:b.right)-box.left,dx=Math.max(24,Math.abs(x2-x1)/2)*(forward?1:-1);paths.push(`M${x1} ${y1}C${x1+dx} ${y1} ${x2-dx} ${y2} ${x2} ${y2}`);continue}
-  const space=Math.min(room(a),room(b));if(space<14)continue;
-  const depth=Math.min(space-4,12+6*gutter++),x=Math.min(a.left,b.left)-box.left,s=Math.sign(y2-y1)||1,r=Math.min(6,depth/2,Math.abs(y2-y1)/2);
-  paths.push(`M${x} ${y1}H${x-depth+r}Q${x-depth} ${y1} ${x-depth} ${y1+s*r}V${y2-s*r}Q${x-depth} ${y2} ${x-depth+r} ${y2}H${x}`);
- }
- if(!paths.length)return;
+ const board=$('board'),svg=dependencyLines,links=shownLinks(data);
+ // A change in two steps (blocking to related) is briefly in neither state; the selection waits for it.
+ if(selectedLink&&!flow.sending&&!boardLinks(data).some(l=>sameLink(l,selectedLink)))selectedLink=null;
+ if(!links.length&&!connectDrag?.path){if(svg.style.display!=='none'){svg.replaceChildren();svg.style.display='none'}placeLineBar(null);return}
+ const box=board.getBoundingClientRect(),area=svg.parentElement.getBoundingClientRect();
  Object.assign(svg.style,{display:'block',left:box.left-area.left+'px',top:box.top-area.top+'px',width:box.width+'px',height:box.height+'px'});
- svg.innerHTML='<defs><marker id="dependency-arrow" viewBox="0 0 6 6" refX="5.5" refY="3" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L6 3L0 6z"/></marker></defs>'+paths.map(d=>'<path d="'+d+'" marker-end="url(#dependency-arrow)"/>').join('');
-}
+ const arrow=(id)=>'<marker id="'+id+'" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z"/></marker>';
+ let out='<defs>'+arrow('link-arrow')+arrow('link-arrow-selected')+'</defs>',bar=null;
+ for(const l of links){const e=endpoints(l,box);if(!e)continue;const selected=sameLink(l,selectedLink)&&!connectDrag;
+  out+='<path class="link-line '+l.type+(selected?' selected':'')+'" d="'+e.d+'"'+(l.type==='dep'?' marker-end="url(#link-arrow'+(selected?'-selected':'')+')"':'')+'/><path class="link-hit" d="'+e.d+'" data-link="'+l.from+'|'+l.to+'|'+l.type+'"/>';
+  if(selected){out+='<circle class="link-knob" cx="'+e.b.x+'" cy="'+e.b.y+'" r="7"/>';bar={x:box.left-area.left+(e.a.x+e.b.x)/2,y:box.top-area.top+(e.a.y+e.b.y)/2,link:l}}}
+ if(connectDrag?.path)out+='<path class="link-draft" d="'+connectDrag.path+'"/>';
+ svg.innerHTML=out;placeLineBar(bar)}
 function toggleDependencies(id){dependencyFocus=dependencyFocus===id?null:id;showDependencies()}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&dependencyFocus&&!document.querySelector('dialog[open]'))toggleDependencies(dependencyFocus)});
+// A selected line offers its two changes beside it; its tip can be dragged to another task.
+const lineBar=document.createElement('div');lineBar.className='line-bar';lineBar.hidden=true;$('board').after(lineBar);
+function placeLineBar(at){if(!at){if(!lineBar.hidden)lineBar.hidden=true;return}
+ const html='<button type="button" data-line="type">'+esc(tr(at.link.type==='dep'?'link_make_related':'link_make_blocking'))+'</button><button type="button" class="danger" data-line="remove">'+esc(tr('link_remove'))+'</button>';
+ if(lineBar._html!==html){lineBar.innerHTML=html;lineBar._html=html}lineBar.hidden=false;
+ const room=lineBar.parentElement.clientWidth-lineBar.offsetWidth-8;lineBar.style.left=Math.max(8,Math.min(at.x+30,room))+'px';lineBar.style.top=at.y-18+'px'}
+// Links change by updating the one list that holds them, built from the latest state shown, so
+// every other link of both tasks stays. Each change applies at once with one Undo; a duplicate,
+// a link to itself or a loop of prerequisites is refused before anything is sent.
+const clip=s=>s.length>40?s.slice(0,39)+'…':s;
+const named=(key,a,b)=>tr(key).replace('{a}',clip(a?.title||'')).replace('{b}',clip(b?.title||''));
+function linkError(from,to,kind,ignore){const data=flow.snapshot(),find=id=>data.tasks.find(t=>t.id===id),A=find(from),B=find(to);if(!A||!B)return tr('task_not_on_board');
+ if(from===to)return tr('link_self');
+ const dep=(p,d)=>!(ignore?.type==='dep'&&ignore.from===p&&ignore.to===d)&&!!find(d)?.dependsOn.includes(p);
+ const rel=!(ignore?.type==='rel'&&[ignore.from,ignore.to].includes(from)&&[ignore.from,ignore.to].includes(to))&&A.relatedTo.includes(to);
+ if(dep(from,to)||dep(to,from)||rel)return named('link_duplicate',A,B);
+ if(kind!=='dep')return null;
+ const seen=new Set(),walk=id=>{if(id===to)return true;if(seen.has(id))return false;seen.add(id);return (find(id)?.dependsOn||[]).some(p=>dep(p,id)&&walk(p))};
+ return walk(from)?named('link_cycle',A,B):null}
+function linkChange(note,ids,changes){const data=flow.snapshot();if(data.readOnly||ids.some(id=>data.tasks.find(t=>t.id===id)?.pending))return false;const gesture={id:'gesture:'+(++gestureSerial),taskId:ids[0],taskIds:ids,notes:[note],proposals:[],before:{tasks:data.tasks,taskOrder:data.taskOrder},started:performance.now()};
+ gestures.set(gesture.id,gesture);if(gestures.size>20)gestures.delete(gestures.keys().next().value);
+ for(const [action,id,edit] of changes){const t=task(id);if(!t)continue;request(action,action==='dependency_update'?{uuid:id,dependsOn:edit(t.dependsOn)}:{uuid:id,relatedTo:edit(t.relatedTo)},undefined,undefined,gesture)}
+ gesture.shown=performance.now();return true}
+const without=x=>list=>list.filter(y=>y!==x),plus=x=>list=>[...list.filter(y=>y!==x),x];
+function addLink(from,to){const error=linkError(from,to,'dep');if(error){notice(error);return false}
+ return linkChange(named('link_created',task(from),task(to)),[to],[['dependency_update',to,plus(from)]])}
+function removeLink(l){return linkChange(tr('link_removed'),[l.to,l.from],[l.type==='dep'?['dependency_update',l.to,without(l.from)]:['related_update',l.from,without(l.to)]])}
+function toggleLink(l){
+ if(l.type==='dep'){linkChange(tr('link_now_related'),[l.to,l.from],[['dependency_update',l.to,without(l.from)],['related_update',l.from,plus(l.to)]]);return {from:l.from<l.to?l.from:l.to,to:l.from<l.to?l.to:l.from,type:'rel'}}
+ const error=linkError(l.from,l.to,'dep',l);if(error){notice(error);return l}
+ linkChange(tr('link_now_blocking'),[l.to,l.from],[['related_update',l.from,without(l.to)],['dependency_update',l.to,plus(l.from)]]);return {...l,type:'dep'}}
+function retargetLink(l,to){if(to===l.to)return false;if(to===l.from){notice(tr('link_self'));return false;}const error=linkError(l.from,to,l.type,l);if(error){notice(error);return false}
+ const note=named('link_moved',null,task(to));
+ return l.type==='dep'?linkChange(note,[l.to,to],[['dependency_update',l.to,without(l.from)],['dependency_update',to,plus(l.from)]])
+  :linkChange(note,[l.from,l.to,to],[['related_update',l.from,list=>[...list.filter(y=>y!==l.to&&y!==to),to]]])}
+function unlinkFrom(id,kind,other){removeLink(kind==='dep'?{from:other,to:id,type:'dep'}:kind==='dependent'?{from:id,to:other,type:'dep'}:{from:id,to:other,type:'rel'})}
+// Dragging from a port, or a selected line's tip, draws a line that follows the pointer; letting go
+// on another task links them (or moves the line there).
+const rowAt=(x,y)=>document.elementsFromPoint(x,y).map(n=>n.closest?.('.task[data-task-id]')).find(n=>n&&$('board').contains(n))||null;
+function startConnect(e,from,retarget=null){if(connectDrag||drag||flow.snapshot().readOnly||task(from)?.pending)return;e.preventDefault();e.stopPropagation();closeMenu(false);endConnectMode();
+ connectDrag={from,retarget,pointer:e.pointerId,path:'',x:e.clientX,y:e.clientY};document.body.classList.add('linking');swallowClick=true;showDependencies()}
+function moveConnect(){const d=connectDrag;if(!d)return;d.frame=0;const box=$('board').getBoundingClientRect(),a=portAt(d.from,'right',box);if(!a)return;
+ const b={x:d.x-box.left,y:d.y-box.top};d.path=curve(a,b,$('board').classList.contains('is-list')||Math.abs(b.x-a.x)<60);
+ const over=rowAt(d.x,d.y);for(const c of $('board').querySelectorAll('.connect-target'))if(c!==over)c.classList.remove('connect-target');if(over&&over.dataset.taskId!==d.from)over.classList.add('connect-target');
+ drawDependencies()}
+function finishConnect(e,commit){const d=connectDrag;if(!d)return;connectDrag=null;cancelAnimationFrame(d.frame);document.body.classList.remove('linking');
+ for(const c of $('board').querySelectorAll('.connect-target'))c.classList.remove('connect-target');setTimeout(()=>swallowClick=false);
+ const to=commit?rowAt(e.clientX,e.clientY)?.dataset.taskId:null;
+ if(to&&d.retarget){if(retargetLink(d.retarget,to))selectedLink=null}else if(to)addLink(d.from,to);
+ showDependencies()}
+$('board').addEventListener('pointerdown',e=>{const port=e.target.closest('.port');if(port&&e.isPrimary&&e.button===0)startConnect(e,port.dataset.id)},true);
+dependencyLines.addEventListener('pointerdown',e=>{if(e.target.closest('.link-knob')&&selectedLink&&e.button===0)startConnect(e,selectedLink.from,selectedLink)});
+document.addEventListener('pointermove',e=>{if(e.pointerId!==connectDrag?.pointer)return;e.preventDefault();connectDrag.x=e.clientX;connectDrag.y=e.clientY;if(!connectDrag.frame)connectDrag.frame=requestAnimationFrame(moveConnect)},{passive:false});
+document.addEventListener('pointerup',e=>{if(e.pointerId===connectDrag?.pointer)finishConnect(e,true)});
+document.addEventListener('pointercancel',e=>{if(e.pointerId===connectDrag?.pointer)finishConnect(e,false)});
+dependencyLines.addEventListener('click',e=>{const hit=e.target.closest('[data-link]');if(!hit)return;const [from,to,type]=hit.dataset.link.split('|');selectedLink={from,to,type};hoverKeep=from;drawDependencies()});
+// Its label changes under the click, so the click stops here rather than reading as one outside.
+lineBar.addEventListener('click',e=>{e.stopPropagation();const b=e.target.closest('[data-line]');if(!b||!selectedLink)return;if(b.dataset.line==='remove'){const l=selectedLink;selectedLink=null;removeLink(l)}else selectedLink=toggleLink(selectedLink);drawDependencies()});
+document.addEventListener('click',e=>{if(selectedLink&&!e.target.closest?.('.line-bar,[data-link],.link-knob')){selectedLink=null;drawDependencies()}});
+// The pointer on a task shows its lines; they stay a moment after it leaves, so a line can be reached.
+function hover(id){if(id===hoverTask)return;hoverTask=id;clearTimeout(hoverTimer);if(id){hoverKeep=id;drawDependencies()}else hoverTimer=setTimeout(()=>{hoverKeep=null;drawDependencies()},700)}
+$('board').addEventListener('pointerover',e=>{if(e.pointerType==='mouse'&&!connectDrag&&!drag?.active)hover(e.target.closest('.task[data-task-id]')?.dataset.taskId||null)});
+$('board').addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')hover(null)});
+for(const node of [dependencyLines,lineBar])node.addEventListener('pointerover',()=>clearTimeout(hoverTimer));
+// «Connect to…» and «Add a requirement…» (from ⋯, a long press or the links sheet): the next task
+// tapped completes the link. Cancel or Esc leaves it.
+const connectBanner=document.createElement('div');connectBanner.className='connect-banner';connectBanner.hidden=true;connectBanner.setAttribute('role','status');$('board').before(connectBanner);
+const linkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+function startConnectMode(id,dir){const t=task(id);if(!t||t.pending||flow.snapshot().readOnly)return;connectFrom=id;connectDir=dir;
+ connectBanner.innerHTML=linkIcon+'<span>'+esc(tr(dir==='needs'?'connect_pick_prerequisite':'connect_pick_dependent').replace('{title}',clip(t.title)))+'</span><button type="button" class="btn" data-connect-cancel>'+esc(tr('cancel'))+'</button>';
+ connectBanner.hidden=false;document.body.classList.add('connecting');showDependencies();connectBanner.scrollIntoView({block:'nearest'});connectBanner.querySelector('button').focus({preventScroll:true})}
+function endConnectMode(){if(!connectFrom)return;const id=connectFrom;connectFrom=null;connectBanner.hidden=true;document.body.classList.remove('connecting');showDependencies();return id}
+connectBanner.addEventListener('click',e=>{if(e.target.closest('[data-connect-cancel]')){const id=endConnectMode();if(id)restoreTitleFocus(id)}});
+$('board').addEventListener('click',e=>{if(!connectFrom)return;const card=e.target.closest('.task[data-task-id]');if(!card)return;e.preventDefault();e.stopPropagation();
+ const dir=connectDir,from=endConnectMode(),to=card.dataset.taskId;if(dir==='needs')addLink(to,from);else addLink(from,to)},true);
+document.addEventListener('keydown',e=>{if(e.key!=='Escape'||document.querySelector('dialog[open]')||menu)return;
+ if(connectDrag){e.preventDefault();e.stopImmediatePropagation();finishConnect(e,false)}
+ else if(connectFrom){e.preventDefault();e.stopImmediatePropagation();const id=endConnectMode();if(id)restoreTitleFocus(id)}
+ else if(selectedLink){e.preventDefault();e.stopImmediatePropagation();selectedLink=null;drawDependencies()}
+ else if(dependencyFocus)toggleDependencies(dependencyFocus)},true);
 function render(data=flow.snapshot()) {
  if(drag?.active)return;
  const active=document.activeElement,focusTask=active?.dataset?.id,focusAction=active?.dataset?.action,focusProposal=active?.dataset?.proposal,reviewAction=active?.dataset?.reviewAction;
@@ -416,6 +516,7 @@ function moreMenu(t,data){const off=data.readOnly||t.pending,card=$('board').que
   +menuItem('edit-title',esc(tr('edit_title')),{icon:editIcon,disabled:off})+menuItem('details',esc(tr(expanded===t.id?'hide_details':'more_details')),{icon:arrowIcon,disabled:t.pending})
   +menuItem('set-due',esc(tr(t.due?'change_deadline':'set_deadline')),{icon:calendarIcon,disabled:off})
   +(i>0?menuItem('move',esc(tr('move_up')),{value:i-1}):'')+(i>=0&&i<ids.length-1?menuItem('move',esc(tr('move_down')),{value:i+1}):'')
+  +menuItem('links',esc(tr('see_links')),{icon:linkIcon})+menuItem('connect',esc(tr('connect_to')),{icon:linkIcon,disabled:off})
   +menuItem('duplicate',esc(tr('duplicate')),{icon:copyIcon,disabled:off})
   +'<div class="menu-sep" role="separator"></div>'+menuItem('retire',esc(tr('retire_7ad0e0')),{kind:'danger',disabled:off})}
 // Groups already in use, none, or a new one typed in place.
@@ -432,7 +533,13 @@ function dueMenu(t,data){const off=data.readOnly||t.pending,opening=t.due?localV
  return '<p class="menu-title">'+esc(tr('deadline'))+'</p>'+duePresets().map(([key,d])=>menuItem('due','<span>'+esc(tr(key))+'</span><span class="menu-hint">'+esc(dayHint(d))+'</span>',{value:d.toISOString(),checked:t.due?new Date(t.due).getTime()===d.getTime():null,disabled:off})).join('')
   +'<div class="menu-form"><input type="datetime-local" step="60" class="menu-input" data-menu-input="due" value="'+esc(opening)+'" aria-label="'+esc(tr('exact_deadline'))+'"'+(off?' disabled':'')+'><button type="button" class="btn" data-menu-act="due-custom"'+(off?' disabled':'')+'>'+esc(tr('set'))+'</button></div><p class="menu-hint zone-hint">'+esc(zone)+'</p><p class="menu-error" role="alert" hidden></p>'
   +(t.due?'<div class="menu-sep" role="separator"></div>'+menuItem('due-clear',esc(tr('remove_deadline')),{disabled:off}):'')}
-const menuBodies={priority:priorityMenu,snooze:snoozeMenu,more:moreMenu,group:groupMenu,due:dueMenu};
+// A task's links in one list: what blocks it, what it blocks and what is related. Each one goes to
+// that task or is removed; a new requirement or dependent is the next task tapped.
+function linksMenu(t,data){const off=data.readOnly||t.pending,find=id=>data.tasks.find(x=>x.id===id),dependents=data.tasks.filter(r=>r.dependsOn.includes(t.id)).map(r=>r.id);
+ const section=(label,ids,kind)=>'<p class="menu-title">'+esc(tr(label))+'</p>'+(ids.map(find).filter(Boolean).map(o=>'<div class="menu-link">'+menuItem('link-go',relationTitle(o,data),{value:o.id,title:tr('go_to_task')})+(off?'':'<button type="button" class="menu-link-remove" data-menu-act="link-remove" data-value="'+kind+':'+o.id+'" aria-label="'+esc(tr('remove_link')+': '+o.title)+'" title="'+esc(tr('remove_link'))+'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>')+'</div>').join('')||'<p class="menu-note">'+esc(tr('links_none'))+'</p>');
+ return '<p class="menu-title task-name">'+esc(tr('links_of').replace('{title}',t.title))+'</p>'+section('links_blocked_by',t.dependsOn,'dep')+section('links_blocks',dependents,'dependent')+section('links_related',t.relatedTo,'rel')
+  +'<div class="menu-sep" role="separator"></div>'+menuItem('connect-needs',esc(tr('add_requirement')),{icon:linkIcon,disabled:off})+menuItem('connect',esc(tr('this_blocks')),{icon:linkIcon,disabled:off})}
+const menuBodies={priority:priorityMenu,snooze:snoozeMenu,more:moreMenu,group:groupMenu,due:dueMenu,dependencies:linksMenu};
 function openMenu(id,action,point){const data=flow.snapshot(),t=data.tasks.find(t=>t.id===id);if(!t||document.querySelector('dialog[open]'))return;closeMenu(false);
  const node=document.createElement('div');node.className='row-menu';node.setAttribute('role','menu');node.innerHTML=menuBodies[action](t,data);
  const sheet=sheetMedia.matches,scrim=sheet?document.createElement('div'):null;if(scrim){scrim.className='menu-scrim';document.body.append(scrim)}
@@ -456,6 +563,10 @@ function menuAct(b){const {id}=menu,t=task(id),act=b.dataset.menuAct,value=b.dat
  if(act==='details'){closeMenu(false);toggleExpand(id);return}
  if(act==='edit-title'){closeMenu(false);startTitleEdit(id);return}
  if(act==='set-due'){swapMenu('due');return}
+ if(act==='links'){swapMenu('dependencies');return}
+ if(act==='link-remove'){const [kind,other]=value.split(':');unlinkFrom(id,kind,other);swapMenu('dependencies');return}
+ if(act==='link-go'){closeMenu(false);goTo(value);return}
+ if(act==='connect'||act==='connect-needs'){closeMenu(false);startConnectMode(id,act==='connect'?'blocks':'needs');return}
  let due;if(act==='due-custom'&&!(due=customDue()))return;
  closeMenu();
  if(act==='group'){if((t.group||'')!==value)request('task_update',{uuid:id,group:value})}
@@ -486,7 +597,7 @@ document.addEventListener('keydown',e=>{if(!menu||!menu.node.contains(document.a
 addEventListener('scroll',e=>{if(!menu||menu.node.classList.contains('sheet')||!(e.target===document||e.target.contains?.($('board'))))return;const a=anchorOf(menu.id,menu.action),r=a?.getClientRects().length?a.getBoundingClientRect():null;
  if(menu.point||!r||r.bottom<0||r.top>innerHeight)closeMenu(false);else placeMenu(menu.node,a)},true);addEventListener('resize',()=>{if(!document.activeElement?.matches?.('.menu-input'))closeMenu(false)});
 $('board').addEventListener('contextmenu',e=>{const card=e.target.closest('.task');if(!card)return;if(drag){e.preventDefault();return}e.preventDefault();if(menu?.id===card.dataset.taskId&&performance.now()-menu.at<800)return;openMenu(card.dataset.taskId,'more',{x:e.clientX,y:e.clientY})});
-$('board').onclick=e=>{const sb=e.target.closest('[data-suggestion]');if(sb){const {suggestion,suggestionAction}=sb.dataset;bubbleFor=null;safely(async()=>{const started=performance.now();timed(flow.observe(await api('/api/suggestions/'+suggestion+'/'+suggestionAction,{})),started);await flow.refresh();render()});return}if(inlineClick(e))return;const b=e.target.closest('[data-action]');if(!b){const card=e.target.closest('.task');if(card&&!e.target.closest('.assistant-bubble'))toggleExpand(card.dataset.taskId);else if(dependencyFocus&&!card)toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='suggestion'){bubbleFor=bubbleFor===id?null:id;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true});return}if(['priority','snooze','more','group','due'].includes(action)){if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='dependencies')toggleDependencies(id);else if(action==='title'){const t=task(id);if(t&&!t.pending&&!flow.snapshot().readOnly)startTitleEdit(id);else toggleExpand(id)}else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
+$('board').onclick=e=>{const sb=e.target.closest('[data-suggestion]');if(sb){const {suggestion,suggestionAction}=sb.dataset;bubbleFor=null;safely(async()=>{const started=performance.now();timed(flow.observe(await api('/api/suggestions/'+suggestion+'/'+suggestionAction,{})),started);await flow.refresh();render()});return}if(inlineClick(e))return;const b=e.target.closest('[data-action]');if(!b){const card=e.target.closest('.task');if(card&&!e.target.closest('.assistant-bubble'))toggleExpand(card.dataset.taskId);else if(dependencyFocus&&!card)toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='suggestion'){bubbleFor=bubbleFor===id?null:id;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true});return}if(['priority','snooze','more','group','due'].includes(action)){if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='dependencies'){if(linesFit())toggleDependencies(id);else if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='title'){const t=task(id);if(t&&!t.pending&&!flow.snapshot().readOnly)startTitleEdit(id);else toggleExpand(id)}else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
 $('reviews').onclick=async e=>{const summary=e.target.closest('summary');if(summary){const d=summary.parentElement;if(d.open)collapsedProposals.add(d.dataset.proposal);else collapsedProposals.delete(d.dataset.proposal);}const b=e.target.closest('[data-review-action]');if(!b)return;const p=flow.snapshot().proposals.find(p=>p.id===b.dataset.proposal);if(!p)return;if(Number(b.dataset.generation)!==p.generation){notice(tr("the_review_changed_read_the_current_state"));return;}const action=b.dataset.reviewAction;if(action==='cancel'){await flow.cancel(p.id);notice(tr("change_canceled_the_responsibility_keeps_its"))}if(action==='retry')safely(()=>flow.retry(p.id));if(action==='continue')safely(()=>flow.commit(p.id,{generation:p.generation}))};
 $('reviews').addEventListener('toggle',e=>{if(!e.target.matches('details'))return;const id=e.target.dataset.proposal;if(e.target.open){collapsedProposals.delete(id);expandedProposal=id}else collapsedProposals.add(id)},true);
 $('undo').onclick=()=>{const id=$('undo').dataset.event,gesture=gestures.get(id);$('undo').hidden=true;safely(()=>gesture?flow.undoGesture(gesture):flow.undo(id))};
@@ -507,7 +618,7 @@ $('board').addEventListener('keydown',e=>{const handle=e.target.closest?.('.drag
 const gestures=new Map(),gestureOf=new Map();let gestureSerial=0,scrollFrame=0;
 const layoutTop=node=>{const parent=node.offsetParent;return (parent?parent.getBoundingClientRect().top+parent.clientTop:0)+node.offsetTop};
 $('board').addEventListener('pointerdown',e=>{
- if(!e.isPrimary||drag)return;const card=e.target.closest('.task[data-task-id]'),handle=e.target.closest('.drag-handle'),mouse=e.pointerType==='mouse';
+ if(!e.isPrimary||drag||connectDrag||connectFrom)return;const card=e.target.closest('.task[data-task-id]'),handle=e.target.closest('.drag-handle'),mouse=e.pointerType==='mouse';
  if(!card||card.classList.contains('saving')||flow.snapshot().readOnly||mouse&&e.button!==0)return;
  if(mouse&&!handle&&(!e.target.closest('.row-main')||e.target.closest('button,input,textarea,select,a,label,[contenteditable]')))return;
  if(handle&&mouse){e.preventDefault();handle.focus({preventScroll:true})}
@@ -669,7 +780,8 @@ class RemoteFlow{
   let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();if(view){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();await this.refresh();return r}
  // Undo of a drop puts the card back at once, then reverts every change the drop saved, newest first.
  async undoGesture(gesture){const started=performance.now(),back=gesture.before.tasks.find(t=>t.id===gesture.taskId);gestures.delete(gesture.id);
-  if(back){localOrder=null;this.data={...this.data,tasks:this.data.tasks.map(t=>t.id===back.id?back:t),taskOrder:gesture.before.taskOrder};render(this.data)}
+  const ids=new Set(gesture.taskIds||[gesture.taskId]),before=new Map(gesture.before.tasks.filter(t=>ids.has(t.id)).map(t=>[t.id,t]));
+  if(back){localOrder=null;this.data={...this.data,tasks:this.data.tasks.map(t=>before.get(t.id)||t),taskOrder:gesture.before.taskOrder};render(this.data)}
   this.sending++;this.barrier=this.started;const shown=performance.now(),sent=this.queue.then(async()=>{const undone=await deliver('/api/undo',{proposal_ids:gesture.proposals},this.data.revision,{refresh:false});return this.observe(undone.at(-1))});this.queue=sent.catch(()=>{});
   let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();this.digest='';this.tag='';await this.refresh().catch(()=>{});throw error}this.settle();await this.refresh();return r}
  async setEstimate(id,value,revision){return this.request('continuity_update',{uuid:id,remainingMinutes:value},undefined,revision)}
