@@ -312,7 +312,7 @@ class Connected:
             extra = continuation.get(row["uuid"], {})
             state = "done" if row["status"] == "completed" else "retired" if row["status"] == "deleted" else "snoozed" if row["status"] == "waiting" else "active" if row["focused"] else "todo"
             tasks.append({"id": row["uuid"], "title": row["title"], "state": state,
-                "priority": row["priority"], "group": row["group"], "createdAt": row["created_at"],
+                "priority": row["priority"], "group": row["group"], "createdAt": row["created_at"], "closedAt": row["closed_at"],
                 "due": row["due_at"], "until": row["snoozed_until"],
                 "blocked": bool(row['blockedBy']), "dependsOn":row['dependsOn'],"blockedBy":row['blockedBy'],
                 "relatedTo":[r['b'] if r['a']==row['uuid'] else r['a'] for r in related if row['uuid'] in (r['a'],r['b'])],

@@ -560,6 +560,7 @@ class Assistant:
             view.append({"uuid": uid, "title": row["description"], "status": status,
                          "priority": PUBLIC_PRIORITY.get(row.get("priority"), "medium"),
                          "group": row.get("project"), "created_at": stamp(parse(row["entry"])) if row.get("entry") else None,
+                         "closed_at": stamp(parse(row["end"])) if row.get("end") and row["status"] in ("completed", "deleted") else None,
                          "due_at": stamp(parse(row["due"])) if row.get("due") else None,
                          "snoozed_until": stamp(parse(row["wait"])) if row.get("wait") else None,
                          "focused": bool(row.get("start")) and row["status"]=="pending" if connected else uid==focused and bool(row.get("start")) and status=="pending",

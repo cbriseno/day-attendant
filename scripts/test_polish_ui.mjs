@@ -1,0 +1,30 @@
+await page.wait('[data-task-id]');
+const result=await page.eval(async()=>{
+ const assert=(ok,message)=>{if(!ok)throw Error(message)};
+ const select=(id,value)=>{const e=document.getElementById(id);e.value=value;e.dispatchEvent(new Event('change',{bubbles:true}))};
+ const frame=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+ document.querySelector('.closed-list').open=true;
+ assert(document.querySelectorAll('.closed-row').length===10,'Initial ten closed');
+ assert(document.querySelectorAll('.closed-day').length>=2,'Grouped by local closing day');
+ const before=performance.now();document.querySelector('[data-closed-more]').click();await frame();const paginationMs=performance.now()-before;
+ assert(document.querySelectorAll('.closed-row').length===20,'Next ten');
+ document.querySelector('[data-closed-more]').click();assert(document.querySelectorAll('.closed-row').length===23&&!document.querySelector('[data-closed-more]'),'Final page');
+ const rows=[...document.querySelectorAll('.closed-title')].map(n=>n.textContent);
+ assert(rows[0]==='Responsabilidad cerrada 23'&&rows.at(-1)==='Responsabilidad cerrada 1','Newest closure first');
+ assert(document.querySelector('.task-due.late'),'Overdue visible');
+ const late=document.querySelector('.task-due.late');assert(getComputedStyle(late).color==='rgb(180, 35, 44)','Overdue red');
+ const body=document.querySelector('.message:not(.user) .message-content');
+ assert(body.querySelector('strong')?.textContent==='Listo','Bold');assert(body.querySelector('em')?.textContent==='revisa','Emphasis');assert(body.querySelectorAll('li').length===2,'List');assert(body.querySelector('pre code')?.textContent.includes('<script>'),'Code');
+ assert(!body.querySelector('img,script,iframe,svg'),'No HTML injection');assert(body.querySelectorAll('a').length===1&&body.querySelector('a').protocol==='https:','Safe links only');
+ assert(body.textContent.includes('[No abrir](javascript:alert)'),'Unsafe link remains text');
+ select('theme-choice','dark');assert(getComputedStyle(document.body).backgroundColor==='rgb(30, 32, 36)','Demo dark background');assert(getComputedStyle(document.body).color==='rgb(211, 213, 217)','Demo dark ink');
+ select('locale-choice','es');assert(document.querySelector('.closed-note').textContent.includes('perfil'),'Spanish closed text');
+ select('locale-choice','en');assert(document.querySelector('.closed-note').textContent.includes('profile'),'English closed text');
+ // End-to-end reopen and undo via the real queue and SQLite; display changes on the next frame.
+ const reopen=document.querySelector('[data-reopen-id]'),id=reopen.dataset.reopenId,start=performance.now();reopen.click();await frame();const reopenShownMs=performance.now()-start;
+ assert(daySnapshot().tasks.find(t=>t.id===id).state==='todo','Reopen shown immediately');
+ await dayUI.flow.queue;await dayUI.flow.refresh();const saved=daySnapshot();assert(saved.tasks.find(t=>t.id===id).state==='todo','Reopen persisted');const reopenSavedMs=performance.now()-start;
+ await dayUI.flow.undo(saved.lastFact.id);assert(daySnapshot().tasks.find(t=>t.id===id).state!=='todo','Undo restores closed');
+ return {paginationMs,reopenShownMs,reopenSavedMs,closedCount:document.querySelectorAll('.closed-row').length,markdownSafe:true};
+});
+console.log(JSON.stringify(result));

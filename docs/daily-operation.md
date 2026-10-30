@@ -41,7 +41,8 @@ Unchanged task deadlines, calendar bounds, reminder pauses and availability time
 retain their exact stored instants, including seconds and the resolved occurrence
 of a repeated hour. Editing other fields or the profile timezone does not
 reinterpret them. Changed local dates use the profile timezone; the browser rejects
-missing or repeated local times and retains the draft for correction.
+missing or repeated local times and retains the draft for correction. Date fields also
+show a readable preview in the interface language beside the browser's native picker.
 
 ## Agent contract
 
@@ -85,6 +86,12 @@ Today with Order → Group shows foldable sections with completed/total progress
 (retired tasks excluded) and the next open deadline. Dragging into a section,
 including a folded one, changes that task's single group and offers Undo. The
 group menu on a task changes its color for every task in that group.
+
+Closed responsibilities show the latest ten, grouped by the closing day in the profile's
+timezone. Show 10 more reveals the next page; nothing is removed. Reopen and Undo preserve
+the recorded closing instant. Older records without a closing date say so instead of
+using their creation date. The conversation formats emphasis, lists, code and web/mail
+links; supplied HTML remains text.
 
 `board request` applies a valid change in the same call (phase `applied`) or rejects it
 with a stable code (`dependency_cycle`, `invalid_uuid`, `task_not_found`,

@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id),root=document.documentElement;
 let locale='en';try{locale=localStorage.getItem('day-attendant-locale')||'en'}catch{}if(!['en','es'].includes(locale))locale='en';
 const tr=key=>globalThis.dayTranslations[locale]?.[key]??globalThis.dayTranslations.en[key]??key;
 const known=code=>tr('error_'+code)!=='error_'+code;
-const errorText=(code,message)=>known(code)?tr('error_'+code):message;
+const errorText=(code,message)=>known(code)?tr('error_'+code):tr('the_request_could_not_be_completed');
 const formatLocale=()=>locale==='es'?'es-MX':'en-US';
 function translateChrome(){root.lang=locale;document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=tr(e.dataset.i18n));for(const attr of ['aria-label','placeholder','title'])document.querySelectorAll('[data-i18n-'+attr+']').forEach(e=>e.setAttribute(attr,tr(e.getAttribute('data-i18n-'+attr))));}
 let NOW=new Date();let zone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
@@ -13,6 +13,12 @@ const full=value=>new Intl.DateTimeFormat(formatLocale(),{weekday:'short',day:'n
 const short=value=>{const d=new Date(value);return (localValue(d).slice(0,10)===localValue(NOW).slice(0,10)?tr("today"):new Intl.DateTimeFormat(formatLocale(),{day:'numeric',month:'short',timeZone:zone}).format(d))+', '+new Intl.DateTimeFormat(formatLocale(),{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(d)};
 const localValue=d=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));return p.year+'-'+p.month+'-'+p.day+'T'+p.hour+':'+p.minute;};
 function parseLocal(raw){const base=Date.parse(raw+'Z');if(!Number.isFinite(base))return new Date(NaN);let guess=base;for(let i=0;i<4;i++){const wall=Date.parse(localValue(new Date(guess))+'Z');const delta=base-wall;if(!delta)break;guess+=delta;}return new Date(guess)}
+function localizedDates(container=document){
+ for(const input of container.querySelectorAll('input[type="datetime-local"]')){
+  let note=input.nextElementSibling;if(!note?.classList.contains('date-readable')){note=document.createElement('span');note.className='date-readable hint';note.id='date-note-'+crypto.randomUUID();input.after(note);input.setAttribute('aria-describedby',((input.getAttribute('aria-describedby')||'')+' '+note.id).trim())}
+  const update=()=>{const date=parseLocal(input.value);note.textContent=!input.value?'':!Number.isFinite(date.getTime())||localValue(date)!==input.value||ambiguous(date)?tr('provide_an_unambiguous_local_date_and_time_f'):full(date);note.hidden=!note.textContent};if(!input._dateUpdate){input._dateUpdate=update;input.addEventListener('input',update)}update();
+ }
+}
 const clockIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>';
 const chevronIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 const arrowIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
@@ -421,7 +427,7 @@ function render(data=flow.snapshot()) {
  if(active?.isConnected&&active!==document.activeElement&&$('board').contains(active))active.focus({preventScroll:true});
  restoreTyping(typing);rendering=false;
  showDependencies(data);
- const closed=data.tasks.filter(t=>['done','retired'].includes(t.state));$('closed-count').textContent=closed.length;$('closed').innerHTML=closed.map(t=>'<p class="closed-row"><span class="closed-title">'+esc(t.title)+'</span> · '+(t.state==='done'?tr("completed"):tr("retired"))+'<button type="button" class="link-button" data-reopen-id="'+t.id+'"'+(data.readOnly?' disabled':'')+' aria-label="'+esc(tr('reopen')+': '+t.title)+'">'+esc(tr('reopen'))+'</button></p>').join('');
+ renderClosed(data);
  // Only changes waiting for the person appear here: a retire from the conversation, or one an older
  // version left unapplied. Direct actions never wait.
  const shown=proposals.filter(p=>p.phase!=='evaluating');
@@ -443,6 +449,20 @@ function render(data=flow.snapshot()) {
  if(newlyRelevant)notice(tr("a_pending_change_needs_review"));
  if(menu){const t=data.tasks.find(t=>t.id===menu.id);if(!t||['done','retired'].includes(t.state))closeMenu(false);else anchorOf(menu.id,menu.action)?.setAttribute('aria-expanded','true')}
 }
+// Pagination affects presentation only; every closed responsibility stays in the profile.
+let closedLimit=10;
+function renderClosed(data=flow.snapshot()){
+ const rows=data.tasks.filter(t=>['done','retired'].includes(t.state)).sort((a,b)=>String(b.closedAt||'').localeCompare(String(a.closedAt||''))||a.id.localeCompare(b.id));
+ $('closed-count').textContent=rows.length;let day=null,html='';
+ for(const t of rows.slice(0,closedLimit)){
+  const valid=t.closedAt&&Number.isFinite(Date.parse(t.closedAt)),key=valid?localValue(new Date(t.closedAt)).slice(0,10):'';
+  if(key!==day){day=key;html+='<div class="closed-day">'+esc(valid?new Intl.DateTimeFormat(formatLocale(),{weekday:'short',day:'numeric',month:'long',year:'numeric',timeZone:zone}).format(new Date(t.closedAt)):tr('closed_date_unknown'))+'</div>'}
+  html+='<div class="closed-row"><div><s class="closed-title">'+esc(t.title)+'</s><div class="small">'+esc(tr(t.state==='done'?'completed':'retired'))+(valid?' · '+esc(new Intl.DateTimeFormat(formatLocale(),{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(new Date(t.closedAt))):'')+'</div></div><button type="button" class="link-button" data-reopen-id="'+esc(t.id)+'"'+(data.readOnly?' disabled':'')+' aria-label="'+esc(tr('reopen')+': '+t.title)+'">'+esc(tr('reopen'))+'</button></div>';
+ }
+ const left=Math.max(0,rows.length-closedLimit);
+ html+=rows.length?'<div class="closed-more">'+(left?'<button type="button" class="btn" data-closed-more>'+esc(tr('closed_more'))+'</button><span>'+esc(formatted('closed_remaining',{n:left}))+'</span>':'')+'</div><p class="closed-note">'+esc(tr('closed_preserved'))+'</p>':'<p class="empty">'+esc(tr('closed_empty'))+'</p>';
+ if($('closed')._html!==html){$('closed').innerHTML=html;$('closed')._html=html}
+}
 // Confirms the latest saved change, how long it took to show, and Undo when it can be undone.
 function announce(last,data){const t=data.tasks.find(t=>t.id===last.taskId),action=aliases[last.action]||last.action;
  const gesture=!last.undoOf&&gestureOf.get(last.proposalId);
@@ -452,7 +472,7 @@ function announce(last,data){const t=data.tasks.find(t=>t.id===last.taskId),acti
  const timing=timings.get(last.proposalId);timings.delete(last.proposalId);if(timing?.before&&last.undoable)undoViews.set(String(last.id),{...timing.before,taskId:last.taskId});const ms=timing&&action!=='order'?Math.max(1,Math.round((timing.shown??performance.now())-timing.started)):null;
  toast(text,{undo:last.undoable&&!last.undoOf?last.id:null,detail:[ms===null?'':formatted('toast_ms',{ms}),last.reviewStatus==='deferred'&&data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · ')})}
 async function request(action,payload,key,expectedRevision,gesture){return safely(async()=>{const p=await flow.request(action,payload,key,expectedRevision,gesture);lastRequestedProposal=p?.id||null;if(p?.phase==='unchanged')notice(p.superseded?.length?tr("the_pending_change_was_discarded_the_respons"):tr("there_are_no_new_changes_to_apply"));else if(p&&p.phase!=='applied')notice(tr('a_pending_change_needs_review'));return p;});}
-function openDialog(dialog,origin,id,action){origins.set(dialog,{origin,id,action});dialog.returnValue='cancel';dialog.showModal();}
+function openDialog(dialog,origin,id,action){localizedDates(dialog);origins.set(dialog,{origin,id,action});dialog.returnValue='cancel';dialog.showModal();}
 function restoreDialog(dialog){const saved=origins.get(dialog);origins.delete(dialog);requestAnimationFrame(()=>{if(document.querySelector('dialog[open]'))return;let target=saved?.origin;if(!target?.isConnected||!target.getClientRects().length)target=saved?.id?document.querySelector('[data-id="'+saved.id+'"][data-action="'+saved.action+'"]'):null;if(!target?.getClientRects().length)target=saved?.id?$('list-view'):$('chat-toggle');target.focus({preventScroll:true});})}
 // Preserve v3 outside-dismiss and keyboard behavior for all dialogs.
 function registerDialog(dialog){
@@ -581,7 +601,7 @@ $('board').addEventListener('keydown',e=>{const {field,id,search}=e.target.datas
 // Conflict buttons keep the focus where it is, so pressing one never commits the field first.
 $('board').addEventListener('mousedown',e=>{if(e.target.closest('[data-conflict],[data-pick]'))e.preventDefault()});
 document.addEventListener('keydown',e=>{if(e.key!=='Escape'||!expanded||menu||document.querySelector('dialog[open]')||titleEdit)return;if(!$('board').querySelector('[data-expand="'+expanded+'"]'))return;e.preventDefault();toggleExpand(expanded,false)});
-$('closed').onclick=e=>{const b=e.target.closest('[data-reopen-id]');if(b)request('task_reopen',{uuid:b.dataset.reopenId})};
+$('closed').onclick=e=>{if(e.target.closest('[data-closed-more]')){closedLimit+=10;renderClosed();return}const b=e.target.closest('[data-reopen-id]');if(b)request('task_reopen',{uuid:b.dataset.reopenId})};
 // One menu at a time and one level deep, never over a dialog: priority from its chip, snooze from the
 // clock, everything else from ⋯, a right click or a long press. On a phone it opens as a sheet at the bottom.
 let menu=null,swallowClick=false;
@@ -632,7 +652,7 @@ function linksMenu(t,data){const off=data.readOnly||t.pending,find=id=>data.task
   +'<div class="menu-sep" role="separator"></div>'+menuItem('connect-needs',esc(tr('add_requirement')),{icon:linkIcon,disabled:off})+menuItem('connect',esc(tr('this_blocks')),{icon:linkIcon,disabled:off})}
 const menuBodies={priority:priorityMenu,snooze:snoozeMenu,more:moreMenu,group:groupMenu,due:dueMenu,dependencies:linksMenu};
 function openMenu(id,action,point){const data=flow.snapshot(),t=data.tasks.find(t=>t.id===id);if(!t||document.querySelector('dialog[open]'))return;closeMenu(false);
- const node=document.createElement('div');node.className='row-menu';node.setAttribute('role','menu');node.innerHTML=menuBodies[action](t,data);
+ const node=document.createElement('div');node.className='row-menu';node.setAttribute('role','menu');node.innerHTML=menuBodies[action](t,data);localizedDates(node);
  const sheet=sheetMedia.matches,scrim=sheet?document.createElement('div'):null;if(scrim){scrim.className='menu-scrim';document.body.append(scrim)}
  node.classList.toggle('sheet',sheet);document.body.append(node);menu={id,action,node,scrim,point,at:performance.now()};
  const anchor=anchorOf(id,action);anchor?.setAttribute('aria-expanded','true');if(!sheet)placeMenu(node,anchor,point);
@@ -644,7 +664,7 @@ function placeMenu(node,anchor,point){const r=anchor?.getClientRects().length?an
 function closeMenu(restore=true){if(!menu)return;const {id,action,node,scrim}=menu;menu=null;node.remove();scrim?.remove();const anchor=anchorOf(id,action);anchor?.setAttribute('aria-expanded','false');
  if(restore)(anchor?.offsetWidth>1?anchor:anchorOf(id,'title'))?.focus({preventScroll:true})}
 // The deadline editor replaces the ⋯ list in the same place, so it stays one level deep.
-function swapMenu(kind){const t=task(menu.id);if(!t)return;menu.node.innerHTML=menuBodies[kind](t,flow.snapshot());if(!menu.node.classList.contains('sheet'))placeMenu(menu.node,null,{x:parseFloat(menu.node.style.left),y:parseFloat(menu.node.style.top)});(menu.node.querySelector('button:not([disabled])'))?.focus({preventScroll:true})}
+function swapMenu(kind){const t=task(menu.id);if(!t)return;menu.node.innerHTML=menuBodies[kind](t,flow.snapshot());localizedDates(menu.node);if(!menu.node.classList.contains('sheet'))placeMenu(menu.node,null,{x:parseFloat(menu.node.style.left),y:parseFloat(menu.node.style.top)});(menu.node.querySelector('button:not([disabled])'))?.focus({preventScroll:true})}
 function menuError(text){const node=menu?.node.querySelector('.menu-error');if(node){node.textContent=text;node.hidden=false}}
 function customDue(){const raw=menu.node.querySelector('[data-menu-input=due]').value;if(!raw)return menuError(tr('choose_a_date_and_time')),null;const d=parseLocal(raw);if(!Number.isFinite(d.getTime())||localValue(d)!==raw)return menuError(tr('that_local_date_or_time_does_not_exist_choos')),null;if(ambiguous(d))return menuError(tr('that_time_repeats_in_this_zone_clarification')),null;return d.toISOString()}
 function retireConfirm(){menu.node.innerHTML='<p class="menu-confirm">'+esc(tr('retire_this_responsibility_it_will_be_kept_s'))+'</p><div class="menu-confirm-actions"><button type="button" class="btn" data-menu-act="keep">'+esc(tr('cancel'))+'</button><button type="button" class="btn danger" data-menu-act="retire-yes">'+esc(tr('yes_retire'))+'</button></div>';if(!menu.node.classList.contains('sheet'))placeMenu(menu.node,null,{x:parseFloat(menu.node.style.left),y:parseFloat(menu.node.style.top)});menu.node.querySelector('button').focus({preventScroll:true})}
@@ -845,12 +865,12 @@ class RemoteFlow{
  async load(){const seq=++this.started,settled=!this.sending;this.loading++;try{const raw=await api('/api/state'+(this.tag?'?since='+encodeURIComponent(this.tag):''));if(seq<this.applied||!settled||seq<=this.barrier)return;this.applied=seq;if(this.offline){this.offline=false;notice(tr("connection_restored"))}if(raw.unchanged){if(raw.tag===this.tag)this.tick(raw.now);else this.tag='';return}this.apply(raw)}catch(error){this.offline=true;this.data.agent={...(this.data.agent||{}),connected:false};$('agent-state').textContent=tr("disconnected");delete $('agent-state').dataset.label;throw error}finally{this.loading--}}
  // An unchanged poll only advances the clock; calendar rows are redrawn when one of them ends.
  tick(now){const before=new Date(this.data.now),after=new Date(now);NOW=after;this.data.now=now;if(taskView==='focus'&&Math.floor(before/60000)!==Math.floor(after/60000))render(this.data);if((this.data.calendar_events||[]).some(e=>{const end=new Date(e.end_at);return end>before&&end<=after}))globalThis.dayDaily?.update(this.data)}
- apply(raw){if(!this.localeLoaded&&raw.profile){this.localeLoaded=true;locale=raw.profile.locale||'en';$('locale-choice').value=locale;translateChrome();refreshLabels()}NOW=new Date(raw.now);zone=raw.timezone||zone;const state={...raw,revision:Math.max(raw.revision,this.seen),mode:'connected',rawProposals:raw.proposals,proposals:raw.proposals.filter(p=>['evaluating','review','unavailable','stale','invalid'].includes(p.phase)).map(p=>({...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]})),suggestions:raw.suggestions||[],review:raw.review||{}};this.tag=raw.tag||'';this.data=state;reconcileDeliveries(raw);globalThis.dayDaily?.update(state);const digest=JSON.stringify([state.tasks,state.taskOrder,state.groupColors,state.orderSuggestion,state.agent.connected,state.context,state.proposals,state.lastFact,state.suggestions,state.revision,state.readOnly]);if(digest!==this.digest){this.digest=digest;render(state)}const md=JSON.stringify([state.messages,state.suggestions,state.conversation]);if(md!==this.messageDigest){this.messageDigest=md;renderMessages(state.messages,state)}const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};const agentError=state.agent.error&&errorText(state.agent.errorCode,state.agent.error);renderReview(state);$('bridge-state').hidden=state.agent.connected;if(!state.agent.connected)setText($('bridge-state'),agentError||tr('agent_temporarily_unavailable'));renderContextStatus(state);setText($('agent-details'),(state.agent.model||(state.profile?.harness==='claude'?'Claude Code':'Codex'))+' · '+(state.profile?.harness||'codex'));const stateTitle=agentError||$('agent-state').dataset.label||'';if($('agent-state').title!==stateTitle)$('agent-state').title=stateTitle;setText(document.querySelector('.date'),new Intl.DateTimeFormat(formatLocale(),{weekday:'long',day:'numeric',month:'long',timeZone:zone}).format(NOW));}
+ apply(raw){if(!this.localeLoaded&&raw.profile){this.localeLoaded=true;locale=raw.profile.locale||'en';$('locale-choice').value=locale;translateChrome();refreshLabels()}NOW=new Date(raw.now);zone=raw.timezone||zone;const state={...raw,revision:Math.max(raw.revision,this.seen),mode:'connected',rawProposals:raw.proposals,proposals:raw.proposals.filter(p=>['evaluating','review','unavailable','stale','invalid'].includes(p.phase)).map(p=>({...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]})),suggestions:raw.suggestions||[],review:raw.review||{}};this.tag=raw.tag||'';this.data=state;reconcileDeliveries(raw);globalThis.dayDaily?.update(state);const digest=JSON.stringify([state.tasks,state.taskOrder,state.groupColors,state.orderSuggestion,state.agent.connected,state.context,state.proposals,state.lastFact,state.suggestions,state.revision,state.readOnly]);if(digest!==this.digest){this.digest=digest;render(state)}const md=JSON.stringify([state.messages,state.suggestions,state.conversation]);if(md!==this.messageDigest){this.messageDigest=md;renderMessages(state.messages,state)}const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};const agentError=state.agent.error&&errorText(state.agent.errorCode,state.agent.error);renderReview(state);$('bridge-state').hidden=state.agent.connected;if(!state.agent.connected)setText($('bridge-state'),agentError||tr('agent_temporarily_unavailable'));renderContextStatus(state);setText($('agent-details'),(state.agent.model||(state.profile?.harness==='claude'?'Claude Code':'Codex')));const stateTitle=agentError||$('agent-state').dataset.label||'';if($('agent-state').title!==stateTitle)$('agent-state').title=stateTitle;setText(document.querySelector('.date'),new Intl.DateTimeFormat(formatLocale(),{weekday:'long',day:'numeric',month:'long',timeZone:zone}).format(NOW));}
  // A revision this page produced itself: the next change it sends already includes its own last one.
  observe(result){const revision=result?.result?.revision??result?.revision;if(Number.isInteger(revision)&&revision>this.seen){this.seen=revision;this.data.revision=Math.max(this.data.revision||0,revision)}return result}
  // Shows a direct change on screen at once; the service's answer and the next read reconcile it.
  preview(body){const p=body.payload,data=this.data;let tasks=data.tasks,context=data.context,colors=data.groupColors;
-  const moves={front_activate:{state:'active',until:null},front_todo:{state:'todo',until:null},task_done:{state:'done',until:null},front_retire:{state:'retired',until:null},task_reopen:{state:'todo',until:null}};
+  const moves={front_activate:{state:'active',until:null},front_todo:{state:'todo',until:null},task_done:{state:'done',until:null,closedAt:new Date().toISOString()},front_retire:{state:'retired',until:null,closedAt:new Date().toISOString()},task_reopen:{state:'todo',until:null,closedAt:null}};
   if(moves[body.action]||body.action==='task_snooze'||body.action==='task_update'){
    const fields=moves[body.action]||(body.action==='task_snooze'?{state:'snoozed',until:p.until}:Object.fromEntries(['title','priority','due','group'].filter(k=>k in p).map(k=>[k,k==='group'?p.group||null:p[k]])));
    if(!tasks.some(t=>t.id===p.uuid))return false;tasks=tasks.map(t=>t.id===p.uuid?{...t,...fields}:t)}
@@ -898,16 +918,43 @@ function renderReview(state){const r=state.review||{},connected=!!state.agent?.c
 function focusSuggestion(id){const data=flow.snapshot();if(currentSuggestion(id,data))bubbleFor=id;if($('chat-dialog').open){chatOpen=false;placeChat()}render();const card=$('board').querySelector('[data-task-id="'+id+'"]');card?.scrollIntoView({block:'center'});(card?.querySelector('[data-action="suggestion"]')||card?.querySelector('[data-action="title"]'))?.focus({preventScroll:true})}
 $('messages').addEventListener('click',e=>{const b=e.target.closest('[data-focus-task]');if(b){e.preventDefault();focusSuggestion(b.dataset.focusTask)}});
 function suggestionLog(s,state){const el=document.createElement('div');el.className='slog'+(s.current?'':' closed');const t=state.tasks.find(t=>t.id===s.taskId),link=document.createElement('a');link.href='#';link.dataset.focusTask=s.taskId;link.textContent='«'+(t?.title||'…')+'»';el.append(document.createTextNode(tr('suggestion_log_prefix')+' '),link,document.createTextNode(': '+suggestionText(s)+(s.current?'':' · '+tr('suggestion_handled'))));return el}
+// A small Markdown subset built only with DOM nodes. Raw HTML remains text; links can
+// only navigate to explicit web/mail addresses. Code never passes through inline parsing.
+function markdownInline(parent,text,depth=0){
+ if(depth>3){parent.append(document.createTextNode(text));return}
+ const tokens=/(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^\s)]+\))/g;let end=0;
+ for(const m of text.matchAll(tokens)){parent.append(document.createTextNode(text.slice(end,m.index)));const value=m[0];let node;
+  if(value[0]==='`'){node=document.createElement('code');node.textContent=value.slice(1,-1)}
+  else if(value[0]==='['){const parts=/^\[([^\]]+)\]\(([^)]+)\)$/.exec(value);let url;try{url=new URL(parts[2])}catch{}
+   if(!url||!['https:','http:','mailto:'].includes(url.protocol)){parent.append(document.createTextNode(value));end=m.index+value.length;continue}
+   node=document.createElement('a');node.href=url.href;node.rel='noopener noreferrer';node.target='_blank';markdownInline(node,parts[1],depth+1)
+  }else{const strong=value.startsWith('**')||value.startsWith('__');node=document.createElement(strong?'strong':'em');markdownInline(node,value.slice(strong?2:1,strong?-2:-1),depth+1)}
+  parent.append(node);end=m.index+value.length;
+ }
+ parent.append(document.createTextNode(text.slice(end)));
+}
+function renderMarkdown(parent,text){
+ const lines=String(text||'').replace(/\r\n?/g,'\n').split('\n');let paragraph=null,list=null,code=null;
+ for(const line of lines){
+  if(/^\s*```/.test(line)){paragraph=null;list=null;if(code){code=null}else{const pre=document.createElement('pre');code=document.createElement('code');pre.append(code);parent.append(pre)}continue}
+  if(code){code.append(document.createTextNode((code.childNodes.length?'\n':'')+line));continue}
+  if(!line.trim()){paragraph=null;list=null;continue}
+  const bullet=/^\s*(?:([-+*])|\d+\.)\s+(.+)$/.exec(line),heading=/^#{1,6}\s+(.+)$/.exec(line),quote=/^>\s?(.*)$/.exec(line);
+  if(bullet){paragraph=null;const kind=bullet[1]?'ul':'ol';if(!list||list.localName!==kind){list=document.createElement(kind);parent.append(list)}const li=document.createElement('li');markdownInline(li,bullet[2]);list.append(li);continue}
+  list=null;if(heading||quote){paragraph=null;const node=document.createElement(heading?'h3':'blockquote');markdownInline(node,(heading||quote)[1]);parent.append(node);continue}
+  if(!paragraph){paragraph=document.createElement('p');parent.append(paragraph)}else paragraph.append(document.createElement('br'));markdownInline(paragraph,line);
+ }
+}
 function renderMessages(messages,state=flow.snapshot()){const box=$('messages'),oldScroll=box.scrollTop,nearEnd=box.scrollHeight-box.clientHeight-box.scrollTop<70;box.replaceChildren();
  // The log of suggestions shares the conversation's time line and its /clear boundary.
  const since=state.conversation?.clearedAt||'',notes=(state.suggestions||[]).filter(s=>s.createdAt>since);
  const entries=[...messages.map(m=>({at:m.at,message:m})),...notes.map(s=>({at:s.createdAt,note:s}))].sort((a,b)=>String(a.at).localeCompare(String(b.at)));
- for(const {message:item,note} of entries){if(note){box.append(suggestionLog(note,state));continue}const el=document.createElement('div');el.className='message'+(item.role==='user'?' user':'');el.dataset.key=item.key;const h=document.createElement('strong');h.textContent=item.role==='user'?tr("you"):item.status==='incomplete'?tr("assistant_incomplete_response"):tr("assistant");const p=document.createElement('p');p.textContent=messageText(item);el.append(h,p);if(item.role==='user'&&item.status==='incomplete'){const retry=document.createElement('button');retry.type='button';retry.className='btn';retry.textContent=tr('retry_reply');retry.onclick=()=>safely(async()=>{await api('/api/chat/retry',{key:item.key});await flow.refresh()});el.append(retry)}if(item.status==='pending'){const status=document.createElement('p');status.className='small muted';status.textContent=tr("the_assistant_is_responding");el.append(status)}box.append(el)}if(nearEnd)box.scrollTop=box.scrollHeight;else box.scrollTop=oldScroll;const guidance=messages.findLast(m=>{try{return JSON.parse(m.data||'null')?.kind==='context_notice'}catch{return false}});if(guidance){const signature=guidance.id+':'+guidance.status+':'+guidance.text;if(signature!==lastGuidanceNotice){lastGuidanceNotice=signature;notice(messageText(guidance))}}}
+ for(const {message:item,note} of entries){if(note){box.append(suggestionLog(note,state));continue}const el=document.createElement('div');el.className='message'+(item.role==='user'?' user':'');el.dataset.key=item.key;const h=document.createElement('strong');h.className='message-author';h.textContent=item.role==='user'?tr("you"):item.status==='incomplete'?tr("assistant_incomplete_response"):tr("assistant");const p=document.createElement('div');p.className='message-content';if(item.role==='assistant')renderMarkdown(p,messageText(item));else p.textContent=messageText(item);el.append(h,p);if(item.role==='user'&&item.status==='incomplete'){const retry=document.createElement('button');retry.type='button';retry.className='btn';retry.textContent=tr('retry_reply');retry.onclick=()=>safely(async()=>{await api('/api/chat/retry',{key:item.key});await flow.refresh()});el.append(retry)}if(item.status==='pending'){const status=document.createElement('p');status.className='small muted';status.textContent=tr("the_assistant_is_responding");el.append(status)}box.append(el)}if(nearEnd)box.scrollTop=box.scrollHeight;else box.scrollTop=oldScroll;const guidance=messages.findLast(m=>{try{return JSON.parse(m.data||'null')?.kind==='context_notice'}catch{return false}});if(guidance){const signature=guidance.id+':'+guidance.status+':'+guidance.text;if(signature!==lastGuidanceNotice){lastGuidanceNotice=signature;notice(messageText(guidance))}}}
 // Chat receipts point here: open the pending change where it can be decided.
 function showProposal(id){collapsedProposals.delete(id);expandedProposal=id;render();const reveal=()=>{const d=[...$('reviews').querySelectorAll('details')].find(d=>d.dataset.proposal===id);if(!d)return;d.open=true;d.scrollIntoView({block:'nearest'});d.querySelector('summary').focus({preventScroll:true})};if(!$('chat-dialog').open)return reveal();$('chat-dialog').addEventListener('close',()=>requestAnimationFrame(reveal),{once:true});chatOpen=false;placeChat()}
 // Only what the harness reported on the latest reply of the selected model; nothing is estimated.
 function contextUsage(state){for(const message of [...(state.messages||[])].reverse()){if(message.role!=='assistant')continue;let data;try{data=JSON.parse(message.data||'null')}catch{continue}const usage=data?.usage;if(!usage||!Number.isInteger(usage.contextTokens))continue;return data.provider===state.profile?.harness&&data.model===state.agent?.model?usage:null}return null}
-function renderContextStatus(state){const node=$('context-status'),usage=contextUsage(state),count=n=>new Intl.NumberFormat(formatLocale(),{notation:'compact',maximumFractionDigits:1}).format(n);let text=tr('context_no_data'),tight=false;
+function renderContextStatus(state){const node=$('context-status'),usage=contextUsage(state),count=n=>new Intl.NumberFormat(formatLocale(),{notation:'compact',maximumFractionDigits:1}).format(n);let text='',tight=false;node.hidden=!usage;
  if(usage&&Number.isInteger(usage.contextWindow)&&usage.contextWindow>0){const free=Math.max(0,Math.floor(100*(usage.contextWindow-usage.contextTokens)/usage.contextWindow));tight=free<20;text=tr('context_window_status').replace('{used}',count(usage.contextTokens)).replace('{window}',count(usage.contextWindow)).replace('{free}',new Intl.NumberFormat(formatLocale(),{style:'percent'}).format(free/100))}
  else if(usage)text=tr('context_used_no_window').replace('{used}',count(usage.contextTokens));
  if(node.textContent!==text)node.textContent=text;node.classList.toggle('tight',tight);const title=usage?tr('context_status_hint'):'';if(node.title!==title)node.title=title}
@@ -928,5 +975,5 @@ safely(boot);
 function poll(){safely(()=>flow.poll()).finally(()=>setTimeout(poll,document.hidden?5000:900))}
 setTimeout(poll,900);document.addEventListener('visibilitychange',()=>{if(!document.hidden)safely(()=>flow.poll())});
 globalThis.daySnapshot=()=>structuredClone(flow.snapshot());
-globalThis.dayUI={api,deliver,flow,openDialog,expandTask:id=>toggleExpand(id,true),editTitle:startTitleEdit,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome,formatted,creates,showProposal};
+globalThis.dayUI={api,deliver,flow,openDialog,expandTask:id=>toggleExpand(id,true),editTitle:startTitleEdit,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome,localizedDates,formatted,creates,showProposal};
 })();
