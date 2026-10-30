@@ -296,10 +296,16 @@ function orderNote(data){
 const sectionIds=section=>[...$('board').querySelectorAll('.task')].filter(c=>c.dataset.section===section).map(c=>c.dataset.taskId);
 // The visible order applies at once; saving waits for a pause and keeps the revision the person saw.
 const currentOrder=(data=flow.snapshot())=>globalThis.dayOrdering.manualIds(data.tasks.filter(t=>!['done','retired'].includes(t.state)),localOrder||data.taskOrder||[]);
-function placeOrder(id,ids,to){return setOrder(globalThis.dayOrdering.move(currentOrder(),ids,id,to))}
+function placeOrder(id,ids,to){return setOrder(globalThis.dayOrdering.move(currentOrder(),ids,id,to),id)}
 // A new order leaves at once, before it is drawn; moves made while one is on its way follow it as one change.
-function setOrder(next){const data=flow.snapshot(),order=currentOrder(data);if(next.join()===order.join())return false;if(localOrder===null)orderBase=data.revision;localOrder=next;saveOrder();render();return true}
-async function saveOrder(){if(orderSaving)return;const order=localOrder;if(!order)return;orderSaving=true;try{const p=await flow.request('order_update',{order},undefined,orderBase);orderBase=p?.result?.revision??flow.snapshot().revision}catch(error){localOrder=null;orderBase=null;notice(error.message);render();return}finally{orderSaving=false}if(localOrder===order){localOrder=null;orderBase=null;render()}else saveOrder()}
+// Moves close together are one change to undo, however many saves they took; Undo puts the board back at once.
+// The limit is what the service undoes together.
+let orderGesture=null;
+function orderMove(id,data,order){const now=performance.now();let g=orderGesture;
+ if(!g||gestures.get(g.id)!==g||now-g.moved>350||g.proposals.length>=10){g=orderGesture={id:'gesture:'+(++gestureSerial),taskId:id,taskIds:[],notes:[],proposals:[],before:{tasks:data.tasks,taskOrder:order},started:now};gestures.set(g.id,g);if(gestures.size>20)gestures.delete(gestures.keys().next().value)}
+ g.moved=now}
+function setOrder(next,id){const data=flow.snapshot(),order=currentOrder(data);if(next.join()===order.join())return false;orderMove(id,data,order);if(localOrder===null)orderBase=data.revision;localOrder=next;saveOrder();render();return true}
+async function saveOrder(){if(orderSaving)return;const order=localOrder;if(!order)return;orderSaving=true;try{const p=await flow.request('order_update',{order},undefined,orderBase,orderGesture);orderBase=p?.result?.revision??flow.snapshot().revision}catch(error){localOrder=null;orderBase=null;notice(error.message);render();return}finally{orderSaving=false}if(localOrder===order){localOrder=null;orderBase=null;render()}else saveOrder()}
 // Blocked and blocking cards name their counterparts. On a wide board the chip highlights those
 // direct links; on a phone, where lines do not fit, it opens the task's links as a sheet.
 const titles=(ids,data)=>ids.map(id=>data.tasks.find(r=>r.id===id)?.title||id).join(', ');
@@ -503,7 +509,7 @@ function renderClosed(data=flow.snapshot()){
 // Confirms the latest saved change, how long it took to show, and Undo when it can be undone.
 function announce(last,data){const t=data.tasks.find(t=>t.id===last.taskId),action=aliases[last.action]||last.action,canceled=last.action==='event_cancel'&&(timings.get(last.proposalId)?.before?.calendar_events||[]).find(e=>e.uuid===last.taskId);
  const gesture=!last.undoOf&&gestureOf.get(last.proposalId);
- if(gesture){toast(gesture.notes.join(' · ')||tr('order_saved'),{undo:gesture.id,detail:[formatted('toast_ms',{ms:Math.max(1,Math.round(gesture.shown-gesture.started))}),gesture.notes.length&&data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · ')});return}
+ if(gesture){toast(gesture.notes.join(' · ')||tr('order_saved'),{undo:gesture.id,detail:gesture.notes.length?[formatted('toast_ms',{ms:Math.max(1,Math.round(gesture.shown-gesture.started))}),data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · '):''});return}
  const text=last.undoOf?tr('change_undone'):action==='order'?tr('order_saved'):last.action==='event_cancel'?[tr('event_canceled'),canceled?.title].filter(Boolean).join(' · '):action==='snooze'&&t?.until?tr('snoozed_until').replace('{time}',short(t.until))+' · '+t.title:[action==='declaration'&&t?tr('details_saved'):actionLabel[action]||tr(last.action),t?.title||(action==='declaration'?tr('my_context'):'')].filter(Boolean).join(' · ');
  // The time shown is from the click until the change was on screen.
  const timing=timings.get(last.proposalId);timings.delete(last.proposalId);if(timing?.before&&last.undoable)undoViews.set(String(last.id),{...timing.before,taskId:last.taskId});const ms=timing&&action!=='order'?Math.max(1,Math.round((timing.shown??performance.now())-timing.started)):null;
@@ -858,7 +864,7 @@ function dropCard(d){
  if(orderView==='group'&&(heading||lane.dataset.group!==undefined)){const group=lane.dataset.group??heading.dataset.group;if((t.group||'').trim().toLocaleLowerCase()!==group.toLocaleLowerCase()){patch.group=group;notes.push(group?tr('drop_group').replace('{group}',group):tr('drop_no_group'))}}
  if(Object.keys(patch).length)changes.push(['task_update',{uuid:t.id,...patch}]);
  const order=currentOrder(data),next=['manual','priority','group'].includes(orderView)?globalThis.dayOrdering.place(order,t.id,before?.id,after?.id):order,reordered=next.join()!==order.join();
- if(!changes.length)return setOrder(next);
+ if(!changes.length)return setOrder(next,t.id);
  // The new place is set before the changes show, so the card stays exactly where it was let go.
  const gesture={id:'gesture:'+(++gestureSerial),taskId:t.id,notes,proposals:[],before:{tasks:data.tasks,taskOrder:data.taskOrder},started:performance.now()};
  gestures.set(gesture.id,gesture);if(gestures.size>20)gestures.delete(gestures.keys().next().value);

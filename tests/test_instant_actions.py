@@ -224,6 +224,14 @@ Connected(app).undo(int(sys.argv[2]),'death-undo-'+sys.argv[3])
         with self.assertRaises(AssistantError) as error: self.board.request('front_todo', {'uuid': c, 'order': [c, c]}, 'bad-order')
         self.assertEqual(error.exception.code, 'invalid_order')
 
+    def test_moves_made_together_undo_together(self):
+        a, b, c = self.add('A'), self.add('B'), self.add('C')
+        self.apply('order_update', {'order': [a, b, c]})
+        first = self.board.request('order_update', {'order': [b, a, c]}, 'burst-first')
+        second = self.board.request('order_update', {'order': [b, c, a]}, 'burst-second')
+        self.board.undo_proposals([first['id'], second['id']], 'undo-burst')
+        self.assertEqual(self.board.snapshot()['taskOrder'], [a, b, c])
+
     def test_a_retry_after_a_failed_apply_clears_its_error_and_finishes(self):
         uid = self.add('A')
         self.app.fault = lambda point: (_ for _ in ()).throw(AssistantError('interrupted', 'Interrupted.')) if point == 'before_commit' else None

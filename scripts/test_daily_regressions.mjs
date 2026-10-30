@@ -51,6 +51,7 @@ const server=createServer(async(req,res)=>{
     // The instant group records each change as an undoable fact, as the service does.
     const proposalId=randomUUID();proposalsBefore.set(proposalId,{id:t?.id,before:beforeTask,order:beforeOrder});
     if(state.instant&&canceledEvent){const fact=++facts;undoable.set(fact,{event:canceledEvent});state.lastFact={id:fact,proposalId,action:body.action,taskId:p.uuid,undoable:true,undoOf:null,reviewStatus:'deferred'}}
+    if(state.orderFacts&&body.action==='order_update'){const fact=++facts;undoable.set(fact,{order:beforeOrder});state.lastFact={id:fact,proposalId,action:body.action,taskId:null,undoable:true,undoOf:null,reviewStatus:'not_required'}}
     if(state.instant&&(t||body.action==='group_color_update')){const fact=++facts;undoable.set(fact,t?{id:t.id,before:beforeTask}:{group:p.group.trim().toLowerCase(),before:beforeColors[p.group.trim().toLowerCase()]});state.lastFact={id:fact,proposalId,action:body.action,taskId:t?.id,undoable:true,undoOf:null,reviewStatus:'deferred'}}
     state.revision++;
     data={id:proposalId,key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[],result:{revision:state.revision}};proposalReplied=Date.now();
@@ -622,6 +623,14 @@ try{
   await settle(()=>undos.at(-1)?.proposal_ids?.length===1,'drop undo');assert.equal(c.priority,'high');await wait(`daySnapshot().revision>=${state.revision}`);
   assert.ok(dropped.key);
   assert.ok(requests.slice(quiet,quiet+2).every(r=>r.action==='order_update'));
+  // Moves close together undo as one, however many saves they took, and the board goes back at once.
+  await fill('order-choice','manual');state.orderFacts=true;const placed=await evaluate(lane),moved=placed.at(-1),sentBefore=requests.length;
+  await evaluate(`(()=>{const press=()=>document.querySelector(${JSON.stringify(handle(moved))}).dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}));press();press();return true})()`);
+  await settle(()=>requests.length===sentBefore+2,'both moves saved');assert.deepEqual(requests.slice(-2).map(r=>r.action),['order_update','order_update']);
+  assert.equal((await evaluate(lane)).indexOf(moved),placed.length-3);
+  await wait("document.getElementById('status').textContent==='Order saved'&&!document.getElementById('undo').hidden");
+  await click('#undo');assert.deepEqual(await evaluate(lane),placed);
+  await settle(()=>undos.at(-1)?.proposal_ids?.length===2,'burst undo');await wait(`daySnapshot().revision>=${state.revision}`);state.orderFacts=false;
   // The suggestion is fetched once on request and reused across view switches.
   await fill('order-choice','suggested');assert.match(await evaluate("document.getElementById('order-note').textContent"),/No suggestion yet/);
   await click('#suggest-order');await settle(()=>suggestions.length===1,'suggestion request');await refresh();
@@ -629,7 +638,7 @@ try{
   assert.match((await texts('.lane[data-state="todo"] .suggestion-reason'))[0],/^1Controlled reason for /);
   const note=await evaluate("document.getElementById('order-note').textContent");assert.match(note,/Assistant suggestion from/);assert.match(note,/Controlled suggestion message\./);
   for(const view of ['priority','group','suggested','newest','suggested'])await fill('order-choice',view);
-  assert.equal(suggestions.length,1);assert.equal(requests.length,quiet+3);
+  assert.equal(suggestions.length,1);assert.equal(requests.length,quiet+5);
   state.orderSuggestion.stale=true;state.revision++;await refresh();assert.match(await evaluate("document.getElementById('order-note').textContent"),/Tasks changed since then/);
   // Localized copy; stored group labels are shown as typed.
   await fill('locale-choice','es');await fill('order-choice','group');
@@ -728,6 +737,8 @@ try{
   // A calendar addition shows before the answer; the next read holds what the service saved.
   await evaluate("(()=>{dayUI.flow.preview({action:'event_add',payload:{title:'New commitment',start:'2099-01-01T10:00:00Z',end:'2099-01-01T11:00:00Z'}});return true})()");
   assert.match(await evaluate("document.getElementById('calendar-area').textContent"),/New commitment/);
+  // A row the service has not saved yet offers nothing to act on.
+  assert.deepEqual(await evaluate("[...[...document.querySelectorAll('#calendar-area .daily-row')].find(r=>r.textContent.includes('New commitment')).querySelectorAll('button')].map(b=>b.disabled)"),[true,true]);
   await evaluate("(()=>{dayUI.flow.tag='';return dayUI.flow.refresh().then(()=>true)})()");
   assert.doesNotMatch(await evaluate("document.getElementById('calendar-area').textContent"),/New commitment/);
   assert.match(await evaluate("document.getElementById('review-strip').textContent"),/^Everything is saved · reviewed .+\d\d:\d\d$/);
