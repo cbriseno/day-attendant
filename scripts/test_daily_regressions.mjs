@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact','snooze','drag','groups','quick'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies','proposals','ordering','refresh','instant','compact','snooze','drag','groups','quick'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
@@ -385,7 +385,7 @@ try{
   a.state='todo';state.revision++;await refresh();await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
   console.log('Dependency indicator regressions passed');
  }
- if(group==='all'){
+ if(group==='all'||group==='proposals'){
  // Links are added from a picker in the expanded row and removed with ×; unrequested links are kept.
  for(const [action,kind,key] of [['dependency_update','dep','dependsOn'],['related_update','rel','relatedTo']]){
   for(const t of [a,b,c])t.dependsOn=[];target[key]=[a.id];state.revision++;await refresh();await expand();
@@ -417,7 +417,7 @@ try{
  const phases=['applied','unavailable','stale','invalid','review','canceled','superseded','unchanged'];state.proposals.forEach((p,i)=>p.phase=phases[i]);await refresh();
  receipt=await evaluate("document.querySelector('.receipt-list').textContent");for(const label of ['Saved','Item 2 · not created yet: an earlier version left it waiting. Decide in Needs your decision.','Item 3 · not created yet: the responsibility changed. Decide again in Needs your decision.','Item 4 · not created: it could not be applied as asked. See Needs your decision.','Item 5 · not created yet: it waits for your confirmation in Needs your decision.','Canceled','Replaced','Unchanged','2 of 8 saved · 4 waiting for your decision.','Undo this change'])assert.ok(receipt.includes(label),receipt);
  assert.equal(await evaluate("document.querySelectorAll('.receipt-list .link-button').length"),5);
- for(const [phase,label] of [['ready','Ready to save'],['admitted','Admitted; check recovery']]){state.proposals[0].phase=phase;await refresh();assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes(label))}
+ for(const [phase,label] of [['ready','Ready to save'],['admitted','Saving; check recovery']]){state.proposals[0].phase=phase;await refresh();assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes(label))}
  state.proposals[0].phase='applied';
  state.messages.push({id:3,key:'question',role:'assistant',text:'Please clarify.',status:'completed',data:JSON.stringify({proposal_ids:[],unprocessed:['Unscheduled request'],uncertainties:['Who is the person?']})});await refresh();
  assert.match(await evaluate("document.getElementById('messages').textContent"),/Unscheduled request.*Who is the person/s);
@@ -499,7 +499,7 @@ try{
  state.now='2025-10-28T12:00:11Z';await refresh();assert.equal(await evaluate("document.querySelectorAll('#calendar-area .daily-row').length"),12);
  await click('#calendar-area .daily-row:last-child .link-button');assert.equal(await evaluate("document.getElementById('capture-title').value"),'Commitment 13');await fill('capture-title','Edited thirteenth');await submit('capture-dialog');await saved('capture-dialog');assert.equal(state.calendar_events.at(-1).title,'Edited thirteenth');
  await wait("document.querySelector('#calendar-area .daily-row:last-child .link-button').textContent==='Edited thirteenth'");
- await click('#calendar-area .daily-row:last-child .btn');await wait("!document.getElementById('calendar-area').textContent.includes('Edited thirteenth')");assert.equal(state.calendar_events.length,12);
+ await click('#calendar-area .daily-row:last-child .btn');await wait("!document.getElementById('calendar-area').textContent.includes('Edited thirteenth')");await serverWait(()=>state.calendar_events.length===12);
  state.timezone='America/Edmonton';state.profile.timezone=state.timezone;await refresh();
  assert.equal(await evaluate("new Date().getTimezoneOffset()"),0);
  for(const date of ['2025-11-02T07:30:00Z','2025-11-02T08:30:00Z'])assert.equal(await evaluate(`dayUI.ambiguous(new Date(${JSON.stringify(date)}))`),true);
@@ -529,6 +529,7 @@ try{
   assert.deepEqual(await evaluate(`[...document.querySelectorAll(${JSON.stringify(row('.meta-grid dd'))})].slice(0,3).map(e=>e.textContent)`),['chat','Ana','Referencia literal']);await collapse();
  }
  console.log('Daily UI regressions passed: snapshot revisions, capture outcomes, dates, calendar and localization');
+ state.timezone='America/Edmonton';await refresh();
  }
  if(group==='all'||group==='refresh'){
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -561,9 +562,9 @@ try{
  if(group==='all'||group==='ordering'){
   // Views and drags only rearrange the display: no priority, group or state change and no model call.
   await rpc('Emulation.setDeviceMetricsOverride',{width:1280,height:2400,deviceScaleFactor:1,mobile:false},sessionId);
-  Object.assign(target,{title:'Target task',state:'todo',priority:'medium',group:'Office move',createdAt:'2025-10-20T00:00:00Z'});
-  Object.assign(a,{state:'todo',priority:'high',group:'Home',createdAt:'2025-10-21T00:00:00Z'});
-  Object.assign(b,{state:'todo',priority:'low',group:null,createdAt:'2025-10-22T00:00:00Z'});
+  Object.assign(target,{title:'Target task',state:'todo',priority:'medium',group:'Office move',due:null,createdAt:'2025-10-20T00:00:00Z'});
+  Object.assign(a,{state:'todo',priority:'high',group:'Home',due:null,createdAt:'2025-10-21T00:00:00Z'});
+  Object.assign(b,{state:'todo',priority:'low',group:null,due:null,createdAt:'2025-10-22T00:00:00Z'});
   Object.assign(c,{state:'todo',priority:'high',group:'office move',createdAt:'2025-10-23T00:00:00Z'});
   state.taskOrder=[];state.orderSuggestion=null;state.readOnly=false;state.agent={connected:true,model:'controlled'};state.instant=true;state.revision++;
   await close();await fill('locale-choice','en');await fill('order-choice','priority');await refresh();
@@ -721,7 +722,7 @@ try{
 
  if(group==='all'||group==='instant'){
   // Direct actions show at once with their time and Undo; the assistant's later look leaves a mark.
-  await fill('locale-choice','en');await close();Object.assign(state,{instant:true,proposals:[],messages:[],review:{pending:0,running:false,status:'completed',finishedAt:state.now}});
+  await fill('locale-choice','en');await fill('order-choice','priority');await close();Object.assign(state,{instant:true,proposals:[],messages:[],review:{pending:0,running:false,status:'completed',finishedAt:state.now}});
   for(const t of [a,b,c])Object.assign(t,{state:'todo',dependsOn:[],blockedBy:[],blocked:false});state.revision++;await refresh();
   const toast=()=>evaluate("({show:document.getElementById('toast').classList.contains('show'),text:document.getElementById('status').textContent,detail:document.getElementById('toast-detail').textContent,undo:!document.getElementById('undo').hidden})");
   const lane=id=>evaluate(`document.querySelector('#board [data-task-id="${id}"]')?.closest('.lane')?.dataset.state`);
@@ -833,7 +834,7 @@ try{
   const longTitle='Send the quarterly sales report to management with the changes Laura asked for on Tuesday and the October figures';
   const extra=Array.from({length:16},(_,i)=>({...task(i===3?longTitle:'Row '+(i+1)),priority:['high','medium','low'][i%3],group:i%2?'Home':null,due:i%4?null:'2025-10-29T18:00:00Z'}));
   const kept=state.tasks;await close();await fill('locale-choice','en');await fill('order-choice','priority');
-  for(const t of [target,a,b,c])Object.assign(t,{state:'todo',dependsOn:[],blockedBy:[],blocked:false,group:null,priority:'medium'});
+  for(const t of [target,a,b,c])Object.assign(t,{state:'todo',dependsOn:[],blockedBy:[],blocked:false,group:null,priority:'medium',due:null});
   Object.assign(state,{tasks:[...kept,...extra],readOnly:false,proposals:[],suggestions:[],messages:[],calendar_events:[],orderSuggestion:null,taskOrder:[]});state.revision++;
   const fully=`(async()=>{${still}return [...document.querySelectorAll('#board .task')].filter(c=>{const r=c.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}).length})()`;
   await size(1440,900);await refresh();
