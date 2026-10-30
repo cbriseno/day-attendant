@@ -76,6 +76,14 @@ with tempfile.TemporaryDirectory(prefix='day-focus-ui-') as state:
         report['phone'] = json.loads(axi('run', script="""
 await page.eval(()=>{const e=document.querySelector('#locale-choice');e.value='en';e.dispatchEvent(new Event('change',{bubbles:true}))});
 await page.click('#board-view');await page.click('#focus-view');
+await page.click('.focus-item [data-action="priority"]');
+await page.eval(()=>{if(!document.querySelector('.row-menu.sheet'))throw Error('phone priority sheet');document.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));if(document.activeElement.dataset.menuAct!=='priority')throw Error('keyboard navigation');document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));if(document.querySelector('.row-menu')||document.activeElement.dataset.action!=='priority')throw Error('Escape restores priority focus')});
+await page.click('.focus-item [data-action="priority"]');
+await page.click('[data-menu-act="priority"][data-value="high"]');
+await page.eval(async()=>{const id=document.querySelector('.focus-item').dataset.taskId;for(let i=0;i<150;i++){const data=(await(await fetch('/api/state')).json()).data;if(data.tasks.find(t=>t.id===id).priority==='high')return;await new Promise(r=>setTimeout(r,40))}throw Error('phone priority persistence')});
+await page.click('.focus-item [data-action="retire"]');
+await page.eval(()=>{if(!document.querySelector('.row-menu.sheet .menu-confirm'))throw Error('phone confirmation');document.querySelector('[data-menu-act="keep"]').click();if(document.querySelector('.row-menu')||document.querySelector('[data-expand]'))throw Error('phone cancel')});
+
 console.log(JSON.stringify(await page.eval(()=>({fits:document.documentElement.scrollWidth<=innerWidth, sections:[...document.querySelectorAll('.focus-section h2')].map(n=>n.textContent), buttons:[...document.querySelectorAll('.focus-actions .btn')].every(n=>n.getBoundingClientRect().height>=34)}))));
 """ ).strip().splitlines()[-1])
         assert report['phone']['fits'] and report['phone']['buttons']
