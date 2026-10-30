@@ -865,6 +865,18 @@ try{
   if(await evaluate("document.querySelector('#chat-toggle').getAttribute('aria-expanded')==='false'"))await click('#chat-toggle');
   assert.ok(await evaluate("document.getElementById('workspace').classList.contains('chat-open')"),'chat stays open beside the list');
   const desktopRows=await evaluate(fully);assert.ok(desktopRows>=12,'1440x900 shows '+desktopRows+' rows');
+  // An empty lane shares its heading's line, still takes a drop and makes room once a row is over it.
+  const inline=`(()=>{const l=document.querySelector('#board .lane[data-state="active"]'),h=l.querySelector('.lane-heading').getBoundingClientRect(),e=l.querySelector('.lane-empty')?.getBoundingClientRect();return !!e&&e.left>=h.right&&e.top<h.bottom&&e.bottom>h.top})()`;
+  assert.equal(await evaluate(inline),true,'the empty lane stays on one line');
+  const mouse=(type,p,buttons)=>rpc('Input.dispatchMouseEvent',{type,x:p.x,y:p.y,button:'left',buttons,clickCount:type==='mouseMoved'?0:1},sessionId);
+  const middle=selector=>evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+  await evaluate('scrollTo(0,0)');const movedId=await evaluate(`document.querySelector('#board .lane[data-state="todo"] .task').dataset.taskId`),moved=state.tasks.find(t=>t.id===movedId),from=await middle(`.drag-handle[data-id="${moved.id}"]`),into=await middle('#board .lane[data-state="active"] .lane-cards');
+  await mouse('mouseMoved',from,0);await mouse('mousePressed',from,1);for(let i=1;i<=10;i++){await mouse('mouseMoved',{x:from.x+(into.x-from.x)*i/10,y:from.y+(into.y-from.y)*i/10},1);await new Promise(r=>setTimeout(r,16))}
+  assert.equal(await evaluate(`document.querySelector('#board .lane[data-state="active"] .placeholder')!==null&&document.querySelector('#board .lane[data-state="active"] .lane-empty')?.getClientRects().length!==1`),true,'the empty lane opens under the drag');
+  let dropped=requests.length;await mouse('mouseReleased',into,0);for(let i=0;i<100&&requests.length===dropped;i++)await new Promise(r=>setTimeout(r,15));await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.busy`);
+  assert.equal(requests.at(-1).action,'front_activate');assert.equal(moved.state,'active');
+  await click(`[data-id="${moved.id}"][data-action="todo"]`);await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.busy&&daySnapshot().tasks.find(t=>t.id===${JSON.stringify(moved.id)}).state==='todo'`);await refresh();
+  assert.equal(await evaluate(inline),true,'the empty lane returns to one line');
   // A long title is complete, never clipped, and takes at most two lines on a wide screen.
   const titleBox=id=>evaluate(`(()=>{const e=document.querySelector('[data-id="${id}"][data-action="title"]'),s=getComputedStyle(e),line=parseFloat(s.lineHeight);return {text:e.textContent,lines:Math.round(e.getBoundingClientRect().height/line),clipped:e.scrollWidth>e.clientWidth+1||s.textOverflow==='ellipsis'||s.webkitLineClamp!=='none'}})()`);
   assert.deepEqual(await titleBox(extra[3].id),{text:longTitle,lines:2,clipped:false});
@@ -941,6 +953,11 @@ try{
   if(await evaluate("document.getElementById('chat-dialog').open"))await click('#chat-close');
   const phoneRows=await evaluate(fully);assert.ok(phoneRows>=7,'390x844 shows '+phoneRows+' rows');
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
+  // The capture hint, hidden on a phone, leaves no blank line; a typed preview still shows.
+  assert.equal(await evaluate("document.getElementById('qa-preview').getClientRects().length"),0);
+  await put('#qa-input','Call Ana');assert.equal(await evaluate("document.getElementById('qa-preview').getClientRects().length>0"),true,'a typed preview shows');await put('#qa-input','');
+  // The tabs and Order share a line in either language, and the page still fits.
+  await fill('locale-choice','es');assert.deepEqual(await evaluate("(()=>{const m=e=>{const r=e.getBoundingClientRect();return r.top+r.height/2};return [Math.abs(m(document.querySelector('.view-tabs'))-m(document.getElementById('order-choice')))<=4,document.documentElement.scrollWidth<=innerWidth]})()"),[true,true]);await fill('locale-choice','en');
   const first=extra[0].id,targets=await evaluate(`['done','priority','activate','snooze'].map(a=>{const r=document.querySelector('[data-id="${first}"][data-action="'+a+'"]').getBoundingClientRect();return a+':'+(Math.min(r.width,r.height)>=34)})`);
   assert.deepEqual(targets,['done:true','priority:true','activate:true','snooze:true']);
   assert.equal(await evaluate(`document.querySelector('[data-id="${first}"][data-action="more"]').getBoundingClientRect().width<=1`),true,'⋯ is out of sight on a phone');
