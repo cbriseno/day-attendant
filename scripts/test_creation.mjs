@@ -7,7 +7,7 @@ const sandbox={Intl,Date,locale:'en',NOW:new Date('2026-10-29T12:00:00Z'),nodes:
 sandbox.globalThis=sandbox;sandbox.document={querySelectorAll:()=>sandbox.nodes};
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(new URL('../day_attendant/ui/locales.js',import.meta.url),'utf8'),sandbox);
-vm.runInContext(`const tr=key=>dayTranslations[locale][key];const formatLocale=()=>locale==='es'?'es-MX':'en-US';const full=value=>new Date(value).toISOString();const esc=value=>String(value);`+source.slice(source.indexOf('function creationAge('),source.indexOf('const short=value=>')),sandbox);
+vm.runInContext(`const tr=key=>dayTranslations[locale][key];const formatLocale=()=>locale==='es'?'es-MX':'en-US';const full=value=>new Date(value).toISOString();const esc=value=>String(value);`+source.slice(source.indexOf('const formatters=new Map()'),source.indexOf('const esc='))+source.slice(source.indexOf('function creationAge('),source.indexOf('const short=value=>')),sandbox);
 for(const locale of ['en','es']){
  sandbox.locale=locale;
  for(const [seconds,unit,n] of [[59,null,0],[60,'minute',1],[3599,'minute',59],[3600,'hour',1],[86399,'hour',23],[86400,'day',1],[172800,'day',2]]){
