@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
@@ -268,14 +268,16 @@ try{
   const shows=expected=>wait(`${view}===${JSON.stringify(JSON.stringify(expected))}`).catch(async error=>{throw Error(error.message+' '+await evaluate(view))});
   const none={focus:false,roles:[null,null,null,null],tags:[],pressed:[],lines:0};
   await size(1440,1000);a.state='active';for(const t of [target,b]){t.state='todo';t.dependsOn=[a.id];t.blockedBy=[a.id];t.blocked=true}state.revision++;await refresh();
-  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chip(a,'blocking-label'))}).textContent`),'Blocks · '+target.title+', B');
-  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chip(target,'blocked-label'))}).textContent`),'Blocked · A');
+  // A compact chip counts the links; its title names them.
+  const chipText=(t,kind)=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(chip(t,kind))});return e.textContent+' | '+e.title})()`);
+  assert.equal(await chipText(a,'blocking-label'),'Blocks 2 | Blocks · '+target.title+', B');
+  assert.equal(await chipText(target,'blocked-label'),'Blocked by 1 | Blocked · A');
   assert.equal(await evaluate(`document.querySelector('[data-task-id="${c.id}"] .dependency-chip')`),null);await shows(none);
   const fromA={focus:true,roles:['source','dependent','dependent',null],tags:['Depends on it','Depends on it'],pressed:[a.id],lines:2};
   await click(chip(a,'blocking-label'));await shows(fromA);
   state.revision++;await refresh();await shows(fromA);
   await fill('locale-choice','es');await shows({...fromA,tags:['Depende de esta','Depende de esta']});
-  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chip(a,'blocking-label'))}).textContent`),'Bloquea · '+target.title+', B');
+  assert.equal(await chipText(a,'blocking-label'),'Bloquea 2 | Bloquea · '+target.title+', B');
   await fill('locale-choice','en');await shows(fromA);
   await click('#board-view');await shows(fromA);
   // Lines redraw after the board relayout; list-mode gutter lines also count two until then.
@@ -367,10 +369,11 @@ try{
  target.dependsOn=[a.id];target.blocked=true;target.blockedBy=[a.id];
  target.source='chat';target.person='Ana';target.reference='Referencia literal';
  const cardSelector=`[data-task-id="${target.id}"]`;
- const cardState=()=>evaluate(`(()=>{const card=document.querySelector(${JSON.stringify(cardSelector)});return {reason:card.querySelector('.blocked-label')?.textContent,actionDisabled:card.querySelector('.state-action').disabled,snoozeDisabled:card.querySelector('[data-action=snooze]').disabled,pendingDisabled:card.querySelector('[data-action=pending]').disabled,detailDisabled:card.querySelector('[data-action=detail]').disabled}})()`);
+ const cardState=()=>evaluate(`(()=>{const card=document.querySelector(${JSON.stringify(cardSelector)});return {reason:card.querySelector('.blocked-label')?.title,actionDisabled:card.querySelector('.state-action').disabled,snoozeDisabled:card.querySelector('[data-action=snooze]').disabled,pendingDisabled:card.querySelector('[data-action=pending]').disabled,detailDisabled:card.querySelector('[data-action=detail]').disabled}})()`);
  for(const mode of ['todo','active','snoozed']){
   target.state=mode;target.until=mode==='snoozed'?'2025-10-29T12:00:00Z':null;await refresh();
-  const expected={reason:'Blocked · '+a.title,actionDisabled:mode==='todo',snoozeDisabled:false,pendingDisabled:false,detailDisabled:false};
+  // A blocked task cannot be started or resumed from its row; pausing stays available.
+  const expected={reason:'Blocked · '+a.title,actionDisabled:mode!=='active',snoozeDisabled:false,pendingDisabled:false,detailDisabled:false};
   assert.deepEqual(await cardState(),expected);
   await evaluate(`globalThis.previousCard=document.querySelector(${JSON.stringify(cardSelector)})`);
   await click(cardSelector+' [data-action=pending]');
@@ -469,7 +472,9 @@ try{
   assert.deepEqual(await evaluate(lane),[a.id,c.id,target.id,b.id]);
   assert.deepEqual(await texts('.lane[data-state="todo"] .priority-pill'),['Priority: High','Priority: High','Priority: Medium','Priority: Low']);
   assert.deepEqual(await texts('.lane[data-state="todo"] .group-chip'),['Group: Home','Group: office move','Group: Office move']);
-  assert.match(await evaluate("document.getElementById('order-note').textContent"),/High priority first/);
+  // Orders other than Suggested need no standing notice.
+  const noteHidden="(()=>{const n=document.getElementById('order-note');return n.textContent===''&&getComputedStyle(n).display==='none'})()";
+  assert.equal(await evaluate(noteHidden),true);
   const quiet=requests.length,storedPriorities=priorities();
   for(const [view,expected] of [['manual',[a.id,c.id,target.id,b.id]],['newest',[c.id,b.id,a.id,target.id]],['group',[a.id,c.id,target.id,b.id]],['suggested',[a.id,c.id,target.id,b.id]],['priority',[a.id,c.id,target.id,b.id]]]){
    await fill('order-choice',view);assert.deepEqual(await evaluate(lane),expected,view);
@@ -519,7 +524,7 @@ try{
   assert.deepEqual(await texts('.lane[data-state="todo"] .group-heading'),['Home1','office move2','Sin grupo1']);
   assert.equal((await texts('.lane[data-state="todo"] .priority-pill'))[0],'Prioridad: Alta');
   assert.equal(await evaluate("document.querySelector('#order-choice option[value=manual]').textContent"),'Mi orden');
-  assert.match(await evaluate("document.getElementById('order-note').textContent"),/Agrupado por proyecto/);
+  assert.equal(await evaluate(noteHidden),true);
   await fill('locale-choice','en');
   // Group is edited explicitly in the card editor; an empty value removes it.
   await detail();assert.match(await evaluate("document.getElementById('detail-data').textContent"),/GroupOffice move/);
@@ -613,6 +618,95 @@ try{
   assert.deepEqual(requests.slice(sentBefore).map(r=>[r.action,r.expected_revision]),[['front_activate',opening],['front_todo',opening+1]]);
   state.instant=false;
   console.log('Instant action regressions passed: change and Undo shown before the answer, sequential revisions, toast timing, review state, suggestion mark, bubble, accept, dismiss and log');
+ }
+ if(group==='all'||group==='compact'){
+  // Compact rows: many tasks per screen, every row action one click away and priority two.
+  const size=(width,height,mobile=false)=>rpc('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile},sessionId);
+  const longTitle='Send the quarterly sales report to management with the changes Laura asked for on Tuesday and the October figures';
+  const extra=Array.from({length:16},(_,i)=>({...task(i===3?longTitle:'Row '+(i+1)),priority:['high','medium','low'][i%3],group:i%2?'Home':null,due:i%4?null:'2025-10-29T18:00:00Z'}));
+  const kept=state.tasks;await close();await fill('locale-choice','en');await fill('order-choice','priority');
+  for(const t of [target,a,b,c])Object.assign(t,{state:'todo',dependsOn:[],blockedBy:[],blocked:false,group:null,priority:'medium'});
+  Object.assign(state,{tasks:[...kept,...extra],readOnly:false,proposals:[],suggestions:[],messages:[],calendar_events:[],orderSuggestion:null,taskOrder:[]});state.revision++;
+  const fully="[...document.querySelectorAll('#board .task')].filter(c=>{const r=c.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}).length";
+  await size(1440,900);await refresh();
+  if(await evaluate("document.querySelector('#chat-toggle').getAttribute('aria-expanded')==='false'"))await click('#chat-toggle');
+  assert.ok(await evaluate("document.getElementById('workspace').classList.contains('chat-open')"),'chat stays open beside the list');
+  const desktopRows=await evaluate(fully);assert.ok(desktopRows>=12,'1440x900 shows '+desktopRows+' rows');
+  // A long title is complete, never clipped, and takes at most two lines on a wide screen.
+  const titleBox=id=>evaluate(`(()=>{const e=document.querySelector('[data-id="${id}"][data-action="detail"]'),s=getComputedStyle(e),line=parseFloat(s.lineHeight);return {text:e.textContent,lines:Math.round(e.getBoundingClientRect().height/line),clipped:e.scrollWidth>e.clientWidth+1||s.textOverflow==='ellipsis'||s.webkitLineClamp!=='none'}})()`);
+  assert.deepEqual(await titleBox(extra[3].id),{text:longTitle,lines:2,clipped:false});
+  // Finish, start and pause are one click each and show before the answer.
+  const row=extra[1],sel=action=>`[data-id="${row.id}"][data-action="${action}"]`,laneOf=id=>evaluate(`document.querySelector('#board [data-task-id="${id}"]')?.closest('.lane')?.dataset.state??null`);
+  let sent=requests.length;await click(sel('activate'));assert.equal(await laneOf(row.id),'active');await wait(`daySnapshot().revision>=${state.revision}`);
+  assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'front_activate',{uuid:row.id}]);
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(sel('todo'))}).getAttribute('aria-label')`),'Pause: '+row.title);
+  sent=requests.length;await click(sel('todo'));assert.equal(await laneOf(row.id),'todo');await wait(`daySnapshot().revision>=${state.revision}`);
+  assert.deepEqual([requests.length-sent,requests.at(-1).action],[1,'front_todo']);
+  // Quick consecutive clicks: the first click's slower state read never puts its state back over the second.
+  stateDelay=250;await click(sel('activate'));await new Promise(r=>setTimeout(r,60));
+  assert.equal(await laneOf(row.id),'active','the started task stays started while its read is slow');await click(sel('todo'));const seen=[];for(let i=0;i<24;i++){seen.push((await laneOf(row.id))+'/'+await evaluate(`daySnapshot().tasks.find(t=>t.id===${JSON.stringify(row.id)}).state`));await new Promise(r=>setTimeout(r,25))}
+  stateDelay=0;assert.ok(seen.every(s=>s==='todo/todo'),'the paused task stays paused: '+seen.join());
+  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);assert.equal(row.state,'todo');
+  // Priority: the chip opens a one-level menu and the choice applies at once.
+  sent=requests.length;await click(sel('priority'));
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent+':'+e.getAttribute('aria-checked'))"),['High:false','Medium:true','Low:false']);
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(sel('priority'))}).getAttribute('aria-expanded')`),'true');
+  assert.equal(await evaluate("document.activeElement.closest('.row-menu')!==null"),true,'focus moves into the menu');
+  await click('.row-menu [data-value="high"]');assert.equal(await evaluate(`document.querySelector(${JSON.stringify(sel('priority'))}).dataset.priority`),'high');
+  assert.equal(await evaluate("document.querySelector('.row-menu')"),null);await wait(`daySnapshot().revision>=${state.revision}`);
+  assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'task_update',{uuid:row.id,priority:'high'}]);
+  sent=requests.length;await click(sel('priority'));await click('.row-menu [data-value="high"]');assert.equal(requests.length,sent,'choosing the current priority sends nothing');
+  // Escape closes a menu and returns focus to its chip; arrows move inside it.
+  await click(sel('priority'));await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))");
+  assert.equal(await evaluate("document.activeElement.dataset.value"),'medium');
+  await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  assert.equal(await evaluate(`document.querySelector('.row-menu')===null&&document.activeElement===document.querySelector(${JSON.stringify(sel('priority'))})`),true);
+  // A right click opens the more menu where the pointer is; Retire asks once, Cancel keeps the task.
+  const other=extra[4],point=await evaluate(`(()=>{const r=document.querySelector('[data-task-id="${other.id}"] .row-meta, [data-task-id="${other.id}"] .row-main').getBoundingClientRect();return {x:Math.round(r.right-4),y:Math.round(r.top+r.height/2)}})()`);
+  await rpc('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'right',buttons:2,clickCount:1},sessionId);await rpc('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'right',buttons:0,clickCount:1},sessionId);
+  await wait("document.querySelector('.row-menu')!==null");
+  assert.deepEqual(await evaluate("(()=>{const m=document.querySelector('.row-menu').style;return [parseFloat(m.left),parseFloat(m.top)]})()"),[point.x,point.y]);
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['View details','Move down','Retire…']);
+  sent=requests.length;await click('.row-menu [data-menu-act="retire"]');assert.match(await evaluate("document.querySelector('.row-menu').textContent"),/Retire this responsibility\?/);
+  await click('.row-menu [data-menu-act="keep"]');assert.equal(await evaluate("document.querySelector('.row-menu')"),null);assert.equal(requests.length,sent);
+  await click(`[data-id="${other.id}"][data-action="more"]`);await click('.row-menu [data-menu-act="retire"]');await click('.row-menu [data-menu-act="retire-yes"]');
+  assert.equal(await laneOf(other.id),null);await wait(`daySnapshot().revision>=${state.revision}`);
+  assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'front_retire',{uuid:other.id}]);
+  // Move down in the menu keeps the same section rules as dragging.
+  await fill('order-choice','manual');const ids="[...document.querySelectorAll('.lane[data-state=\"todo\"] .task')].map(e=>e.dataset.taskId)";const order=await evaluate(ids);
+  await click(`[data-id="${order[0]}"][data-action="more"]`);assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['View details','Move down','Retire…']);
+  await click('.row-menu [data-menu-act="move"]');assert.deepEqual(await evaluate(ids),[order[1],order[0],...order.slice(2)]);
+  await wait(`${JSON.stringify(JSON.stringify(requests.at(-1)?.payload))}!==undefined&&true`);
+  for(let i=0;i<100&&requests.at(-1).action!=='order_update';i++)await new Promise(r=>setTimeout(r,15));assert.equal(requests.at(-1).action,'order_update');
+  await fill('order-choice','priority');
+  // Finish is the checkbox, one click.
+  sent=requests.length;await click(`[data-id="${row.id}"][data-action="done"]`);assert.equal(await laneOf(row.id),null);await wait(`daySnapshot().revision>=${state.revision}`);
+  assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'task_done',{uuid:row.id}]);
+  // The Board uses the same row pieces as small cards in three columns.
+  await click('#board-view');assert.deepEqual(await evaluate("(()=>{const lanes=[...document.querySelectorAll('#board .lane')].map(l=>Math.round(l.getBoundingClientRect().top));const card=document.querySelector('.lane[data-state=todo] .task');return [new Set(lanes).size,['done','priority','activate','snooze','more'].every(a=>card.querySelector('[data-action='+a+']'))]})()"),[1,true]);
+  await click('#list-view');
+  // Phone: at least seven rows, 34 px targets, ⋯ through a long press, and no overflow.
+  await size(390,844,true);await rpc('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1},sessionId);await new Promise(r=>setTimeout(r,100));
+  if(await evaluate("document.getElementById('chat-dialog').open"))await click('#chat-close');
+  const phoneRows=await evaluate(fully);assert.ok(phoneRows>=7,'390x844 shows '+phoneRows+' rows');
+  assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
+  const first=extra[0].id,targets=await evaluate(`['done','priority','activate','snooze'].map(a=>{const r=document.querySelector('[data-id="${first}"][data-action="'+a+'"]').getBoundingClientRect();return a+':'+(Math.min(r.width,r.height)>=34)})`);
+  assert.deepEqual(targets,['done:true','priority:true','activate:true','snooze:true']);
+  assert.equal(await evaluate(`document.querySelector('[data-id="${first}"][data-action="more"]').getBoundingClientRect().width<=1`),true,'⋯ is out of sight on a phone');
+  const titleCenter=await evaluate(`(()=>{const r=document.querySelector('[data-id="${first}"][data-action="detail"]').getBoundingClientRect();return {x:Math.round(r.left+20),y:Math.round(r.top+r.height/2)}})()`);
+  sent=requests.length;await rpc('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[titleCenter]},sessionId);await new Promise(r=>setTimeout(r,650));
+  await rpc('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]},sessionId);await new Promise(r=>setTimeout(r,100));
+  assert.equal(await evaluate("document.querySelector('.row-menu.sheet')!==null&&document.querySelector('.menu-scrim')!==null"),true,'a long press opens the sheet');
+  assert.equal(await evaluate("document.getElementById('detail-dialog').open"),false,'the tap that ends a long press does nothing else');
+  assert.ok(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].every(e=>e.getBoundingClientRect().height>=44)"));
+  await click('.menu-scrim');assert.equal(await evaluate("document.querySelector('.row-menu')"),null);assert.equal(requests.length,sent);
+  await rpc('Emulation.setTouchEmulationEnabled',{enabled:false},sessionId);
+  // Localized controls.
+  await fill('locale-choice','es');await size(1440,900);
+  assert.deepEqual(await evaluate(`['done','priority','activate','snooze','more'].map(a=>document.querySelector('[data-id="${first}"][data-action="'+a+'"]').title)`),['Terminar','Cambiar prioridad','Iniciar','Posponer','Más acciones (también clic derecho o presión larga)']);
+  await fill('locale-choice','en');await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
+  state.tasks=kept;state.revision++;await refresh();
+  console.log('Compact row regressions passed: rows per screen, full long titles, one-click finish/start/pause, two-click priority, menus, Retire confirmation, board cards, phone targets and long press');
  }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');await new Promise(resolve=>chrome.exitCode!==null?resolve():chrome.once('exit',resolve));

@@ -19,13 +19,6 @@ globalThis.dayTranslations = {
     "active": "Active",
     "to_do": "To do",
     "snoozed": "Snoozed",
-    "due": "\">Due ",
-    "resume": "\">Resume ",
-    "waiting_for_a_reply": "<span>Waiting for a reply</span>",
-    "min_remaining_declared_estimate": " min remaining · declared estimate</span>",
-    "data_action_pending_pending_change": "\" data-action=\"pending\">Pending change</button>",
-    "snooze_6f15c5": "Snooze…</button></div></article>",
-    "nothing_here": "<p class=\"empty\">Nothing here.</p>",
     "completed": "Completed",
     "retired": "Retired",
     "1_pending_change": "1 pending change",
@@ -165,13 +158,6 @@ globalThis.dayTranslations = {
     "active": "En curso",
     "to_do": "Por atender",
     "snoozed": "Pospuesto",
-    "due": "\">Vence ",
-    "resume": "\">Retomar ",
-    "waiting_for_a_reply": "<span>En espera de respuesta</span>",
-    "min_remaining_declared_estimate": " min restantes · estimación del escenario</span>",
-    "data_action_pending_pending_change": "\" data-action=\"pending\">Cambio pendiente</button>",
-    "snooze_6f15c5": "Posponer…</button></div></article>",
-    "nothing_here": "<p class=\"empty\">Sin pendientes aquí.</p>",
     "completed": "Terminada",
     "retired": "Retirada",
     "1_pending_change": "1 cambio pendiente",
@@ -405,10 +391,6 @@ Object.assign(globalThis.dayTranslations.es,{
 });
 // Order views and groups.
 Object.assign(globalThis.dayTranslations.en,{order_label:'Order',order_priority:'Priority',order_manual:'My order',order_newest:'Newest',order_group:'Group',order_suggested:'Suggested',
- order_hint_priority:'High priority first. Drag the handle {grip} to arrange tasks of the same priority; change a priority in Edit card.',
- order_hint_manual:'Your own order, saved in this profile. Drag the handle {grip}, or focus it and press the arrow keys.',
- order_hint_newest:'Most recently created first. Choose My order to arrange tasks by hand.',
- order_hint_group:'Grouped by project, initiative or category. Drag the handle {grip} to arrange tasks within a group; change a group in Edit card.',
  suggestion_none:'No suggestion yet. Asking uses one request to your assistant; switching views never does.',suggestion_from:'Assistant suggestion from {time}.',suggestion_stale:'Tasks changed since then.',
  suggestion_pending:'The assistant is preparing a suggestion…',suggestion_failed:'The last request did not finish: ',suggest_order:'Suggest an order',suggest_again:'Suggest again',
  not_in_suggestion:'Not in this suggestion',reorder:'Reorder',reorder_hint:'Drag, or press the up and down arrow keys',moved_to:'Moved to position {n} of {total}.',order_saved:'Order saved',
@@ -417,10 +399,6 @@ Object.assign(globalThis.dayTranslations.en,{order_label:'Order',order_priority:
  error_invalid_group:'Use a group label of at most 120 characters on one line.',error_restart_interrupted:'It was interrupted by a restart. Ask again.',
  error_context_changed:'The assistant settings changed. Ask again.'});
 Object.assign(globalThis.dayTranslations.es,{order_label:'Orden',order_priority:'Prioridad',order_manual:'Mi orden',order_newest:'Más recientes',order_group:'Grupo',order_suggested:'Sugerido',
- order_hint_priority:'Primero la prioridad alta. Arrastra la manija {grip} para acomodar tareas de la misma prioridad; la prioridad se cambia en Editar tarjeta.',
- order_hint_manual:'Tu propio orden, guardado en este perfil. Arrastra la manija {grip}, o enfócala y usa las flechas.',
- order_hint_newest:'Primero lo creado más recientemente. Elige Mi orden para acomodar a mano.',
- order_hint_group:'Agrupado por proyecto, iniciativa o categoría. Arrastra la manija {grip} para acomodar dentro de un grupo; el grupo se cambia en Editar tarjeta.',
  suggestion_none:'Aún no hay sugerencia. Pedirla usa una solicitud a tu asistente; cambiar de vista nunca lo hace.',suggestion_from:'Sugerencia del asistente de {time}.',suggestion_stale:'Las tareas cambiaron desde entonces.',
  suggestion_pending:'El asistente está preparando una sugerencia…',suggestion_failed:'La última solicitud no terminó: ',suggest_order:'Sugerir un orden',suggest_again:'Sugerir de nuevo',
  not_in_suggestion:'Fuera de esta sugerencia',reorder:'Reordenar',reorder_hint:'Arrastra o usa las flechas arriba y abajo',moved_to:'Movida a la posición {n} de {total}.',order_saved:'Orden guardado',
@@ -481,3 +459,12 @@ Object.assign(globalThis.dayTranslations.es,{
  error_invalid_event:'Un compromiso necesita título y un fin después de su inicio.',error_event_not_found:'Ese compromiso ya no existe.',
  error_external_conflict:'Algo fuera de Day Attendant cambió esta responsabilidad; no se sobrescribió nada.',
  error_suggestion_not_found:'Esa sugerencia ya no existe.',error_suggestion_closed:'Esa sugerencia ya se atendió.',error_suggestion_stale:'La responsabilidad cambió después de esta sugerencia.'});
+// Compact rows and their one-level menus.
+Object.assign(globalThis.dayTranslations.en,{pause:'Pause',start_blocked:'It waits for its prerequisites',change_priority:'Change priority',
+ more_actions:'More actions',more_actions_hint:'More actions (also right click or long press)',move_up:'Move up',move_down:'Move down',
+ meta_due:'Due {time}',meta_overdue:'Was due {time}',meta_resumes:'Resumes {time}',meta_waiting:'Waiting for a reply',meta_remaining:'{n} min left',
+ blocked_by_count:'Blocked by {n}',blocks_count:'Blocks {n}',pending_change_badge:'Pending change',lane_empty:'Nothing here.'});
+Object.assign(globalThis.dayTranslations.es,{pause:'Pausar',start_blocked:'Espera a sus requisitos',change_priority:'Cambiar prioridad',
+ more_actions:'Más acciones',more_actions_hint:'Más acciones (también clic derecho o presión larga)',move_up:'Subir',move_down:'Bajar',
+ meta_due:'Vence {time}',meta_overdue:'Venció {time}',meta_resumes:'Regresa {time}',meta_waiting:'En espera de respuesta',meta_remaining:'Faltan {n} min',
+ blocked_by_count:'Bloqueada por {n}',blocks_count:'Bloquea {n}',pending_change_badge:'Cambio pendiente',lane_empty:'Nada aquí.'});

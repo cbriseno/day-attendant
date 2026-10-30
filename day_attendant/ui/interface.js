@@ -16,9 +16,10 @@ function parseLocal(raw){const base=Date.parse(raw+'Z');if(!Number.isFinite(base
 const clockIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>';
 const arrowIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 const gripIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01"/></svg>';
-const priorityIcon=p=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19v-3"/><path d="M12 19v-7"'+(p==='low'?' opacity=".3"':'')+'/><path d="M18 19V8"'+(p==='high'?'':' opacity=".3"')+'/></svg>';
 const checkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
-const linkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 6 .5l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10.5a4 4 0 0 0-6-.5l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2"/></svg>';
+const playIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 5 12 7-12 7z"/></svg>';
+const pauseIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>';
+const moreIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>';
 const formatted=(key,values)=>tr(key).replace(/\{(\w+)\}/g,(_,name)=>new Intl.NumberFormat(formatLocale()).format(values[name]));
 const concernMessage=c=>c.message_key?formatted(c.message_key,c.message_params):c.message;
 // Stable failure codes map to plain copy; internal error text is diagnostic and never shown.
@@ -65,8 +66,31 @@ refreshLabels();
 let orderView='priority';try{orderView=localStorage.getItem('day-attendant-order')||'priority'}catch{}if(!globalThis.dayOrdering.VIEWS.includes(orderView))orderView='priority';
 let localOrder=null,orderBase=null,orderTimer=null,orderSaving=false,drag=null;
 const groupDot=label=>'<span class="group-dot" style="--group-hue:'+globalThis.dayOrdering.hue(label)+'" aria-hidden="true"></span>';
-function cardTags(t,section,data){const handle=section.draggable&&section.tasks.length>1&&!data.readOnly?'<button type="button" class="drag-handle" data-id="'+t.id+'" data-action="move" aria-label="'+esc(tr('reorder')+': '+t.title)+'" title="'+esc(tr('reorder_hint'))+'">'+gripIcon+'</button>':'';
- return '<div class="task-tags">'+handle+'<span class="priority-pill" data-priority="'+esc(t.priority)+'">'+priorityIcon(t.priority)+'<span class="visually-hidden">'+esc(tr('priority'))+': </span>'+esc(tr('priority_'+t.priority))+'</span>'+(t.group&&orderView!=='group'?'<span class="group-chip">'+groupDot(t.group)+'<span class="visually-hidden">'+esc(tr('group'))+': </span>'+esc(t.group)+'</span>':'')+suggestionMark(t,data)+'</div>'}
+const PRIORITIES=['high','medium','low'];
+// One compact row per task: handle · finish · title and its data · priority · start or pause · snooze · more.
+// The Board uses the same pieces as small cards. Every action is one click; priority is a one-level menu.
+function taskRow(t,s,data,proposal){
+ const off=data.readOnly||t.pending,label=text=>esc(text+': '+t.title),blockedStart=t.blocked&&t.state!=='active';
+ const handle=s.draggable&&s.tasks.length>1&&!data.readOnly?'<button type="button" class="drag-handle" data-id="'+t.id+'" data-action="move" aria-label="'+label(tr('reorder'))+'" title="'+esc(tr('reorder_hint'))+'">'+gripIcon+'</button>':'';
+ const state=t.state==='active'?'<button type="button" class="ib state-action on" data-id="'+t.id+'" data-action="todo" aria-label="'+label(tr('pause'))+'" title="'+esc(tr('pause'))+'"'+(off?' disabled':'')+'>'+pauseIcon+'</button>'
+  :'<button type="button" class="ib state-action" data-id="'+t.id+'" data-action="activate" aria-label="'+label(t.state==='snoozed'?tr('resume_b3bd0b'):tr('start'))+'" title="'+esc(blockedStart?tr('start_blocked'):t.state==='snoozed'?tr('resume_b3bd0b'):tr('start'))+'"'+(off||blockedStart?' disabled':'')+'>'+playIcon+'</button>';
+ return '<article class="task'+(t.pending?' saving':'')+'" data-task-id="'+t.id+'" data-section="'+esc(t.state+':'+s.key)+'"><div class="row-main">'
+  +'<span class="row-grip">'+handle+'</span>'
+  +'<button type="button" class="check" data-id="'+t.id+'" data-action="done" aria-label="'+label(tr('complete'))+'" title="'+esc(tr('complete'))+'"'+(off?' disabled':'')+'><span class="box">'+checkIcon+'</span></button>'
+  +'<div class="row-text">'+suggestionReason(t,data)+'<span class="title-wrap">'+suggestionMark(t,data)+'<button type="button" class="task-title" data-id="'+t.id+'" data-action="detail" aria-label="'+label(tr('view_details'))+'" aria-haspopup="dialog">'+esc(t.title)+'</button></span>'+'<span class="row-meta">'+rowMeta(t,data,proposal)+'</span></div>'
+  +'<div class="row-actions"><button type="button" class="priority-pill" data-priority="'+esc(t.priority)+'" data-id="'+t.id+'" data-action="priority" aria-haspopup="menu" aria-expanded="false" title="'+esc(tr('change_priority'))+'"'+(off?' disabled':'')+'><span class="visually-hidden">'+esc(tr('priority'))+': </span>'+esc(tr('priority_'+t.priority))+'</button>'
+  +state+'<button type="button" class="ib" data-id="'+t.id+'" data-action="snooze" aria-haspopup="dialog" aria-label="'+label(tr('snooze'))+'" title="'+esc(tr('snooze'))+'"'+(off?' disabled':'')+'>'+clockIcon+'</button>'
+  +'<button type="button" class="ib more" data-id="'+t.id+'" data-action="more" aria-haspopup="menu" aria-expanded="false" aria-label="'+label(tr('more_actions'))+'" title="'+esc(tr('more_actions_hint'))+'">'+moreIcon+'</button></div>'
+  +'<span class="port-slot" aria-hidden="true"></span></div>'+suggestionBubble(t,data)+'</article>'}
+// The data line under or beside the title: group, dates, waiting, estimate, dependencies and a pending change.
+function rowMeta(t,data,proposal){const time=(key,value,cls)=>'<span class="'+cls+'" title="'+esc(full(value))+'">'+esc(tr(key).replace('{time}',short(value)))+'</span>';
+ return (t.group&&orderView!=='group'?'<span class="group-chip">'+groupDot(t.group)+'<span class="visually-hidden">'+esc(tr('group'))+': </span>'+esc(t.group)+'</span>':'')
+  +(t.due?new Date(t.due)<NOW?time('meta_overdue',t.due,'task-due late'):time('meta_due',t.due,'task-due'):'')
+  +(t.until?time('meta_resumes',t.until,'task-wait'):'')
+  +(t.awaiting?'<span class="task-wait">'+esc(tr('meta_waiting'))+'</span>':'')
+  +(data.context.availableMinutes!==null&&Number.isFinite(t.remainingMinutes)?'<span>'+esc(formatted('meta_remaining',{n:t.remainingMinutes}))+'</span>':'')
+  +dependencyChips(t,data)
+  +(proposal?'<button class="pending-badge" type="button"'+(data.readOnly?' disabled':'')+' data-id="'+t.id+'" data-action="pending">'+esc(tr('pending_change_badge'))+'</button>':'')}
 // The assistant's later look leaves a discreet mark on the affected card; it never moves the card.
 const currentSuggestion=(id,data)=>(data.suggestions||[]).find(s=>s.current&&s.taskId===id);
 function suggestionText(s){if(s.message)return s.message;const p=s.messageParams||{};return tr(s.messageKey).replace(/\{(\w+)\}/g,(_,k)=>['due','until'].includes(k)?short(p[k]):typeof p[k]==='number'?new Intl.NumberFormat(formatLocale()).format(p[k]):String(p[k]??''))}
@@ -80,8 +104,9 @@ function suggestionBubble(t,data){const s=currentSuggestion(t.id,data);if(!s||bu
  return '<div class="assistant-bubble"><p><strong>'+esc(tr('suggestion_prefix'))+'</strong> '+esc(suggestionText(s))+'</p><div class="bubble-actions">'+(s.action&&!data.readOnly?'<button type="button" class="btn" data-suggestion="'+s.id+'" data-suggestion-action="accept">'+esc(suggestionLabel(s,data))+'</button>':'')+'<button type="button" class="link-button" data-suggestion="'+s.id+'" data-suggestion-action="dismiss">'+esc(tr('suggestion_dismiss'))+'</button></div></div>'}
 function suggestionReason(t,data){const order=data.orderSuggestion?.result?.order;if(orderView!=='suggested'||!order)return '';const i=order.findIndex(x=>x.id===t.id);return '<p class="suggestion-reason">'+(i<0?esc(tr('not_in_suggestion')):'<span class="suggestion-rank">'+(i+1)+'</span>'+esc(order[i].reason))+'</p>'}
 function groupHeading(s){return '<h3 class="group-heading">'+(s.label?groupDot(s.label)+esc(s.label):'<span class="group-dot ungrouped" aria-hidden="true"></span>'+esc(tr('no_group')))+'<span class="lane-count">'+s.tasks.length+'</span></h3>'}
+// Only the suggested order has something to say or ask; the other orders explain themselves.
 function orderNote(data){
- if(orderView!=='suggested')return '<p>'+esc(tr('order_hint_'+orderView)).replace('{grip}','<span class="grip-inline" aria-hidden="true">'+gripIcon+'</span>')+'</p>';
+ if(orderView!=='suggested')return '';
  const s=data.orderSuggestion,result=s?.result,pending=s?.request?.status==='pending',failed=s?.request?.status==='incomplete';
  const text=(result?tr('suggestion_from').replace('{time}',short(result.at))+(s.stale?' '+tr('suggestion_stale'):''):tr('suggestion_none'))+(pending?' '+tr('suggestion_pending'):failed?' '+tr('suggestion_failed')+(known(s.request.code)?tr('error_'+s.request.code):tr('chat_failed_generic')):'');
  const disabled=data.readOnly||pending||!data.agent?.connected||!data.tasks.some(t=>!['done','retired'].includes(t.state));
@@ -93,7 +118,7 @@ function placeOrder(id,ids,to){const data=flow.snapshot(),open=data.tasks.filter
 async function saveOrder(){if(orderSaving){orderTimer=setTimeout(saveOrder,150);return}const order=localOrder;if(!order)return;orderSaving=true;try{const p=await flow.request('order_update',{order},undefined,orderBase);orderBase=p?.result?.revision??flow.snapshot().revision}catch(error){localOrder=null;orderBase=null;notice(error.message);render();return}finally{orderSaving=false}if(localOrder===order){localOrder=null;orderBase=null;render()}}
 // Blocked and blocking cards name their counterparts; a chip highlights those direct links.
 const titles=(ids,data)=>ids.map(id=>data.tasks.find(r=>r.id===id)?.title||id).join(', ');
-function dependencyChips(t,data){const blocks=data.tasks.filter(r=>r.blockedBy.includes(t.id)).map(r=>r.id),chip=(kind,label)=>'<button type="button" class="dependency-chip '+kind+'" data-id="'+t.id+'" data-action="dependencies" aria-pressed="false" title="'+esc(tr('show_dependencies'))+'">'+linkIcon+'<span>'+esc(label)+'</span></button>';const chips=(t.blocked?chip('blocked-label',tr('blocked_prefix')+titles(t.blockedBy,data)):'')+(blocks.length?chip('blocking-label',tr('blocks_prefix')+titles(blocks,data)):'');return chips?'<div class="dependency-chips">'+chips+'</div>':''}
+function dependencyChips(t,data){const blocks=data.tasks.filter(r=>r.blockedBy.includes(t.id)).map(r=>r.id),chip=(kind,count,names)=>'<button type="button" class="dependency-chip '+kind+'" data-id="'+t.id+'" data-action="dependencies" aria-pressed="false" aria-label="'+esc(names+' · '+tr('show_dependencies'))+'" title="'+esc(names)+'">'+esc(formatted(count,{n:kind==='blocked-label'?t.blockedBy.length:blocks.length}))+'</button>';return (t.blocked?chip('blocked-label','blocked_by_count',tr('blocked_prefix')+titles(t.blockedBy,data)):'')+(blocks.length?chip('blocking-label','blocks_count',tr('blocks_prefix')+titles(blocks,data)):'')}
 const dependencyEdges=data=>dependencyFocus?data.tasks.flatMap(r=>r.blockedBy.filter(p=>p===dependencyFocus||r.id===dependencyFocus).map(p=>[p,r.id])):[];
 const dependencyLines=document.createElementNS('http://www.w3.org/2000/svg','svg');dependencyLines.classList.add('dependency-lines');dependencyLines.setAttribute('aria-hidden','true');$('board').after(dependencyLines);
 const dependencyResize=new ResizeObserver(()=>drawDependencies());
@@ -102,7 +127,7 @@ function showDependencies(data=flow.snapshot()){
  board.classList.toggle('dependency-focus',!!dependencyFocus);
  for(const card of board.querySelectorAll('[data-task-id]')){
   const id=card.dataset.taskId,role=id===dependencyFocus?'source':edges.some(([p,d])=>p===id&&d===dependencyFocus)?'prerequisite':edges.some(([p,d])=>d===id&&p===dependencyFocus)?'dependent':'';
-  if((card.dataset.dependencyRole||'')!==role){if(role)card.dataset.dependencyRole=role;else delete card.dataset.dependencyRole;card.querySelector('.dependency-role')?.remove();if(role&&role!=='source')card.querySelector('.task-title').insertAdjacentHTML('afterend','<span class="dependency-role">'+esc(tr('dependency_'+role))+'</span>')}
+  if((card.dataset.dependencyRole||'')!==role){if(role)card.dataset.dependencyRole=role;else delete card.dataset.dependencyRole;card.querySelector('.dependency-role')?.remove();if(role&&role!=='source')card.querySelector('.row-meta').insertAdjacentHTML('afterbegin','<span class="dependency-role">'+esc(tr('dependency_'+role))+'</span>')}
   for(const chip of card.querySelectorAll('[data-action=dependencies]'))if(chip.getAttribute('aria-pressed')!==String(role==='source'))chip.setAttribute('aria-pressed',String(role==='source'));
  }
  dependencyResize.disconnect();if(dependencyFocus){dependencyResize.observe(board);board.querySelectorAll('[data-dependency-role]').forEach(card=>dependencyResize.observe(card))}
@@ -140,10 +165,7 @@ function render(data=flow.snapshot()) {
  $('order-note').innerHTML=orderNote(data);
  $('board').innerHTML=[['active',tr("active")],['todo',tr("to_do")],['snoozed',tr("snoozed")]].map(([state,label])=>{
   const rows=data.tasks.filter(t=>t.state===state),sections=globalThis.dayOrdering.arrange(rows,orderView,{order:localOrder||data.taskOrder||[],suggestion:data.orderSuggestion?.result});
-  return '<section class="lane" data-state="'+state+'"><header class="lane-heading"><span class="state-dot" aria-hidden="true"></span><h2>'+label+'</h2><span class="lane-count">'+rows.length+'</span></header><div class="lane-cards">'+sections.map(s=>(orderView==='group'?groupHeading(s):'')+s.tasks.map(t=>{
-   const p=proposals.find(p=>p.intent.taskId===t.id);
-   return '<article class="task '+(state==='active'?'in-progress':'')+(t.pending?' saving':'')+'" data-task-id="'+t.id+'" data-section="'+esc(state+':'+s.key)+'"><div>'+cardTags(t,s,data)+'<button type="button" class="task-title" data-id="'+t.id+'" data-action="detail" aria-label="'+tr("view_details")+': '+esc(t.title)+'" aria-haspopup="dialog"><span>'+esc(t.title)+'</span>'+arrowIcon+'</button>'+suggestionReason(t,data)+dependencyChips(t,data)+'<p class="task-context">'+esc(t.context)+'</p><p class="task-meta">'+(t.due?'<span class="task-due" title="'+esc(full(t.due))+tr("due")+esc(short(t.due))+'</span>':'')+(t.until?'<span class="task-wait" title="'+esc(full(t.until))+tr("resume")+esc(short(t.until))+'</span>':'')+(t.awaiting?tr("waiting_for_a_reply"):'')+(data.context.availableMinutes!==null&&Number.isFinite(t.remainingMinutes)?'<span>'+t.remainingMinutes+tr("min_remaining_declared_estimate"):'')+'</p>'+(p?'<button class="pending-badge" type="button"'+(data.readOnly?' disabled':'')+' data-id="'+t.id+tr("data_action_pending_pending_change"):'')+suggestionBubble(t,data)+'</div><div class="actions"><button type="button" class="btn state-action" data-id="'+t.id+'" data-action="'+(state==='todo'?'activate':'todo')+'"'+(data.readOnly||t.pending||state==='todo'&&t.blocked?' disabled':'')+'>'+(state==='todo'?tr("start"):tr("to_do"))+'</button><button type="button" class="btn" data-id="'+t.id+'" data-action="snooze"'+(data.readOnly||t.pending?' disabled':'')+' aria-haspopup="dialog">'+clockIcon+tr("snooze_6f15c5");
-  }).join('')).join('')+(rows.length?'':tr("nothing_here"))+'</div></section>';
+  return '<section class="lane" data-state="'+state+'"><header class="lane-heading"><span class="state-dot" aria-hidden="true"></span><h2>'+label+'</h2><span class="lane-count">'+rows.length+'</span></header><div class="lane-cards">'+sections.map(s=>(orderView==='group'?groupHeading(s):'')+s.tasks.map(t=>taskRow(t,s,data,proposals.find(p=>p.intent.taskId===t.id))).join('')).join('')+(rows.length?'':'<p class="lane-empty">'+esc(tr('lane_empty'))+'</p>')+'</div></section>';
  }).join('');
  showDependencies(data);
  const closed=data.tasks.filter(t=>['done','retired'].includes(t.state));$('closed-count').textContent=closed.length;$('closed').innerHTML=closed.map(t=>'<p class="closed-row"><button type="button" class="link-button" data-closed-id="'+t.id+'">'+esc(t.title)+'</button> · '+(t.state==='done'?tr("completed"):tr("retired"))+'</p>').join('');
@@ -166,6 +188,7 @@ function render(data=flow.snapshot()) {
  if(lastSeenEvent===undefined)lastSeenEvent=last?.id??null;else if(last&&last.id!==lastSeenEvent){lastSeenEvent=last.id;announce(last,data)}
  if(active&&!active.isConnected){requestAnimationFrame(()=>{if(document.querySelector('dialog[open]'))return;const current=document.activeElement;if(current&&current!==document.body&&current!==active&&current.isConnected)return;let target;if(focusProposal)target=$('reviews').querySelector('[data-proposal="'+focusProposal+'"][data-review-action="'+reviewAction+'"]');if(!target&&focusTask)target=$('board').querySelector('[data-id="'+focusTask+'"][data-action="'+focusAction+'"]')||$('board').querySelector('[data-id="'+focusTask+'"][data-action="detail"]');if(!target)target=shown.length?$('review-title'):$('list-view');target.focus({preventScroll:true})})}
  if(newlyRelevant)notice(tr("a_pending_change_needs_review"));
+ if(menu){const t=data.tasks.find(t=>t.id===menu.id);if(!t||['done','retired'].includes(t.state))closeMenu(false);else anchorOf(menu.id,menu.action)?.setAttribute('aria-expanded','true')}
 }
 // Confirms the latest saved change, how long it took to show, and Undo when it can be undone.
 function announce(last,data){const t=data.tasks.find(t=>t.id===last.taskId),action=aliases[last.action]||last.action;
@@ -196,7 +219,56 @@ function openDetail(id,origin,editEstimate=false){const t=task(id);if(!t||t.pend
 $('estimate-save').onclick=async()=>{const raw=$('estimate-input').value,value=raw.trim()?Number(raw):null;try{await flow.setEstimate(selected,value,detailRevision);$('detail-dialog').close('declared')}catch(error){$('estimate-error').hidden=false;$('estimate-error').textContent=error.message}};
 $('detail-retire').onclick=()=>{$('retire-confirm').hidden=false;$('confirm-retire').focus()};$('keep-task').onclick=()=>{$('retire-confirm').hidden=true;$('detail-retire').focus()};
 $('closed').onclick=e=>{const b=e.target.closest('[data-closed-id]');if(b)openDetail(b.dataset.closedId,b)};
-$('board').onclick=e=>{const sb=e.target.closest('[data-suggestion]');if(sb){const {suggestion,suggestionAction}=sb.dataset;bubbleFor=null;safely(async()=>{const started=performance.now();timed(flow.observe(await api('/api/suggestions/'+suggestion+'/'+suggestionAction,{})),started);await flow.refresh();render()});return}const b=e.target.closest('[data-action]');if(!b){if(dependencyFocus&&!e.target.closest('.task'))toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='suggestion'){bubbleFor=bubbleFor===id?null:id;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true});return}if(action==='dependencies')toggleDependencies(id);else if(action==='snooze')openSnooze(id,b);else if(action==='detail')openDetail(id,b);else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
+// One menu at a time and one level deep, never over a dialog: priority from its chip, everything else
+// from ⋯, a right click or a long press. On a phone it opens as a sheet at the bottom.
+let menu=null,press=null,swallowClick=false;
+const sheetMedia=matchMedia('(max-width:600px)');
+const anchorOf=(id,action)=>$('board').querySelector('[data-id="'+id+'"][data-action="'+action+'"]');
+const menuItem=(act,label,{value='',icon='',kind='',checked=null,disabled=false}={})=>'<button type="button" class="menu-item'+(kind?' '+kind:'')+'" role="'+(checked===null?'menuitem':'menuitemradio')+'"'+(checked===null?'':' aria-checked="'+checked+'"')+' data-menu-act="'+act+'" data-value="'+esc(value)+'"'+(disabled?' disabled':'')+'>'+icon+'<span class="menu-label">'+label+'</span>'+(checked?'<span class="tick">'+checkIcon+'</span>':'')+'</button>';
+function priorityMenu(t,data){return '<p class="menu-title">'+esc(tr('priority'))+'</p>'+PRIORITIES.map(p=>menuItem('priority','<span class="priority-pill" data-priority="'+p+'">'+esc(tr('priority_'+p))+'</span>',{value:p,checked:t.priority===p,disabled:data.readOnly||t.pending})).join('')}
+function moreMenu(t,data){const off=data.readOnly||t.pending,card=$('board').querySelector('[data-task-id="'+t.id+'"]'),ids=card?.querySelector('.drag-handle')?sectionIds(card.dataset.section):[],i=ids.indexOf(t.id);
+ return '<p class="menu-title task-name">'+esc(t.title)+'</p>'+(t.state!=='todo'?menuItem('todo',esc(tr('back_to_to_do')),{disabled:off}):'')+menuItem('detail',esc(tr('view_details')),{icon:arrowIcon})
+  +(i>0?menuItem('move',esc(tr('move_up')),{value:i-1}):'')+(i>=0&&i<ids.length-1?menuItem('move',esc(tr('move_down')),{value:i+1}):'')
+  +'<div class="menu-sep" role="separator"></div>'+menuItem('retire',esc(tr('retire_7ad0e0')),{kind:'danger',disabled:off})}
+function openMenu(id,action,point){const data=flow.snapshot(),t=data.tasks.find(t=>t.id===id);if(!t||document.querySelector('dialog[open]'))return;closeMenu(false);
+ const node=document.createElement('div');node.className='row-menu';node.setAttribute('role','menu');node.innerHTML=action==='priority'?priorityMenu(t,data):moreMenu(t,data);
+ const sheet=sheetMedia.matches,scrim=sheet?document.createElement('div'):null;if(scrim){scrim.className='menu-scrim';document.body.append(scrim)}
+ node.classList.toggle('sheet',sheet);document.body.append(node);menu={id,action,node,scrim,at:performance.now()};
+ const anchor=anchorOf(id,action);anchor?.setAttribute('aria-expanded','true');if(!sheet)placeMenu(node,anchor,point);
+ node.querySelector('button:not([disabled])')?.focus({preventScroll:true})}
+function placeMenu(node,anchor,point){const r=anchor?.getClientRects().length?anchor.getBoundingClientRect():null,w=node.offsetWidth,h=node.offsetHeight;
+ let x=point?point.x:r?r.right-w:8,y=point?point.y:r?r.bottom+6:8;if(y+h>innerHeight-8)y=(point?point.y:r?r.top-6:innerHeight)-h;
+ node.style.left=Math.max(8,Math.min(x,innerWidth-w-8))+'px';node.style.top=Math.max(8,y)+'px'}
+function closeMenu(restore=true){if(!menu)return;const {id,action,node,scrim}=menu;menu=null;node.remove();scrim?.remove();const anchor=anchorOf(id,action);anchor?.setAttribute('aria-expanded','false');
+ if(restore)(anchor?.offsetWidth>1?anchor:anchorOf(id,'detail'))?.focus({preventScroll:true})}
+function retireConfirm(){menu.node.innerHTML='<p class="menu-confirm">'+esc(tr('retire_this_responsibility_it_will_be_kept_s'))+'</p><div class="menu-confirm-actions"><button type="button" class="btn" data-menu-act="keep">'+esc(tr('cancel'))+'</button><button type="button" class="btn danger" data-menu-act="retire-yes">'+esc(tr('yes_retire'))+'</button></div>';if(!menu.node.classList.contains('sheet'))placeMenu(menu.node,null,{x:parseFloat(menu.node.style.left),y:parseFloat(menu.node.style.top)});menu.node.querySelector('button').focus({preventScroll:true})}
+function menuAct(b){const {id}=menu,t=task(id),act=b.dataset.menuAct,value=b.dataset.value;if(!t){closeMenu(false);return}
+ if(act==='retire'){retireConfirm();return}
+ if(act==='keep'){closeMenu();return}
+ if(act==='detail'){closeMenu(false);openDetail(id,anchorOf(id,'detail'));return}
+ closeMenu();
+ if(act==='priority'){if(value!==t.priority)request('task_update',{uuid:id,priority:value})}
+ else if(act==='todo')request('todo',{taskId:id});
+ else if(act==='retire-yes')request('retire',{taskId:id});
+ else if(act==='move'){const card=$('board').querySelector('[data-task-id="'+id+'"]'),ids=sectionIds(card.dataset.section),to=Number(value);if(placeOrder(id,ids,to))notice(tr('moved_to').replace('{n}',to+1).replace('{total}',ids.length))}}
+document.addEventListener('click',e=>{if(!menu)return;const b=e.target.closest('[data-menu-act]');if(b&&menu.node.contains(b))menuAct(b);else if(e.target===menu.scrim)closeMenu()});
+document.addEventListener('click',e=>{if(swallowClick){swallowClick=false;e.preventDefault();e.stopPropagation()}},true);
+for(const type of ['pointerup','pointercancel'])document.addEventListener(type,()=>{if(swallowClick)setTimeout(()=>swallowClick=false,80)},true);
+document.addEventListener('pointerdown',e=>{if(e.isPrimary)swallowClick=false;if(menu&&!menu.node.contains(e.target)&&e.target!==menu.scrim&&e.target.closest?.('[data-action]')!==anchorOf(menu.id,menu.action))closeMenu(false)},true);
+document.addEventListener('keydown',e=>{if(!menu||!menu.node.contains(document.activeElement)&&e.key!=='Escape')return;
+ if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeMenu();return}
+ if(e.key==='Tab'){e.preventDefault();closeMenu();return}
+ if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;e.preventDefault();
+ const items=[...menu.node.querySelectorAll('button:not([disabled])')],i=items.indexOf(document.activeElement),n=items.length;
+ items[e.key==='Home'?0:e.key==='End'?n-1:(i+(e.key==='ArrowDown'?1:-1)+n)%n]?.focus()},true);
+// Only a scroll that moves the rows detaches the menu from its row; the chat log scrolling does not.
+addEventListener('scroll',e=>{if(menu&&!menu.node.classList.contains('sheet')&&(e.target===document||e.target.contains?.($('board'))))closeMenu(false)},true);addEventListener('resize',()=>closeMenu(false));
+$('board').addEventListener('contextmenu',e=>{const card=e.target.closest('.task');if(!card||drag)return;e.preventDefault();clearTimeout(press?.timer);press=null;if(menu?.id===card.dataset.taskId&&performance.now()-menu.at<800)return;openMenu(card.dataset.taskId,'more',{x:e.clientX,y:e.clientY})});
+// A long press on a touch screen opens the same menu; the tap that ends it does nothing else.
+$('board').addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'||!e.isPrimary)return;const card=e.target.closest('.task');if(!card||e.target.closest('.drag-handle'))return;clearTimeout(press?.timer);const {clientX:x,clientY:y,pointerId:pointer}=e;press={x,y,pointer,timer:setTimeout(()=>{press=null;swallowClick=true;openMenu(card.dataset.taskId,'more',{x,y})},500)}});
+$('board').addEventListener('pointermove',e=>{if(press?.pointer===e.pointerId&&Math.hypot(e.clientX-press.x,e.clientY-press.y)>8){clearTimeout(press.timer);press=null}});
+for(const type of ['pointerup','pointercancel'])$('board').addEventListener(type,e=>{if(press?.pointer===e.pointerId){clearTimeout(press.timer);press=null}});
+$('board').onclick=e=>{const sb=e.target.closest('[data-suggestion]');if(sb){const {suggestion,suggestionAction}=sb.dataset;bubbleFor=null;safely(async()=>{const started=performance.now();timed(flow.observe(await api('/api/suggestions/'+suggestion+'/'+suggestionAction,{})),started);await flow.refresh();render()});return}const b=e.target.closest('[data-action]');if(!b){if(dependencyFocus&&!e.target.closest('.task'))toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='suggestion'){bubbleFor=bubbleFor===id?null:id;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true});return}if(action==='priority'||action==='more'){if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='dependencies')toggleDependencies(id);else if(action==='snooze')openSnooze(id,b);else if(action==='detail')openDetail(id,b);else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
 $('reviews').onclick=async e=>{const summary=e.target.closest('summary');if(summary){const d=summary.parentElement;if(d.open)collapsedProposals.add(d.dataset.proposal);else collapsedProposals.delete(d.dataset.proposal);}const b=e.target.closest('[data-review-action]');if(!b)return;const p=flow.snapshot().proposals.find(p=>p.id===b.dataset.proposal);if(!p)return;if(Number(b.dataset.generation)!==p.generation){notice(tr("the_review_changed_read_the_current_state"));return;}const action=b.dataset.reviewAction;if(action==='cancel'){await flow.cancel(p.id);notice(tr("change_canceled_the_responsibility_keeps_its"))}if(action==='retry')safely(()=>flow.retry(p.id));if(action==='continue')safely(()=>flow.commit(p.id,{generation:p.generation}))};
 $('reviews').addEventListener('toggle',e=>{if(!e.target.matches('details'))return;const id=e.target.dataset.proposal;if(e.target.open){collapsedProposals.delete(id);expandedProposal=id}else collapsedProposals.add(id)},true);
 $('undo').onclick=()=>{const id=$('undo').dataset.event;$('undo').hidden=true;safely(()=>flow.undo(id))};
@@ -240,13 +312,15 @@ async function deliver(route,data,revision,{refresh=true}={}){
 }
 
 class RemoteFlow{
- constructor(){this.data={tasks:[],context:{availableMinutes:null,availableUntil:null,rest:false},proposals:[],events:[],messages:[]};this.digest='';this.messageDigest='';this.tag='';this.started=0;this.applied=0;this.loading=0;this.localeLoaded=false;this.queue=Promise.resolve();this.seen=0;this.drafts=0;}
+ constructor(){this.data={tasks:[],context:{availableMinutes:null,availableUntil:null,rest:false},proposals:[],events:[],messages:[]};this.digest='';this.messageDigest='';this.tag='';this.started=0;this.applied=0;this.loading=0;this.localeLoaded=false;this.queue=Promise.resolve();this.seen=0;this.drafts=0;this.sending=0;this.barrier=0;}
  snapshot(){return this.data;}
  // Each refresh starts one load at once, so a caller that just saved waits only for the load that
  // includes its change. A slower older load never overwrites newer state, and polls never stack.
+ // A load that started before a change shown on this page, or while one is still being sent, may
+ // predate it; it is dropped so the change never flickers back.
  refresh(){return this.load()}
  poll(){return this.loading?null:this.load()}
- async load(){const seq=++this.started;this.loading++;try{const raw=await api('/api/state'+(this.tag?'?since='+encodeURIComponent(this.tag):''));if(seq<this.applied)return;this.applied=seq;if(this.offline){this.offline=false;notice(tr("connection_restored"))}if(raw.unchanged){if(raw.tag===this.tag)this.tick(raw.now);else this.tag='';return}this.apply(raw)}catch(error){this.offline=true;this.data.agent={...(this.data.agent||{}),connected:false};$('agent-state').textContent=tr("disconnected");delete $('agent-state').dataset.label;throw error}finally{this.loading--}}
+ async load(){const seq=++this.started,settled=!this.sending;this.loading++;try{const raw=await api('/api/state'+(this.tag?'?since='+encodeURIComponent(this.tag):''));if(seq<this.applied||!settled||seq<=this.barrier)return;this.applied=seq;if(this.offline){this.offline=false;notice(tr("connection_restored"))}if(raw.unchanged){if(raw.tag===this.tag)this.tick(raw.now);else this.tag='';return}this.apply(raw)}catch(error){this.offline=true;this.data.agent={...(this.data.agent||{}),connected:false};$('agent-state').textContent=tr("disconnected");delete $('agent-state').dataset.label;throw error}finally{this.loading--}}
  // An unchanged poll only advances the clock; calendar rows are redrawn when one of them ends.
  tick(now){const before=new Date(this.data.now),after=new Date(now);NOW=after;this.data.now=now;if((this.data.calendar_events||[]).some(e=>{const end=new Date(e.end_at);return end>before&&end<=after}))globalThis.dayDaily?.update(this.data)}
  apply(raw){if(!this.localeLoaded&&raw.profile){this.localeLoaded=true;locale=raw.profile.locale||'en';$('locale-choice').value=locale;translateChrome();refreshLabels()}NOW=new Date(raw.now);zone=raw.timezone||zone;const state={...raw,revision:Math.max(raw.revision,this.seen),mode:'connected',rawProposals:raw.proposals,proposals:raw.proposals.filter(p=>['evaluating','review','unavailable','stale','invalid'].includes(p.phase)).map(p=>({...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]})),suggestions:raw.suggestions||[],review:raw.review||{}};this.tag=raw.tag||'';this.data=state;reconcileDeliveries(raw);globalThis.dayDaily?.update(state);const digest=JSON.stringify([state.tasks,state.taskOrder,state.orderSuggestion,state.agent.connected,state.context,state.proposals,state.lastFact,state.suggestions,state.revision,state.readOnly]);if(digest!==this.digest){this.digest=digest;render(state)}const md=JSON.stringify([state.messages,state.suggestions,state.conversation]);if(md!==this.messageDigest){this.messageDigest=md;renderMessages(state.messages,state)}const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};const agentError=state.agent.error&&errorText(state.agent.errorCode,state.agent.error);renderReview(state);$('bridge-state').hidden=state.agent.connected;if(!state.agent.connected)setText($('bridge-state'),agentError||tr('agent_temporarily_unavailable'));renderContextStatus(state);setText($('agent-details'),(state.agent.model||(state.profile?.harness==='claude'?'Claude Code':'Codex'))+' · '+(state.profile?.harness||'codex'));const stateTitle=agentError||$('agent-state').dataset.label||'';if($('agent-state').title!==stateTitle)$('agent-state').title=stateTitle;setText(document.querySelector('.date'),new Intl.DateTimeFormat(formatLocale(),{weekday:'long',day:'numeric',month:'long',timeZone:zone}).format(NOW));}
@@ -266,16 +340,17 @@ class RemoteFlow{
  // clicks never collide with each other; none of them waits for a state read to be sent.
  async send(body,key,expectedRevision){const revision=expectedRevision??this.data.revision;return this.observe(key?await api('/api/proposals',{...body,key,expected_revision:revision}):await deliver('/api/proposals',body,revision,{refresh:false}))}
  async request(action,payload,key,expectedRevision){const started=performance.now();const body={action:domain[action]||action,payload:{...(payload.taskId?{uuid:payload.taskId}:{}),...(payload.until?{until:payload.until}:{}),...(!payload.taskId?payload:{})}};
-  const previewed=this.preview(body),shown=previewed?performance.now():undefined,sent=this.queue.then(()=>this.send(body,key,expectedRevision));this.queue=sent.catch(()=>{});
-  let p;try{p=timed(await sent,started,shown,previewed||undefined)}catch(error){if(previewed){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}
+  this.sending++;this.barrier=this.started;const previewed=this.preview(body),shown=previewed?performance.now():undefined,sent=this.queue.then(()=>this.send(body,key,expectedRevision));this.queue=sent.catch(()=>{});
+  let p;try{p=timed(await sent,started,shown,previewed||undefined)}catch(error){this.settle();if(previewed){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();
   await this.refresh();return {...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]};}
+ settle(){this.sending--;this.barrier=this.started}
  async cancel(id){const r=await api('/api/proposals/'+id+'/cancel',{});await this.refresh();return r}
  async retry(id){const started=performance.now();const r=timed(this.observe(await api('/api/proposals/'+id+'/retry',{})),started);await this.refresh();return r}
  async commit(id,options){const started=performance.now();const r=this.observe(await api('/api/proposals/'+id+'/confirm',{generation:options.generation,without_review:!!options.withoutReview}));timings.set(id,{started});await this.refresh();return r}
  async undo(id){const started=performance.now(),view=undoViews.get(String(id));undoViews.delete(String(id));
   if(view){const back=new Map(view.tasks.map(t=>[t.id,t]));this.data={...this.data,tasks:this.data.tasks.filter(t=>!t.pending&&(back.has(t.id)||t.id!==view.taskId)).map(t=>back.get(t.id)||t),context:view.context};render(this.data)}
-  const shown=view?performance.now():undefined,sent=this.queue.then(async()=>this.observe(await deliver('/api/undo',{fact_id:id},this.data.revision,{refresh:false})));this.queue=sent.catch(()=>{});
-  let r;try{r=timed(await sent,started,shown)}catch(error){if(view){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}await this.refresh();return r}
+  this.sending++;this.barrier=this.started;const shown=view?performance.now():undefined,sent=this.queue.then(async()=>this.observe(await deliver('/api/undo',{fact_id:id},this.data.revision,{refresh:false})));this.queue=sent.catch(()=>{});
+  let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();if(view){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();await this.refresh();return r}
  async setEstimate(id,value,revision){return this.request('continuity_update',{uuid:id,remainingMinutes:value},undefined,revision)}
  async setContext(value,revision){return this.request('context_update',{availableMinutes:value.availableMinutes,availableUntil:value.availableUntil,rest:value.rest},undefined,revision)}
 }
