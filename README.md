@@ -87,6 +87,14 @@ an open UI or LLM session. Open the UI on demand with `service open`.
   same group. Newest and Suggested accept no drops. A suggestion is computed only when
   you ask for it, and is reused until you ask again.
 
+**Focus**, beside Today and Board, shows at most two tasks in progress and enough
+available tasks to make five, plus up to two snoozed tasks returning within 72 hours.
+Each says why it is here: priority, deadline, work it unblocks or a waiting response.
+Blocked tasks never appear as the next action. Finish one and the next available task
+moves up immediately. Focus hides filters, group colors, capture, chat and closed
+items; See all returns to Today with your filters intact. Selection uses local rules
+and makes no model request.
+
 Every typed change applies at once, after the service checks it (fields, UUIDs, the
 observed revision, cycles and references), and shows Undo. Nothing waits for the model.
 Once you pause for a moment the assistant looks at what changed and, if it notices

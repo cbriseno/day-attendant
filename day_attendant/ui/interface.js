@@ -67,6 +67,7 @@ refreshLabels();
 // Order views change presentation only. A drag stays inside its section (same lane and, in
 // those views, the same priority or group) and saves the profile's manual order.
 let orderView='priority';try{orderView=localStorage.getItem('day-attendant-order')||'priority'}catch{}if(!globalThis.dayOrdering.VIEWS.includes(orderView))orderView='priority';
+let taskView='list';
 let localOrder=null,orderBase=null,orderTimer=null,orderSaving=false,drag=null;
 // Motion: a card that changes place glides there from where it was (FLIP), a new one fades in and
 // a finished or retired one fades out over its old place. Reduced motion shows every change at once.
@@ -201,6 +202,25 @@ function taskRow(t,s,data,proposal){
   +state+'<button type="button" class="ib" data-id="'+t.id+'" data-action="snooze" aria-haspopup="menu" aria-expanded="false" aria-label="'+label(tr('snooze'))+'" title="'+esc(tr('snooze'))+'"'+(off?' disabled':'')+'>'+clockIcon+'</button>'
   +'<button type="button" class="ib more" data-id="'+t.id+'" data-action="more" aria-haspopup="menu" aria-expanded="false" aria-label="'+label(tr('more_actions'))+'" title="'+esc(tr('more_actions_hint'))+'">'+moreIcon+'</button></div>'
   +'<span class="port-slot">'+(off?'':'<button type="button" class="port" data-id="'+t.id+'" tabindex="-1" aria-hidden="true" title="'+esc(tr('port_hint'))+'"></button>')+'</span></div>'+suggestionBubble(t,data)+(open?expandView(t,data):'')+'</article>'}
+// Focus keeps only the immediate actions and the reason this task is here.
+function focusRow(t,data,big){
+ const off=data.readOnly||t.pending,reason=[],blocked=(t.dependsOn||t.blockedBy||[]).some(id=>data.tasks.find(r=>r.id===id)?.state!=='done');
+ if(t.state==='active')reason.push(tr('focus_in_progress'));
+ if(t.priority==='urgent')reason.push(tr('priority_urgent'));
+ if(t.due)reason.push(tr(new Date(t.due)<NOW?'meta_overdue':'meta_due').replace('{time}',short(t.due)));
+ const n=data.tasks.filter(r=>!['done','retired'].includes(r.state)&&(r.dependsOn||r.blockedBy||[]).includes(t.id)).length;
+ if(n)reason.push(formatted(n===1?'focus_unlocks_one':'focus_unlocks',{n}));
+ if(t.awaiting)reason.push(tr('meta_waiting'));
+ if(t.state==='snoozed'&&t.until)reason.push(tr('meta_resumes').replace('{time}',short(t.until)));
+ if(!reason.length)reason.push(tr('priority_'+t.priority));
+ const button=(action,label,icon)=>'<button type="button" class="btn" data-id="'+t.id+'" data-action="'+action+'" aria-label="'+esc(label+': '+t.title)+'"'+(off||action==='activate'&&blocked?' disabled':'')+'>'+icon+esc(label)+'</button>';
+ return '<article class="task focus-item'+(big?' big':'')+'" data-task-id="'+t.id+'"><div class="row-main"><button type="button" class="check" data-id="'+t.id+'" data-action="done" aria-label="'+esc(tr('complete')+': '+t.title)+'"'+(off?' disabled':'')+'><span class="box">'+checkIcon+'</span></button><div class="row-text">'+titleCell(t,data)+'<p class="focus-reason">'+esc(reason.join(' · '))+'</p>'+(t.next?'<p class="focus-next"><b>'+esc(tr('next_step'))+':</b> '+esc(t.next)+'</p>':'')+'</div><div class="focus-actions">'+(t.state==='active'?button('todo',tr('pause'),pauseIcon):button('activate',tr(t.state==='snoozed'?'resume_now':'start'),playIcon))+button('snooze',tr('snooze'),clockIcon)+'</div></div>'+(expanded===t.id?expandView(t,data):'')+'</article>';
+}
+function focusLanes(data){const selected=globalThis.dayOrdering.focus(data.tasks,NOW.getTime()),sections=[['active',selected.active],['next',selected.next],['soon',selected.soon]],shown=sections.reduce((n,[,rows])=>n+rows.length,0),hidden=data.tasks.filter(t=>!['done','retired'].includes(t.state)).length-shown;let first=true;
+ const lanes=[{id:'focus:intro',head:'',items:[{key:'intro',html:'<p class="focus-intro">'+esc(shown?formatted('focus_intro',{n:hidden}):tr('focus_empty'))+' <button type="button" class="link-button" data-exit-focus>'+esc(tr('focus_all'))+'</button></p>'}]}];
+ for(const [key,rows] of sections)if(rows.length)lanes.push({id:'focus:'+key,cls:' focus-section',head:'<h2>'+esc(tr('focus_'+key))+'</h2>',items:rows.map(t=>{const big=first;first=false;return {id:t.id,html:focusRow(t,data,big)}})});
+ if(shown)lanes.push({id:'focus:rest',head:'',items:[{key:'rest',html:'<p class="focus-rest">'+esc(tr('focus_rest'))+'</p>'}]});return lanes;
+}
 // The data line under or beside the title: group, dates, waiting, estimate, dependencies and a pending change.
 function rowMeta(t,data,proposal){const time=(key,value,cls)=>'<span class="'+cls+'" title="'+esc(full(value))+'">'+esc(tr(key).replace('{time}',short(value)))+'</span>';
  const off=data.readOnly||t.pending,menuButton=(action,cls,content,hint)=>'<button type="button" class="'+cls+'" data-id="'+t.id+'" data-action="'+action+'" aria-haspopup="menu" aria-expanded="false" title="'+esc(hint)+'"'+(off?' disabled':'')+'>'+content+'</button>';
@@ -269,7 +289,7 @@ function boardLinks(data){const byId=new Map(data.tasks.map(t=>[t.id,t])),links=
  return links}
 const sameLink=(a,b)=>!!a&&!!b&&a.from===b.from&&a.to===b.to&&a.type===b.type;
 const linesFit=()=>$('board').clientWidth>=600;
-function shownLinks(data){if(!linesFit()||drag?.active)return [];const ids=new Set([dependencyFocus,expanded,hoverTask||hoverKeep,connectFrom,connectDrag?.from].filter(Boolean));
+function shownLinks(data){if(taskView==='focus'||!linesFit()||drag?.active)return [];const ids=new Set([dependencyFocus,expanded,hoverTask||hoverKeep,connectFrom,connectDrag?.from].filter(Boolean));
  return boardLinks(data).filter(l=>!sameLink(l,connectDrag?.retarget)&&(ids.has(l.from)||ids.has(l.to)||sameLink(l,selectedLink)))}
 // Where a line meets a task: its port on the right, or the card's left edge for a column to its left.
 function portAt(id,side,box){const card=cardOf(id);if(!card?.getClientRects().length)return null;const r=card.getBoundingClientRect(),port=card.querySelector('.port'),p=port?.getClientRects().length?port.getBoundingClientRect():null;
@@ -391,7 +411,7 @@ function render(data=flow.snapshot()) {
  if(expanded&&!data.tasks.some(t=>t.id===expanded&&!t.pending&&!['done','retired'].includes(t.state)))expanded=null;
  if(titleEdit&&!data.tasks.some(t=>t.id===titleEdit.id&&!['done','retired'].includes(t.state)))titleEdit=null;
  const typing=typingState();rendering=true;
- morphBoard(orderView==='group'&&$('board').classList.contains('is-list')?groupLanes(data,proposals):[['active',tr("active")],['todo',tr("to_do")],['snoozed',tr("snoozed")]].map(([state,label])=>{
+ morphBoard(taskView==='focus'?focusLanes(data):orderView==='group'&&$('board').classList.contains('is-list')?groupLanes(data,proposals):[['active',tr("active")],['todo',tr("to_do")],['snoozed',tr("snoozed")]].map(([state,label])=>{
   const rows=data.tasks.filter(t=>t.state===state&&shownByFilter(t)),sections=globalThis.dayOrdering.arrange(rows,orderView,{order:localOrder||data.taskOrder||[],suggestion:data.orderSuggestion?.result});
   const items=sections.flatMap(s=>[...(orderView==='group'?[{key:'heading:'+s.key,html:groupHeading(s)}]:[]),...s.tasks.map(t=>({id:t.id,html:taskRow(t,s,data,proposals.find(p=>p.intent.taskId===t.id))}))]);
   if(!rows.length)items.push({key:'empty',html:'<p class="lane-empty">'+esc(tr('lane_empty'))+'</p>'});
@@ -678,7 +698,12 @@ function openContext(origin){const revision=flow.snapshot().revision,c=flow.snap
  $('context-form').onsubmit=async e=>{e.preventDefault();const raw=$('context-minutes').value,until=$('context-until').value;try{let availableUntil=c.availableUntil;if(raw.trim()){if(until!==openingUntil){const date=parseLocal(until);if(!Number.isFinite(date.getTime())||ambiguous(date)||localValue(date)!==until)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"));availableUntil=date.toISOString()}if(!availableUntil)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"))}await flow.setContext({availableMinutes:raw.trim()?Number(raw):null,availableUntil:raw.trim()?availableUntil:null,rest:$('context-rest').checked},revision);$('context-dialog').close('declared')}catch(error){$('context-error').hidden=false;$('context-error').textContent=error.message}};
  openDialog($('context-dialog'),origin,null,null)}
 $('context-open').onclick=e=>openContext(e.currentTarget);$('context-cancel').onclick=()=>$('context-dialog').close('cancel');
-$('list-view').onclick=()=>{$('board').classList.add('is-list');$('list-view').setAttribute('aria-pressed','true');$('board-view').setAttribute('aria-pressed','false');render()};$('board-view').onclick=()=>{$('board').classList.remove('is-list');$('list-view').setAttribute('aria-pressed','false');$('board-view').setAttribute('aria-pressed','true');render()};
+function setTaskView(view){closeMenu();taskView=view;dependencyFocus=null;selectedLink=null;hoverTask=hoverKeep=null;expanded=null;
+ document.body.classList.toggle('focus-mode',view==='focus');$('board').classList.toggle('is-list',view==='list');$('board').classList.toggle('is-focus',view==='focus');
+ for(const key of ['list','board','focus'])$(key+'-view').setAttribute('aria-pressed',String(view===key));
+ placeChat();render();}
+$('list-view').onclick=()=>setTaskView('list');$('board-view').onclick=()=>setTaskView('board');$('focus-view').onclick=()=>setTaskView('focus');
+$('board').addEventListener('click',e=>{if(e.target.closest('[data-exit-focus]'))setTaskView('list')});
 $('group-filters').onclick=e=>{const b=e.target.closest('[data-filter]');if(b&&b.dataset.filter!==groupFilter)setGroupFilter(b.dataset.filter)};
 $('order-choice').value=orderView;$('order-choice').onchange=()=>{orderView=$('order-choice').value;try{localStorage.setItem('day-attendant-order',orderView)}catch{}render()};
 $('order-note').onclick=e=>{if(e.target.closest('#suggest-order'))safely(async()=>{await deliver('/api/suggestion',{});notice(tr('suggestion_pending'))})};
@@ -786,7 +811,7 @@ function dropCard(d){
 }
 const themeMedia=matchMedia('(prefers-color-scheme:dark)');let themeChoice='system';try{themeChoice=localStorage.getItem('day-attendant-theme')||'system'}catch{}if(!['system','light','dark'].includes(themeChoice))themeChoice='system';$('theme-choice').value=themeChoice;const applyTheme=()=>root.dataset.theme=themeChoice==='system'?(themeMedia.matches?'dark':'light'):themeChoice;$('theme-choice').onchange=()=>{themeChoice=$('theme-choice').value;try{localStorage.setItem('day-attendant-theme',themeChoice)}catch{}applyTheme()};themeMedia.addEventListener('change',applyTheme);applyTheme();
 const compact=matchMedia('(max-width:1279px)');let chatOpen=!compact.matches;
-function placeChat(){const modal=$('chat-dialog'),panel=$('assistant'),dock=$('chat-dock');if(compact.matches&&!modal.open&&document.querySelector('dialog[open]:not(#chat-dialog)'))chatOpen=false;$('chat-toggle').setAttribute('aria-expanded',String(chatOpen));$('workspace').classList.toggle('chat-open',chatOpen&&!compact.matches);if(compact.matches){dock.hidden=true;if(panel.parentElement!==modal)modal.append(panel);if(chatOpen&&!modal.open){modal.returnValue='cancel';origins.set(modal,{origin:$('chat-toggle')});modal.showModal()}else if(!chatOpen&&modal.open)modal.close('collapse')}else{if(modal.open)modal.close('reflow');if(panel.parentElement!==dock)dock.append(panel);dock.hidden=!chatOpen}}
+function placeChat(){const modal=$('chat-dialog'),panel=$('assistant'),dock=$('chat-dock');if(taskView==='focus'){if(modal.open)modal.close('reflow');dock.hidden=true;$('workspace').classList.remove('chat-open');$('chat-toggle').setAttribute('aria-expanded','false');return}if(compact.matches&&!modal.open&&document.querySelector('dialog[open]:not(#chat-dialog)'))chatOpen=false;$('chat-toggle').setAttribute('aria-expanded',String(chatOpen));$('workspace').classList.toggle('chat-open',chatOpen&&!compact.matches);if(compact.matches){dock.hidden=true;if(panel.parentElement!==modal)modal.append(panel);if(chatOpen&&!modal.open){modal.returnValue='cancel';origins.set(modal,{origin:$('chat-toggle')});modal.showModal()}else if(!chatOpen&&modal.open)modal.close('collapse')}else{if(modal.open)modal.close('reflow');if(panel.parentElement!==dock)dock.append(panel);dock.hidden=!chatOpen}}
 $('chat-dialog').addEventListener('close',()=>{if($('chat-dialog').returnValue==='reflow')return;chatOpen=false;placeChat()});$('chat-toggle').onclick=()=>{chatOpen=!chatOpen;placeChat()};$('chat-close').onclick=()=>{chatOpen=false;placeChat();$('chat-toggle').focus({preventScroll:true})};compact.addEventListener('change',placeChat);placeChat();
 
 
@@ -819,7 +844,7 @@ class RemoteFlow{
  poll(){return this.loading?null:this.load()}
  async load(){const seq=++this.started,settled=!this.sending;this.loading++;try{const raw=await api('/api/state'+(this.tag?'?since='+encodeURIComponent(this.tag):''));if(seq<this.applied||!settled||seq<=this.barrier)return;this.applied=seq;if(this.offline){this.offline=false;notice(tr("connection_restored"))}if(raw.unchanged){if(raw.tag===this.tag)this.tick(raw.now);else this.tag='';return}this.apply(raw)}catch(error){this.offline=true;this.data.agent={...(this.data.agent||{}),connected:false};$('agent-state').textContent=tr("disconnected");delete $('agent-state').dataset.label;throw error}finally{this.loading--}}
  // An unchanged poll only advances the clock; calendar rows are redrawn when one of them ends.
- tick(now){const before=new Date(this.data.now),after=new Date(now);NOW=after;this.data.now=now;if((this.data.calendar_events||[]).some(e=>{const end=new Date(e.end_at);return end>before&&end<=after}))globalThis.dayDaily?.update(this.data)}
+ tick(now){const before=new Date(this.data.now),after=new Date(now);NOW=after;this.data.now=now;if(taskView==='focus'&&Math.floor(before/60000)!==Math.floor(after/60000))render(this.data);if((this.data.calendar_events||[]).some(e=>{const end=new Date(e.end_at);return end>before&&end<=after}))globalThis.dayDaily?.update(this.data)}
  apply(raw){if(!this.localeLoaded&&raw.profile){this.localeLoaded=true;locale=raw.profile.locale||'en';$('locale-choice').value=locale;translateChrome();refreshLabels()}NOW=new Date(raw.now);zone=raw.timezone||zone;const state={...raw,revision:Math.max(raw.revision,this.seen),mode:'connected',rawProposals:raw.proposals,proposals:raw.proposals.filter(p=>['evaluating','review','unavailable','stale','invalid'].includes(p.phase)).map(p=>({...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]})),suggestions:raw.suggestions||[],review:raw.review||{}};this.tag=raw.tag||'';this.data=state;reconcileDeliveries(raw);globalThis.dayDaily?.update(state);const digest=JSON.stringify([state.tasks,state.taskOrder,state.groupColors,state.orderSuggestion,state.agent.connected,state.context,state.proposals,state.lastFact,state.suggestions,state.revision,state.readOnly]);if(digest!==this.digest){this.digest=digest;render(state)}const md=JSON.stringify([state.messages,state.suggestions,state.conversation]);if(md!==this.messageDigest){this.messageDigest=md;renderMessages(state.messages,state)}const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};const agentError=state.agent.error&&errorText(state.agent.errorCode,state.agent.error);renderReview(state);$('bridge-state').hidden=state.agent.connected;if(!state.agent.connected)setText($('bridge-state'),agentError||tr('agent_temporarily_unavailable'));renderContextStatus(state);setText($('agent-details'),(state.agent.model||(state.profile?.harness==='claude'?'Claude Code':'Codex'))+' · '+(state.profile?.harness||'codex'));const stateTitle=agentError||$('agent-state').dataset.label||'';if($('agent-state').title!==stateTitle)$('agent-state').title=stateTitle;setText(document.querySelector('.date'),new Intl.DateTimeFormat(formatLocale(),{weekday:'long',day:'numeric',month:'long',timeZone:zone}).format(NOW));}
  // A revision this page produced itself: the next change it sends already includes its own last one.
  observe(result){const revision=result?.result?.revision??result?.revision;if(Number.isInteger(revision)&&revision>this.seen){this.seen=revision;this.data.revision=Math.max(this.data.revision||0,revision)}return result}

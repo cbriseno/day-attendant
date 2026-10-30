@@ -79,3 +79,21 @@ assert.equal(adopt('medium',null,null),'medium');
 // Urgent is the highest: dropped among urgent tasks a task becomes urgent, and an urgent one let go lower takes that priority.
 assert.equal(adopt('high','urgent','urgent'),'urgent');assert.equal(adopt('low',null,'urgent'),'urgent');assert.equal(adopt('urgent','high','medium'),'high');
 console.log('Ordering rules passed');
+// Focus ignores display filters/order, excludes unfinished prerequisites (including retired or missing),
+// caps active at two and immediate work at five; snoozes have their separate 72 hour window.
+const now=Date.parse('2026-10-29T12:00Z'),iso=h=>new Date(now+h*3600000).toISOString();
+const f=(id,extra={})=>task(id,'medium',{state:'todo',dependsOn:[],...extra});
+const focusTasks=[f('prereq',{priority:'urgent'}),f('blocked',{priority:'urgent',dependsOn:['prereq']}),
+ ...['active1','active2','active3'].map(id=>f(id,{state:'active'})),
+ ...['next1','next2','next3','next4'].map(id=>f(id)),
+ f('soon1',{state:'snoozed',until:iso(1)}),f('soon2',{state:'snoozed',until:iso(72)}),f('later',{state:'snoozed',until:iso(73)}),
+ f('closed',{state:'done'}),f('retired',{state:'retired'}),f('retired-dependent',{dependsOn:['retired']}),f('missing-dependent',{dependsOn:['missing']})];
+const selection=context.dayOrdering.focus(focusTasks,now);
+assert.equal(selection.active.length,2);assert.equal(selection.next.length,3);
+assert.deepEqual(plain(selection.soon.map(t=>t.id)),['soon1','soon2']);
+assert.ok(!selection.next.some(t=>['blocked','retired-dependent','missing-dependent'].includes(t.id)));
+assert.equal(selection.next[0].id,'prereq');
+const completed=focusTasks.map(t=>t.id==='prereq'?{...t,state:'done'}:t);
+assert.equal(context.dayOrdering.focus(completed,now).next[0].id,'blocked');
+assert.deepEqual(plain(context.dayOrdering.focus([],now)),{active:[],next:[],soon:[]});
+console.log('Focus selection rules passed');

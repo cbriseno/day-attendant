@@ -1,6 +1,18 @@
 // Authored interface copy only. Never apply these catalogs to card or chat content.
 globalThis.dayTranslations = {
   "en": {
+    "focus_view": "Focus",
+    "focus_in_progress": "in progress",
+    "focus_active": "In progress",
+    "focus_next": "Up next",
+    "focus_soon": "Snoozed · returning soon",
+    "focus_unlocks_one": "unlocks {n} task",
+    "focus_unlocks": "unlocks {n} tasks",
+    "focus_intro": "Focus: what needs your attention now. {n} other tasks stay saved, out of view.",
+    "focus_empty": "Nothing needs attention right now. A good moment to rest or choose calmly.",
+    "focus_all": "See all",
+    "focus_rest": "When you finish one, the next moves up.",
+
     "snooze_until": "Snooze until",
     "snooze_in_1_hour": "In 1 hour",
     "snooze_in_3_hours": "In 3 hours",
@@ -125,6 +137,18 @@ globalThis.dayTranslations = {
     "priority_low": "Low"
   },
   "es": {
+    "focus_view": "Enfoque",
+    "focus_in_progress": "en curso",
+    "focus_active": "En curso",
+    "focus_next": "Lo que sigue",
+    "focus_soon": "Pospuestas que regresan pronto",
+    "focus_unlocks_one": "desbloquea {n} tarea",
+    "focus_unlocks": "desbloquea {n} tareas",
+    "focus_intro": "Enfoque: solo lo que merece tu atención ahora. Las otras {n} siguen guardadas, fuera de la vista.",
+    "focus_empty": "Nada urgente por ahora. Buen momento para descansar o elegir algo con calma.",
+    "focus_all": "Ver todo",
+    "focus_rest": "Cuando termines una, sube la siguiente.",
+
     "snooze_until": "Posponer hasta",
     "snooze_in_1_hour": "En 1 hora",
     "snooze_in_3_hours": "En 3 horas",
