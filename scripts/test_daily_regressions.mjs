@@ -34,6 +34,7 @@ const server=createServer(async(req,res)=>{
     if(body.action==='dependency_update')t.dependsOn=p.dependsOn;
     if(body.action==='related_update')t.relatedTo=p.relatedTo;
     if(body.action==='task_update')for(const key of ['title','priority','due','context','next','awaiting','group'])if(key in p)t[key]=p[key];
+    if(body.action==='continuity_update')for(const key of ['context','next','awaiting','remainingMinutes'])if(key in p)t[key]=p[key];
     if(body.action==='order_update')state.taskOrder=p.order;
     const nextState={front_activate:'active',front_todo:'todo',task_done:'done',front_retire:'retired',task_reopen:'todo'}[body.action];
     if(nextState)t.state=nextState;
@@ -102,7 +103,13 @@ try{
  const fill=(id,value)=>evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))})()`);
  const close=()=>evaluate(`document.querySelectorAll('dialog[open]').forEach(d=>d.close())`);
  const refresh=()=>evaluate('(async()=>{while(dayUI.flow.busy)await new Promise(resolve=>setTimeout(resolve,5));await dayUI.flow.refresh()})()');
- const detail=()=>evaluate(`dayUI.openDetail(${JSON.stringify(target.id)},document.getElementById('list-view'))`);
+ const row=selector=>`[data-task-id="${target.id}"] ${selector}`,text=selector=>evaluate(`document.querySelector(${JSON.stringify(selector)}).textContent`);
+ const expand=()=>evaluate(`document.querySelector(${JSON.stringify(row('.expand'))})||dayUI.expandTask(${JSON.stringify(target.id)})`);
+ const collapse=()=>evaluate(`document.querySelector(${JSON.stringify(row('.expand'))})&&document.querySelector(${JSON.stringify(row('[data-x=close]'))}).click()`);
+ const put=(selector,value)=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.focus();e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+ const key=(selector,name)=>evaluate(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new KeyboardEvent('keydown',{key:${JSON.stringify(name)},bubbles:true,cancelable:true}))`);
+ const serverWait=async(predicate)=>{const deadline=Date.now()+5000;while(!predicate()){if(Date.now()>deadline)throw Error('Timed out: '+predicate);await new Promise(r=>setTimeout(r,15))}await evaluate('(async()=>{while(dayUI.flow.sending)await new Promise(r=>setTimeout(r,5))})()')};
+ const openDialogs="document.querySelectorAll('dialog[open]').length";
  const submit=id=>evaluate(`document.querySelector('#'+${JSON.stringify(id)}+' form').requestSubmit()`);
  const saved=id=>wait(`!document.getElementById(${JSON.stringify(id)}).open`);
  const failed=id=>wait(`!document.getElementById(${JSON.stringify(id+'-error')}).hidden`);
@@ -111,29 +118,92 @@ try{
  await wait('globalThis.dayDaily && daySnapshot().profile');
 
  if(group==='all'||group==='details'){
-  for(const [status,control,action,label] of [
-   ['todo','detail-focus','front_activate','Start'],['snoozed','detail-focus','front_activate','Resume'],
-   ['done','detail-focus','task_reopen','Reopen'],['retired','detail-focus','task_reopen','Reopen'],
-   ['active','detail-done','task_done','Complete'],['todo','confirm-retire','front_retire','Yes, retire']
-  ]){
-   target.state=status;state.revision++;await refresh();await detail();
-   if(control==='confirm-retire')await click('#detail-retire');
-   assert.equal(await evaluate(`document.getElementById(${JSON.stringify(control)}).textContent.trim()`),label);
-   await fill('estimate-input','17');const opening=state.revision,before=requests.length;
-   target.state=['done','retired'].includes(status)?'todo':'done';state.revision++;await refresh();
-   const externalState=target.state;await evaluate("dayUI.notice('')");await click('#'+control);await wait(`daySnapshot().revision>=${state.revision}`);
-   await wait(`document.getElementById('status').textContent!=='' || !document.getElementById('detail-dialog').open`);
-   const sent=requests[before];assert.ok(sent,label+' must submit');
-   assert.equal(sent.action,action,label+' keeps its displayed action');assert.deepEqual(sent.payload,{uuid:target.id});
-   assert.equal(sent.expected_revision,opening,label+' keeps its opening revision');assert.equal(target.state,externalState);
-   assert.equal(await evaluate("document.getElementById('detail-dialog').open"),true);
-   assert.equal(await evaluate("document.getElementById('estimate-input').value"),'17');
-   assert.equal(await evaluate("document.getElementById('estimate-error').hidden"),false);
-   assert.match(await evaluate("document.getElementById('estimate-error').textContent"),/change/i);await close();
-   target.state=status;state.revision++;await refresh();await detail();
-   if(control==='confirm-retire')await click('#detail-retire');
-   await click('#'+control);await saved('detail-dialog');assert.equal(requests.at(-1).action,action);
+  // The title edits in place: Enter saves at once with the latest revision; Esc and an empty title keep it.
+  Object.assign(target,{state:'todo',group:null,due:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[]});state.revision++;await refresh();
+  await click(row('[data-action=title]'));assert.equal(await evaluate(`document.activeElement===document.querySelector(${JSON.stringify(row('.title-edit'))})`),true);
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(row('.title-edit'))}).value`),target.title);
+  let before=requests.length;await put(row('.title-edit'),'Edited in place');await key(row('.title-edit'),'Enter');
+  assert.equal(await text(row('[data-action=title]')),'Edited in place','the new title shows before the answer');
+  await serverWait(()=>target.title==='Edited in place');
+  assert.deepEqual([requests.length-before,requests.at(-1).action,requests.at(-1).payload,requests.at(-1).expected_revision],[1,'task_update',{uuid:target.id,title:'Edited in place'},state.revision-1]);
+  before=requests.length;await click(row('[data-action=title]'));await put(row('.title-edit'),'Discarded');await key(row('.title-edit'),'Escape');
+  assert.equal(await evaluate(`document.activeElement===document.querySelector(${JSON.stringify(row('[data-action=title]'))})`),true,'Esc returns to the title');
+  await click(row('[data-action=title]'));await put(row('.title-edit'),'   ');await key(row('.title-edit'),'Enter');
+  await new Promise(r=>setTimeout(r,100));assert.equal(requests.length,before);assert.equal(await text(row('[data-action=title]')),'Edited in place');
+  // Someone else changes the same title while it is typed: nothing is sent, the row says so and keeps the draft.
+  await click(row('[data-action=title]'));await put(row('.title-edit'),'My draft title');
+  target.title='Changed on the phone';state.revision++;await refresh();
+  assert.equal(await evaluate(`document.activeElement===document.querySelector(${JSON.stringify(row('.title-edit'))})`),true,'a redraw keeps the editor focused');
+  before=requests.length;await key(row('.title-edit'),'Enter');await wait(`document.querySelector(${JSON.stringify(row('.field-conflict'))})!==null`);
+  assert.equal(requests.length,before);assert.equal(await evaluate(`document.querySelector(${JSON.stringify(row('.title-edit'))}).value`),'My draft title');
+  assert.match(await text(row('.field-conflict')),/It now says: Changed on the phone\. What you typed is still here\./);
+  assert.equal(await evaluate(openDialogs),0,'nothing opens over the row');
+  await click(row('[data-conflict=mine]'));await serverWait(()=>target.title==='My draft title');
+  assert.deepEqual(requests.at(-1).payload,{uuid:target.id,title:'My draft title'});
+  await wait(`document.querySelector(${JSON.stringify(row('.field-conflict'))})===null&&document.querySelector(${JSON.stringify(row('.title-edit'))})===null`);
+  // Clicking the row's empty space opens its details below it, never a dialog; ⋯ and Esc close them.
+  await click(row('.row-main'));await wait(`document.querySelector(${JSON.stringify(row('.expand'))})!==null`);
+  assert.equal(await evaluate(openDialogs),0);
+  assert.equal(await evaluate(`document.activeElement===document.querySelector(${JSON.stringify(row('[data-field=context]'))})`),true);
+  await evaluate("document.activeElement.blur()");await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(row('.expand'))})`),null,'Esc closes the details');
+  await click(row('[data-action=more]'));assert.equal(await text('.row-menu [data-menu-act=details]'),'More details');await click('.row-menu [data-menu-act=details]');
+  assert.notEqual(await evaluate(`document.querySelector(${JSON.stringify(row('.expand'))})`),null);
+  await click(row('[data-action=more]'));assert.equal(await text('.row-menu [data-menu-act=details]'),'Hide details');await click('.menu-scrim, .row-menu [data-menu-act=details]');await expand();
+  // Each field saves by itself after a pause, on blur or on Enter; typing keeps its focus and caret.
+  before=requests.length;await put(row('[data-field=context]'),'Left at page 3');await new Promise(r=>setTimeout(r,250));
+  assert.equal(requests.length,before,'typing waits for a pause');
+  await serverWait(()=>target.context==='Left at page 3');assert.deepEqual([requests.at(-1).action,requests.at(-1).payload],['continuity_update',{uuid:target.id,context:'Left at page 3'}]);
+  assert.equal(await evaluate(`document.activeElement===document.querySelector(${JSON.stringify(row('[data-field=context]'))})&&document.activeElement.selectionStart===14`),true);
+  await wait(`/Where I left off saved/.test(document.querySelector(${JSON.stringify(row('.saved-note'))}).textContent)`);
+  await click(row('[data-field=awaiting]'));await serverWait(()=>target.awaiting===true);assert.deepEqual(requests.at(-1).payload,{uuid:target.id,awaiting:true});
+  before=requests.length;await put(row('[data-field=remainingMinutes]'),'-5');await key(row('[data-field=remainingMinutes]'),'Enter');
+  await wait(`document.querySelector(${JSON.stringify(row('.field-error'))})!==null`);assert.equal(requests.length,before,'an invalid estimate is not sent');
+  await put(row('[data-field=remainingMinutes]'),'25');await key(row('[data-field=remainingMinutes]'),'Enter');await serverWait(()=>target.remainingMinutes===25);
+  assert.deepEqual(requests.at(-1).payload,{uuid:target.id,remainingMinutes:25});
+  // The service saw a newer change elsewhere: the page reads it and, with this field untouched, saves once more.
+  before=requests.length;await put(row('[data-field=next]'),'Call the bank');target.priority='high';state.revision++;
+  await evaluate(`document.querySelector(${JSON.stringify(row('[data-field=next]'))}).blur()`);await serverWait(()=>target.next==='Call the bank');
+  const retried=requests.slice(before);assert.deepEqual(retried.at(-1).payload,{uuid:target.id,next:'Call the bank'});assert.ok(retried.length<=2);
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(row('.field-conflict'))})`),null);
+  // The same field changed elsewhere: the draft stays, the row offers both, and nothing is overwritten.
+  await put(row('[data-field=next]'),'My next step');target.next='Their next step';state.revision++;
+  await evaluate(`document.querySelector(${JSON.stringify(row('[data-field=next]'))}).blur()`);await wait(`document.querySelector(${JSON.stringify(row('.field-conflict'))})!==null`);
+  assert.equal(target.next,'Their next step');assert.equal(await evaluate(`document.querySelector(${JSON.stringify(row('[data-field=next]'))}).value`),'My next step');
+  assert.match(await text(row('.field-conflict')),/It now says: Their next step/);
+  before=requests.length;await click(row('[data-conflict=theirs]'));await wait(`document.querySelector(${JSON.stringify(row('[data-field=next]'))}).value==='Their next step'`);assert.equal(requests.length,before);
+  // Retire asks in the row; Duplicate copies title, priority and group.
+  await click(row('[data-x=retire]'));assert.match(await text(row('.inline-confirm')),/Retire this responsibility\?/);await click(row('[data-x=retire-no]'));assert.equal(requests.length,before);
+  await click(row('[data-x=duplicate]'));await serverWait(()=>requests.length>before);assert.deepEqual([requests.at(-1).action,requests.at(-1).payload],['task_add',{title:target.title,priority:target.priority}]);
+  before=requests.length;await click(row('[data-x=retire]'));await click(row('[data-x=retire-yes]'));await serverWait(()=>target.state==='retired');
+  assert.deepEqual([requests.length-before,requests.at(-1).action,requests.at(-1).payload],[1,'front_retire',{uuid:target.id}]);
+  await wait(`document.querySelector('[data-reopen-id="${target.id}"]')!==null`);await click(`[data-reopen-id="${target.id}"]`);await serverWait(()=>target.state==='todo');
+  assert.deepEqual([requests.at(-1).action,requests.at(-1).payload],['task_reopen',{uuid:target.id}]);
+  // Group: a one-level menu from its chip, with a new group typed in place or none.
+  await wait(`document.querySelector(${JSON.stringify(row('[data-action=group]'))})!==null`);
+  await click(row('[data-action=group]'));assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['No group']);
+  before=requests.length;await put('.row-menu [data-menu-input=group]','Errands');await key('.row-menu [data-menu-input=group]','Enter');
+  assert.match(await text(row('[data-action=group]')),/Errands$/);await serverWait(()=>target.group==='Errands');assert.deepEqual(requests.at(-1).payload,{uuid:target.id,group:'Errands'});
+  await click(row('[data-action=group]'));await click('.row-menu [data-menu-act=group][data-value=""]');await serverWait(()=>target.group==='');assert.deepEqual(requests.at(-1).payload,{uuid:target.id,group:''});
+  // Deadline: ⋯ swaps to the deadline choices in the same menu; presets are 18:00 in the profile's zone.
+  await click(row('[data-action=more]'));await click('.row-menu [data-menu-act=set-due]');
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu [data-menu-act=due]')].map(e=>e.dataset.value)"),['2025-10-29T00:00:00.000Z','2025-10-30T00:00:00.000Z','2025-11-01T00:00:00.000Z','2025-11-05T01:00:00.000Z']);
+  await click('.row-menu [data-menu-act=due]');await serverWait(()=>target.due==='2025-10-29T00:00:00.000Z');assert.deepEqual(requests.at(-1).payload,{uuid:target.id,due:'2025-10-29T00:00:00.000Z'});
+  for(const invalid of ['2025-11-02T01:30','2025-03-09T02:30']){
+   await wait(`document.querySelector(${JSON.stringify(row('[data-action=due]'))})!==null`);await click(row('[data-action=due]'));before=requests.length;
+   await put('.row-menu [data-menu-input=due]',invalid);await click('.row-menu [data-menu-act=due-custom]');
+   assert.equal(await evaluate("!document.querySelector('.row-menu .menu-error').hidden"),true,invalid+' is rejected in the menu');assert.equal(requests.length,before);
+   await key('.row-menu [data-menu-input=due]','Escape');
   }
+  await click(row('[data-action=due]'));await put('.row-menu [data-menu-input=due]','2025-11-02T03:30');await key('.row-menu [data-menu-input=due]','Enter');
+  await serverWait(()=>target.due==='2025-11-02T10:30:00.000Z');
+  await click(row('[data-action=due]'));await click('.row-menu [data-menu-act=due-clear]');await serverWait(()=>target.due===null);assert.deepEqual(requests.at(-1).payload,{uuid:target.id,due:null});
+  assert.equal(await evaluate(openDialogs),0,'no field needed a dialog');
+  await evaluate("document.activeElement?.blur?.()");await collapse();
+  Object.assign(target,{title:'Responsabilidad original',priority:'medium',context:'',next:'',awaiting:false,remainingMinutes:null});state.revision++;await refresh();
+  console.log('Inline editing regressions passed: title in place, conflicts keep the draft, details below the row, field autosave, menus for group and deadline');
+ }
+ if(group==='all'||group==='details'){
   target.state='active';state.revision++;await refresh();const opening=state.revision;
   target.state='done';state.revision++;
   await evaluate("dayUI.notice('')");await click(`[data-id="${target.id}"][data-action="todo"]`);
@@ -143,12 +213,12 @@ try{
   await click(`[data-id="${target.id}"][data-action="todo"]`);await wait(`daySnapshot().tasks.find(t=>t.id===${JSON.stringify(target.id)}).state==='todo'`);
   assert.equal(requests.at(-1).expected_revision,current);assert.equal(target.state,'todo');
   target.state='todo';state.revision++;await refresh();
-  console.log('Details action regressions passed');
+  console.log('Row action revision regressions passed');
  }
  if(group==='all'||group==='dates'){
   for(const instant of ['2025-11-02T07:30:21Z','2025-11-02T08:30:21Z','2025-11-02T10:30:21Z']){
-   target.due=instant;state.revision++;await refresh();await detail();await click('#edit-card');
-   const before=requests.length;await fill('card-title','Title with '+instant);await submit('card-dialog');await saved('card-dialog');
+   target.due=instant;state.revision++;await refresh();await click(row('[data-action=title]'));
+   const before=requests.length;await put(row('.title-edit'),'Title with '+instant);await key(row('.title-edit'),'Enter');await serverWait(()=>requests.length>before);
    assert.equal(requests.length,before+1);assert.equal(requests.at(-1).payload.title,'Title with '+instant);
    assert.equal('due' in requests.at(-1).payload,false);assert.equal(target.due,instant);
    const start=instant.replace(':21Z',':45Z'),end=instant.replace(':30:21Z',':50:59Z');
@@ -168,9 +238,9 @@ try{
    state.timezone='America/Edmonton';state.profile.timezone=state.timezone;state.revision++;await refresh();
   }
   for(const invalid of ['2025-11-02T01:45','2025-03-09T02:30']){
-   await detail();await click('#edit-card');await fill('card-title','Draft retained');await fill('card-due',invalid);
-   let before=requests.length;await submit('card-dialog');await failed('card-dialog');assert.equal(requests.length,before);
-   assert.equal(await evaluate("document.getElementById('card-title').value"),'Draft retained');await close();
+   await click(row('[data-action=due]'));await put('.row-menu [data-menu-input=due]',invalid);
+   let before=requests.length;await click('.row-menu [data-menu-act=due-custom]');assert.equal(await evaluate("!document.querySelector('.row-menu .menu-error').hidden"),true);assert.equal(requests.length,before);
+   assert.equal(await evaluate("document.querySelector('.row-menu [data-menu-input=due]').value"),invalid,'the typed date stays');await key('.row-menu [data-menu-input=due]','Escape');
    for(const id of ['capture-start','capture-end']){
     await click('#calendar-area .link-button');await fill('capture-title','Draft event');await fill(id,invalid);
     before=requests.length;await submit('capture-dialog');await failed('capture-dialog');assert.equal(requests.length,before);
@@ -299,21 +369,30 @@ try{
   console.log('Dependency indicator regressions passed');
  }
  if(group==='all'){
- for(const [action,control,key] of [['dependency_update','edit-dependencies','dependsOn'],['related_update','edit-related','relatedTo']]){
-  await detail();target[key]=[a.id];state.revision++;await refresh();await click('#'+control);
-  assert.deepEqual(await evaluate("[...document.querySelectorAll('#links-dialog input:checked')].map(e=>e.value)"),[a.id]);
-  await click(`#links-dialog input[value="${b.id}"]`);await submit('links-dialog');await saved('links-dialog');assert.deepEqual(target[key],[a.id,b.id]);
-  assert.equal(requests.at(-1).action,action);
-  await close();await detail();await click('#'+control);const opening=state.revision;
-  target[key]=[a.id,b.id,c.id];state.revision++;await refresh();await click(`#links-dialog input[value="${b.id}"]`);await submit('links-dialog');await failed('links-dialog');
-  assert.equal(requests.at(-1).expected_revision,opening);assert.deepEqual(target[key],[a.id,b.id,c.id]);await close();
+ // Links are added from a picker in the expanded row and removed with ×; unrequested links are kept.
+ for(const [action,kind,key] of [['dependency_update','dep','dependsOn'],['related_update','rel','relatedTo']]){
+  for(const t of [a,b,c])t.dependsOn=[];target[key]=[a.id];state.revision++;await refresh();await expand();
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll(${JSON.stringify(row('.rel-go'))})].map(e=>e.textContent)`),['A']);
+  const picks=row(`[data-search=${kind}] + .picker-list:not([hidden]) [data-pick]`);
+  await put(row(`[data-search=${kind}]`),'B');assert.deepEqual(await evaluate(`[...document.querySelectorAll(${JSON.stringify(picks)})].map(e=>e.dataset.pick)`),[kind+':'+b.id]);
+  let before=requests.length;await click(picks);await serverWait(()=>target[key].length===2);
+  assert.deepEqual([requests.length-before,requests.at(-1).action,requests.at(-1).payload],[1,action,{uuid:target.id,[key]:[a.id,b.id]}]);
+  // A link changed elsewhere and not read yet: the service refuses, nothing is lost, and the next try keeps it.
+  target[key]=[a.id,b.id,c.id];state.revision++;before=requests.length;await click(row(`[data-unlink="${kind}:${b.id}"]`));
+  await wait(`document.getElementById('status').textContent!==''`);await serverWait(()=>requests.length>before);assert.deepEqual(target[key],[a.id,b.id,c.id]);
+  await refresh();await wait(`document.querySelectorAll(${JSON.stringify(row('.rel-go'))}).length===3`);
+  await click(row(`[data-unlink="${kind}:${b.id}"]`));await serverWait(()=>target[key].length===2);assert.deepEqual(target[key],[a.id,c.id]);
+  target[key]=[];state.revision++;await refresh();
  }
- await detail();target.title='Latest human title';target.context='Latest context';state.revision++;await refresh();await click('#edit-card');
- assert.equal(await evaluate("document.getElementById('card-title').value"),target.title);
- assert.equal(await evaluate("document.getElementById('card-context').value"),target.context);
- await fill('card-title','Requested replacement');const opening=state.revision;target.next='External next step';state.revision++;await refresh();await submit('card-dialog');await failed('card-dialog');
- assert.equal(target.title,'Latest human title');assert.equal(target.next,'External next step');assert.equal(requests.at(-1).expected_revision,opening);
- await close();await detail();await click('#edit-card');await fill('card-title','Requested replacement');await submit('card-dialog');await saved('card-dialog');assert.equal(target.title,'Requested replacement');
+ // A prerequisite never closes a loop: a task that waits for this one is not offered.
+ b.dependsOn=[target.id];state.revision++;await refresh();await expand();await put(row('[data-search=dep]'),'');
+ assert.deepEqual(await evaluate(`[...document.querySelectorAll(${JSON.stringify(row('[data-search=dep] + .picker-list:not([hidden]) [data-pick]'))})].map(e=>e.dataset.pick).sort()`),['dep:'+a.id,'dep:'+c.id].sort());
+ // Required by lists the dependents; × removes this task from that dependent's prerequisites only.
+ assert.deepEqual(await evaluate(`[...document.querySelectorAll(${JSON.stringify(row('[data-unlink^=dependent]'))})].map(e=>e.dataset.unlink)`),['dependent:'+b.id]);
+ const sentLinks=requests.length;await click(row(`[data-unlink="dependent:${b.id}"]`));await serverWait(()=>b.dependsOn.length===0);
+ assert.deepEqual([requests.length-sentLinks,requests.at(-1).action,requests.at(-1).payload],[1,'dependency_update',{uuid:b.id,dependsOn:[]}]);
+ await evaluate("document.activeElement?.blur?.()");await collapse();
+ target.title='Requested replacement';state.revision++;await refresh();
 
  state.proposals=Array.from({length:8},(_,i)=>({id:randomUUID(),intent:{action:'task_add',payload:{title:'Item '+(i+1)}},generation:0,facts:[],phase:'evaluating'}));
  state.messages=[{id:1,key:'capture',role:'user',text:'Capture nine items',status:'completed'}, {id:2,key:'capture:assistant',role:'assistant',text:'Checking the items.',status:'completed',data:JSON.stringify({proposal_ids:state.proposals.map(p=>p.id),unprocessed:['Ninth item remains'],uncertainties:['Which date for the ninth item?']})}];await refresh();
@@ -370,11 +449,11 @@ try{
  target.dependsOn=[a.id];target.blocked=true;target.blockedBy=[a.id];
  target.source='chat';target.person='Ana';target.reference='Referencia literal';
  const cardSelector=`[data-task-id="${target.id}"]`;
- const cardState=()=>evaluate(`(()=>{const card=document.querySelector(${JSON.stringify(cardSelector)});return {reason:card.querySelector('.blocked-label')?.title,actionDisabled:card.querySelector('.state-action').disabled,snoozeDisabled:card.querySelector('[data-action=snooze]').disabled,pendingDisabled:card.querySelector('[data-action=pending]').disabled,detailDisabled:card.querySelector('[data-action=detail]').disabled}})()`);
+ const cardState=()=>evaluate(`(()=>{const card=document.querySelector(${JSON.stringify(cardSelector)});return {reason:card.querySelector('.blocked-label')?.title,actionDisabled:card.querySelector('.state-action').disabled,snoozeDisabled:card.querySelector('[data-action=snooze]').disabled,pendingDisabled:card.querySelector('[data-action=pending]').disabled,titleDisabled:card.querySelector('[data-action=title]').disabled}})()`);
  for(const mode of ['todo','active','snoozed']){
   target.state=mode;target.until=mode==='snoozed'?'2025-10-29T12:00:00Z':null;await refresh();
   // A blocked task cannot be started or resumed from its row; pausing stays available.
-  const expected={reason:'Blocked · '+a.title,actionDisabled:mode!=='active',snoozeDisabled:false,pendingDisabled:false,detailDisabled:false};
+  const expected={reason:'Blocked · '+a.title,actionDisabled:mode!=='active',snoozeDisabled:false,pendingDisabled:false,titleDisabled:false};
   assert.deepEqual(await cardState(),expected);
   await evaluate(`globalThis.previousCard=document.querySelector(${JSON.stringify(cardSelector)})`);
   await click(cardSelector+' [data-action=pending]');
@@ -384,7 +463,7 @@ try{
   await fill('locale-choice','en');await refresh();assert.deepEqual(await cardState(),expected);
  }
  target.state='todo';target.until=null;state.readOnly=true;await refresh();
- const readOnlyCard={reason:'Blocked · '+a.title,actionDisabled:true,snoozeDisabled:true,pendingDisabled:true,detailDisabled:false};
+ const readOnlyCard={reason:'Blocked · '+a.title,actionDisabled:true,snoozeDisabled:true,pendingDisabled:true,titleDisabled:false};
  assert.deepEqual(await cardState(),readOnlyCard);
  assert.equal(await evaluate("document.getElementById('capture-open').disabled && document.getElementById('send-message').disabled"),true);
  await fill('locale-choice','es');await refresh();assert.deepEqual(await cardState(),{...readOnlyCard,reason:'Bloqueada · '+a.title});
@@ -414,18 +493,22 @@ try{
   await fill(id,id==='capture-observed'?'2024-11-03T01:30':'2025-11-02T01:30');const before=requests.length;await submit('capture-dialog');await failed('capture-dialog');assert.equal(requests.length,before);
   await fill(id,id==='capture-observed'?'2024-11-03T03:30':id==='capture-end'?'2025-11-02T04:30':'2025-11-02T03:30');await submit('capture-dialog');await saved('capture-dialog');assert.equal(requests.length,before+1);
  }
- await detail();await click('#edit-card');await fill('card-due','2025-11-02T01:30');let before=requests.length;await submit('card-dialog');await failed('card-dialog');assert.equal(requests.length,before);await fill('card-due','2025-11-02T03:30');await submit('card-dialog');await saved('card-dialog');assert.equal(target.due,'2025-11-02T10:30:00.000Z');
+ target.due='2025-11-03T01:00:00Z';state.revision++;await refresh();await click(row('[data-action=due]'));await put('.row-menu [data-menu-input=due]','2025-11-02T01:30');let before=requests.length;await click('.row-menu [data-menu-act=due-custom]');assert.equal(await evaluate("!document.querySelector('.row-menu .menu-error').hidden"),true);assert.equal(requests.length,before);await put('.row-menu [data-menu-input=due]','2025-11-02T03:30');await click('.row-menu [data-menu-act=due-custom]');await serverWait(()=>target.due==='2025-11-02T10:30:00.000Z');
  await click('#settings-open');await fill('policy-pause','2025-11-02T01:30');await submit('settings-dialog');await failed('settings-dialog');await fill('policy-pause','2025-11-02T03:30');await submit('settings-dialog');await saved('settings-dialog');
  await click('#context-open');await fill('context-minutes','10');await fill('context-until','2025-11-02T01:30');before=requests.length;await submit('context-dialog');await wait("!document.getElementById('context-error').hidden");assert.equal(requests.length,before);await fill('context-until','2025-11-02T03:30');await submit('context-dialog');await saved('context-dialog');
  state.timezone='Australia/Lord_Howe';await refresh();assert.equal(await evaluate("dayUI.ambiguous(dayUI.parseLocal('2025-04-06T01:45'))"),true);
  for(const locale of ['en','es']){
   await fill('locale-choice',locale);
   for(const status of ['done','retired']){
-   target.state=status;await refresh();await detail();const label=await evaluate("document.querySelector('#detail-data dd').textContent");assert.equal(label,locale==='en'?(status==='done'?'Completed':'Retired'):(status==='done'?'Terminada':'Retirada'));
-   assert.equal(await evaluate("document.getElementById('detail-title').textContent"),'Requested replacement');
-   assert.deepEqual(await evaluate("[...document.querySelectorAll('#detail-extras .detail-grid dt')].slice(0,3).map(e=>e.textContent)"),locale==='en'?['Source','Person','Reference']:['Origen','Persona','Referencia']);
-   assert.deepEqual(await evaluate("[...document.querySelectorAll('#detail-extras .detail-grid dd')].slice(0,3).map(e=>e.textContent)"),['chat','Ana','Referencia literal']);await close();
+   // A closed task stays listed with its state and reopens in one click.
+   target.state=status;await refresh();const closedRow=await evaluate(`document.querySelector('[data-reopen-id="${target.id}"]').closest('.closed-row').textContent`);
+   assert.ok(closedRow.includes(target.title)&&closedRow.includes(locale==='en'?(status==='done'?'Completed':'Retired'):(status==='done'?'Terminada':'Retirada')),closedRow);
+   assert.equal(await text(`[data-reopen-id="${target.id}"]`),locale==='en'?'Reopen':'Reabrir');
   }
+  // Its source is shown in the expanded row, with authored labels in the interface language.
+  target.state='todo';state.revision++;await refresh();await expand();
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll(${JSON.stringify(row('.meta-grid dt'))})].slice(0,3).map(e=>e.textContent)`),locale==='en'?['Source','Person','Reference']:['Fuente','Persona','Referencia']);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll(${JSON.stringify(row('.meta-grid dd'))})].slice(0,3).map(e=>e.textContent)`),['chat','Ana','Referencia literal']);await collapse();
  }
  console.log('Daily UI regressions passed: snapshot revisions, capture outcomes, dates, calendar and localization');
  }
@@ -471,7 +554,7 @@ try{
   const priorities=()=>state.tasks.map(t=>t.priority).join();
   assert.deepEqual(await evaluate(lane),[a.id,c.id,target.id,b.id]);
   assert.deepEqual(await texts('.lane[data-state="todo"] .priority-pill'),['Priority: High','Priority: High','Priority: Medium','Priority: Low']);
-  assert.deepEqual(await texts('.lane[data-state="todo"] .group-chip'),['Group: Home','Group: office move','Group: Office move']);
+  assert.deepEqual(await texts('.lane[data-state="todo"] .group-chip:not(.add)'),['Group: Home','Group: office move','Group: Office move']);
   // Orders other than Suggested need no standing notice.
   const noteHidden="(()=>{const n=document.getElementById('order-note');return n.textContent===''&&getComputedStyle(n).display==='none'})()";
   assert.equal(await evaluate(noteHidden),true);
@@ -479,7 +562,7 @@ try{
   for(const [view,expected] of [['manual',[a.id,c.id,target.id,b.id]],['newest',[c.id,b.id,a.id,target.id]],['group',[a.id,c.id,target.id,b.id]],['suggested',[a.id,c.id,target.id,b.id]],['priority',[a.id,c.id,target.id,b.id]]]){
    await fill('order-choice',view);assert.deepEqual(await evaluate(lane),expected,view);
    assert.equal(await evaluate("document.querySelectorAll('.drag-handle').length>0"),['manual','group','priority'].includes(view),view+' handles');
-   if(view==='group'){assert.deepEqual(await texts('.lane[data-state="todo"] .group-heading'),['Home1','office move2','No group1']);assert.equal(await evaluate("document.querySelectorAll('.lane[data-state=\"todo\"] .group-chip').length"),0)}
+   if(view==='group'){assert.deepEqual(await texts('.lane[data-state="todo"] .group-heading'),['Home1','office move2','No group1']);assert.equal(await evaluate("document.querySelectorAll('.lane[data-state=\"todo\"] .group-chip:not(.plain):not(.add), .lane[data-state=\"todo\"] .task .group-dot').length"),0)}
   }
   assert.equal(requests.length,quiet);assert.equal(suggestions.length,0);assert.equal(priorities(),storedPriorities);
   assert.equal(await evaluate("localStorage.getItem('day-attendant-order')"),'priority');
@@ -527,10 +610,11 @@ try{
   assert.equal(await evaluate(noteHidden),true);
   await fill('locale-choice','en');
   // Group is edited explicitly in the card editor; an empty value removes it.
-  await detail();assert.match(await evaluate("document.getElementById('detail-data').textContent"),/GroupOffice move/);
-  await click('#edit-card');assert.equal(await evaluate("document.getElementById('card-group').value"),'Office move');
-  await fill('card-group','');await submit('card-dialog');await saved('card-dialog');
-  assert.deepEqual(requests.at(-1).payload,{uuid:target.id,group:''});assert.equal(target.group,'');await close();
+  // Group is changed from its chip, also under group headings; No group removes it.
+  assert.equal(await text(row('[data-action=group]')),'Group: Office move');await click(row('[data-action=group]'));
+  assert.equal(await evaluate("document.querySelector('.row-menu [aria-checked=true]').dataset.value"),'Office move');
+  await click('.row-menu [data-menu-act=group][data-value=""]');await serverWait(()=>target.group==='');
+  assert.deepEqual(requests.at(-1).payload,{uuid:target.id,group:''});
   await click('#capture-open');await fill('capture-title','Grouped capture');await fill('capture-group','  Home ');await submit('capture-dialog');await saved('capture-dialog');
   assert.equal(requests.at(-1).payload.group,'Home');
   // Read-only profiles show no drag handles, and the narrowest layout does not overflow.
@@ -633,7 +717,7 @@ try{
   assert.ok(await evaluate("document.getElementById('workspace').classList.contains('chat-open')"),'chat stays open beside the list');
   const desktopRows=await evaluate(fully);assert.ok(desktopRows>=12,'1440x900 shows '+desktopRows+' rows');
   // A long title is complete, never clipped, and takes at most two lines on a wide screen.
-  const titleBox=id=>evaluate(`(()=>{const e=document.querySelector('[data-id="${id}"][data-action="detail"]'),s=getComputedStyle(e),line=parseFloat(s.lineHeight);return {text:e.textContent,lines:Math.round(e.getBoundingClientRect().height/line),clipped:e.scrollWidth>e.clientWidth+1||s.textOverflow==='ellipsis'||s.webkitLineClamp!=='none'}})()`);
+  const titleBox=id=>evaluate(`(()=>{const e=document.querySelector('[data-id="${id}"][data-action="title"]'),s=getComputedStyle(e),line=parseFloat(s.lineHeight);return {text:e.textContent,lines:Math.round(e.getBoundingClientRect().height/line),clipped:e.scrollWidth>e.clientWidth+1||s.textOverflow==='ellipsis'||s.webkitLineClamp!=='none'}})()`);
   assert.deepEqual(await titleBox(extra[3].id),{text:longTitle,lines:2,clipped:false});
   // Finish, start and pause are one click each and show before the answer.
   const row=extra[1],sel=action=>`[data-id="${row.id}"][data-action="${action}"]`,laneOf=id=>evaluate(`document.querySelector('#board [data-task-id="${id}"]')?.closest('.lane')?.dataset.state??null`);
@@ -666,15 +750,17 @@ try{
   await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading&&!dayUI.flow.busy&&daySnapshot().tasks.find(t=>t.id===${JSON.stringify(row.id)}).priority==='high'`);await refresh();
   // Escape closes a menu and returns focus to its chip; arrows move inside it.
   await click(sel('priority'));await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))");
-  assert.equal(await evaluate("document.activeElement.dataset.value"),'high','focus starts on Urgent, the first item');
+  assert.equal(await evaluate("document.activeElement.dataset.value"),'medium','focus starts on the current level, High');
   await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   assert.equal(await evaluate(`document.querySelector('.row-menu')===null&&document.activeElement===document.querySelector(${JSON.stringify(sel('priority'))})`),true);
   // A right click opens the more menu where the pointer is; Retire asks once, Cancel keeps the task.
   const other=extra[4],point=await evaluate(`(()=>{const r=document.querySelector('[data-task-id="${other.id}"] .row-meta, [data-task-id="${other.id}"] .row-main').getBoundingClientRect();return {x:Math.round(r.right-4),y:Math.round(r.top+r.height/2)}})()`);
   await rpc('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'right',buttons:2,clickCount:1},sessionId);await rpc('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'right',buttons:0,clickCount:1},sessionId);
   await wait("document.querySelector('.row-menu')!==null");
-  assert.deepEqual(await evaluate("(()=>{const m=document.querySelector('.row-menu').style;return [parseFloat(m.left),parseFloat(m.top)]})()"),[point.x,point.y]);
-  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['View details','Move down','Retire…']);
+  // It opens at the pointer, or ends there when it would not fit below.
+  const placed=await evaluate("(()=>{const m=document.querySelector('.row-menu');return [parseFloat(m.style.left),parseFloat(m.style.top),m.offsetHeight]})()");
+  assert.equal(placed[0],point.x);assert.ok(placed[1]===point.y||placed[1]+placed[2]===point.y,JSON.stringify([placed,point]));
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['Edit title','More details','Change deadline','Move down','Duplicate','Retire…']);
   sent=requests.length;await click('.row-menu [data-menu-act="retire"]');assert.match(await evaluate("document.querySelector('.row-menu').textContent"),/Retire this responsibility\?/);
   await click('.row-menu [data-menu-act="keep"]');assert.equal(await evaluate("document.querySelector('.row-menu')"),null);assert.equal(requests.length,sent);
   await click(`[data-id="${other.id}"][data-action="more"]`);await click('.row-menu [data-menu-act="retire"]');await click('.row-menu [data-menu-act="retire-yes"]');
@@ -682,7 +768,7 @@ try{
   assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'front_retire',{uuid:other.id}]);
   // Move down in the menu keeps the same section rules as dragging.
   await fill('order-choice','manual');const ids="[...document.querySelectorAll('.lane[data-state=\"todo\"] .task')].map(e=>e.dataset.taskId)";const order=await evaluate(ids);
-  await click(`[data-id="${order[0]}"][data-action="more"]`);assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['View details','Move down','Retire…']);
+  await click(`[data-id="${order[0]}"][data-action="more"]`);assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['Edit title','More details',state.tasks.find(t=>t.id===order[0]).due?'Change deadline':'Set deadline','Move down','Duplicate','Retire…']);
   await click('.row-menu [data-menu-act="move"]');assert.deepEqual(await evaluate(ids),[order[1],order[0],...order.slice(2)]);
   await wait(`${JSON.stringify(JSON.stringify(requests.at(-1)?.payload))}!==undefined&&true`);
   for(let i=0;i<100&&requests.at(-1).action!=='order_update';i++)await new Promise(r=>setTimeout(r,15));assert.equal(requests.at(-1).action,'order_update');
@@ -709,11 +795,11 @@ try{
   const first=extra[0].id,targets=await evaluate(`['done','priority','activate','snooze'].map(a=>{const r=document.querySelector('[data-id="${first}"][data-action="'+a+'"]').getBoundingClientRect();return a+':'+(Math.min(r.width,r.height)>=34)})`);
   assert.deepEqual(targets,['done:true','priority:true','activate:true','snooze:true']);
   assert.equal(await evaluate(`document.querySelector('[data-id="${first}"][data-action="more"]').getBoundingClientRect().width<=1`),true,'⋯ is out of sight on a phone');
-  const titleCenter=await evaluate(`(()=>{const r=document.querySelector('[data-id="${first}"][data-action="detail"]').getBoundingClientRect();return {x:Math.round(r.left+20),y:Math.round(r.top+r.height/2)}})()`);
+  const titleCenter=await evaluate(`(()=>{const r=document.querySelector('[data-id="${first}"][data-action="title"]').getBoundingClientRect();return {x:Math.round(r.left+20),y:Math.round(r.top+r.height/2)}})()`);
   sent=requests.length;await rpc('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[titleCenter]},sessionId);await new Promise(r=>setTimeout(r,650));
   await rpc('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]},sessionId);await new Promise(r=>setTimeout(r,100));
   assert.equal(await evaluate("document.querySelector('.row-menu.sheet')!==null&&document.querySelector('.menu-scrim')!==null"),true,'a long press opens the sheet');
-  assert.equal(await evaluate("document.getElementById('detail-dialog').open"),false,'the tap that ends a long press does nothing else');
+  assert.equal(await evaluate("document.querySelector('.title-edit,.expand')"),null,'the tap that ends a long press does nothing else');
   assert.ok(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].every(e=>e.getBoundingClientRect().height>=44)"));
   await click('.menu-scrim');assert.equal(await evaluate("document.querySelector('.row-menu')"),null);assert.equal(requests.length,sent);
   await rpc('Emulation.setTouchEmulationEnabled',{enabled:false},sessionId);

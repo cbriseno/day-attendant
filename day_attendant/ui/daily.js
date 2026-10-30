@@ -16,7 +16,7 @@ function requiredTime(id){const raw=$(id).value;if(!raw)return null;const date=u
 function storedTime(id,instant){$(id).value=instant?ui.localValue(new Date(instant)):'';const opening=$(id).value;return ()=>$(id).value===opening?instant||null:requiredTime(id)}
 function submit(label){return `<button type="submit" class="btn primary">${esc(label)}</button>`}
 function open(el,origin){ui.openDialog(el,origin);el.querySelector('input,select,button')?.focus()}
-let selected=null,detailRevision=null,eventId=null,captureRevision=null,settingsRevision=null,lastProfile=null,lastDailyDigest='',lastDiagnostics='',lastCalendar='',selectedImages=[];
+let eventId=null,captureRevision=null,settingsRevision=null,lastProfile=null,lastDailyDigest='',lastDiagnostics='',lastCalendar='',selectedImages=[];
 const toolbar=document.querySelector('.toolbar-right');toolbar.insertAdjacentHTML('afterbegin',button('capture-open','Add','Agregar','primary'));
 document.querySelector('.app-controls').insertAdjacentHTML('beforeend','<button type="button" class="btn" id="settings-open" aria-label="Settings">⚙ <span>Settings</span></button>');
 const diagnostic=document.createElement('div');diagnostic.className='diagnostic-banner';diagnostic.hidden=true;diagnostic.id='daily-diagnostics';$('tasks-area').insertBefore(diagnostic,document.querySelector('.toolbar'));
@@ -39,38 +39,6 @@ function openCapture(origin,event=null){
  await flow.request(eventId?'event_update':isEvent?'event_add':'task_add',payload,undefined,captureRevision);d.close('saved')})};open(d,origin);
 }
 $('capture-open').onclick=e=>openCapture(e.currentTarget);
-
-function links(ids){return ids.map(id=>{const t=flow.snapshot().tasks.find(t=>t.id===id);return `<button type="button" class="link-button" data-related-id="${esc(id)}">${esc(t?.title||id)}${t&&['retired','done'].includes(t.state)?' · '+esc(tr(t.state==='done'?'completed':'retired')):''}</button>`}).join('')||`<p class="hint">${text('None','Ninguna')}</p>`}
-const detailExtras=document.createElement('div');detailExtras.id='detail-extras';$('detail-data').after(detailExtras);
-function detail(t){
- selected=t.id;detailRevision=flow.snapshot().revision;const all=flow.snapshot().tasks;const dependents=all.filter(r=>r.dependsOn.includes(t.id));
- detailExtras.innerHTML=`${t.blocked?`<p class="warning">${text('Blocked by an unfinished prerequisite. Active, waiting and blocked are separate states.','Bloqueada por un requisito pendiente. Activa, en espera y bloqueada son estados separados.')}</p>`:''}<details class="daily-section" ${t.blocked?'open':''}><summary>${text('Dependencies and related items','Dependencias y relaciones')}</summary><p class="hint">${text('Requires (blocking)','Requiere (bloqueante)')}</p><div class="relation-list">${links(t.dependsOn)}</div><p class="hint">${text('Required by','Es requisito de')}</p><div class="relation-list">${links(dependents.map(x=>x.id))}</div><p class="hint">${text('Related (nonblocking)','Relacionadas (no bloqueante)')}</p><div class="relation-list">${links(t.relatedTo)}</div><div class="actions">${button('edit-dependencies','Edit prerequisites','Editar requisitos')}${button('edit-related','Edit related','Editar relaciones')}</div></details><details class="daily-section"><summary>${text('Source and continuity','Origen y continuidad')}</summary><dl class="detail-grid">${[[text('Source','Origen'),t.source],[text('Person','Persona'),t.person],[text('Reference','Referencia'),t.reference],[text('Observed','Observado'),t.observedAt?ui.full(t.observedAt):null],[text('Captured','Capturado'),t.capturedAt?ui.full(t.capturedAt):null]].filter(([,v])=>v).map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl><div class="actions">${button('edit-card','Edit card','Editar tarjeta')}</div>${(t.attachmentIds||[]).map(id=>`<a href="/api/attachments/${esc(id)}" target="_blank" rel="noopener">${text('Selected source image','Imagen de origen seleccionada')}</a>`).join(' ')}</details>`;
- const closed=['done','retired'].includes(t.state);$('detail-focus').disabled=!closed&&t.blocked;if(closed){$('detail-focus').hidden=false;$('detail-focus').textContent=text('Reopen','Reabrir')}$('detail-done').hidden=closed;$('detail-retire').hidden=closed;
- $('detail-focus').disabled=!closed&&t.blocked;$('edit-dependencies').onclick=e=>editLinks(t.id,'dependency_update',e.currentTarget);$('edit-related').onclick=e=>editLinks(t.id,'related_update',e.currentTarget);$('edit-card').onclick=e=>editCard(t.id,e.currentTarget);
- detailExtras.onclick=e=>{const b=e.target.closest('[data-related-id]');if(b){$('detail-dialog').close('navigate');ui.openDetail(b.dataset.relatedId,$('list-view'))}};
-}
-function editLinks(taskId,action,origin){
- const state=flow.snapshot(),t=state.tasks.find(x=>x.id===taskId);if(!t)return;
- const deps=action==='dependency_update',ids=deps?t.dependsOn:t.relatedTo;const id='links-dialog';$(id)?.remove();
- const d=dialog(id,deps?text('Prerequisites','Requisitos'):text('Related responsibilities','Responsabilidades relacionadas'),`<p class="hint">${deps?text('Selected work must be completed before this responsibility can start. Retiring a prerequisite does not fulfill it.','Lo seleccionado debe completarse antes de iniciar esta responsabilidad. Retirar un requisito no lo cumple.'):text('These links share context; they do not block or change status.','Estos vínculos comparten contexto; no bloquean ni cambian estados.')}</p><div class="relation-list">${state.tasks.filter(x=>x.id!==t.id).map(x=>`<label><input type="checkbox" value="${esc(x.id)}" ${ids.includes(x.id)?'checked':''}><span>${esc(x.title)}</span></label>`).join('')||text('Create another responsibility first.','Crea otra responsabilidad primero.')}</div>`,submit(text('Save links','Guardar vínculos')));
- const revision=state.revision;d.querySelector('form').onsubmit=e=>{e.preventDefault();formAction(id,async()=>{const values=[...d.querySelectorAll('input:checked')].map(x=>x.value);await flow.request(action,{uuid:t.id,[deps?'dependsOn':'relatedTo']:values},undefined,revision);d.close('saved');const current=flow.snapshot().tasks.find(x=>x.id===t.id);if(current)detail(current)})};open(d,origin);
-}
-function editCard(taskId,origin){
- const state=flow.snapshot(),t=state.tasks.find(x=>x.id===taskId);if(!t)return;
- const id='card-dialog';$(id)?.remove();const d=dialog(id,text('Edit responsibility','Editar responsabilidad'),`<div class="daily-grid">${field('card-title','Title','Título','text','maxlength="2000"')}<label class="field"><span>${tr('priority')}</span><select id="card-priority">${priorityOptions()}</select></label>${field('card-due','Deadline (optional)','Vencimiento (opcional)','datetime-local')}${groupField('card-group')}<label class="field wide"><span>${text('Where I left off','Dónde me quedé')}</span><textarea id="card-context" rows="3" maxlength="2000"></textarea></label><label class="field wide"><span>${text('Next step','Siguiente paso')}</span><textarea id="card-next" rows="2" maxlength="2000"></textarea></label><label class="context-checkbox wide"><input id="card-awaiting" type="checkbox">${text('Waiting for a reply or prerequisite outside my control','Espero respuesta o un requisito fuera de mi control')}</label></div>`,submit(text('Save','Guardar')));
- $('card-title').value=t.title;$('card-priority').value=t.priority;$('card-due').value=t.due?ui.localValue(new Date(t.due)):'';$('card-context').value=t.context;$('card-next').value=t.next;$('card-awaiting').checked=t.awaiting;$('card-group').value=t.group||'';
- const openingDue=$('card-due').value;
- const revision=state.revision;d.querySelector('form').onsubmit=e=>{e.preventDefault();formAction(id,async()=>{
- const title=$('card-title').value.trim(),priority=$('card-priority').value;if(!title)throw Error(text('Enter a title.','Escribe un título.'));
- const payload={uuid:t.id};
- if(title!==t.title)payload.title=title;if(priority!==t.priority)payload.priority=priority;
- if($('card-due').value!==openingDue)payload.due=requiredTime('card-due');
- if($('card-group').value.trim()!==(t.group||''))payload.group=$('card-group').value.trim();
- for(const [name,id] of [['context','card-context'],['next','card-next']])if($(id).value!==t[name])payload[name]=$(id).value;
- if($('card-awaiting').checked!==t.awaiting)payload.awaiting=$('card-awaiting').checked;
- if(Object.keys(payload).length>1)await flow.request('task_update',payload,undefined,revision);
- d.close('saved');$('detail-dialog').close('edited')})};open(d,origin);
-}
 
 function buildSettings(){
  $('settings-dialog')?.remove();const days=text(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']);
@@ -145,5 +113,5 @@ function update(state){
 }
 // Localization changes labels only; typed task content is never translated.
 $('locale-choice').addEventListener('change',()=>{lastCalendar='';lastDiagnostics='';update(flow.snapshot())});
-globalThis.dayDaily={update,detail};if(flow.snapshot().profile)update(flow.snapshot());
+globalThis.dayDaily={update};if(flow.snapshot().profile)update(flow.snapshot());
 })();

@@ -19,6 +19,9 @@ const gripIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h.01M9 
 const checkIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
 const playIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 5 12 7-12 7z"/></svg>';
 const pauseIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>';
+const editIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>';
+const calendarIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>';
+const copyIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>';
 const moreIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>';
 const formatted=(key,values)=>tr(key).replace(/\{(\w+)\}/g,(_,name)=>new Intl.NumberFormat(formatLocale()).format(values[name]));
 const concernMessage=c=>c.message_key?formatted(c.message_key,c.message_params):c.message;
@@ -43,9 +46,8 @@ function messageText(item){
  return tr('chat_incomplete')+' '+(known(data.code)?tr('error_'+data.code):tr('chat_failed_generic'))+(data.proposal_ids?.length?'':' '+tr('chat_incomplete_saved_nothing'));
 }
 const origins=new WeakMap();
-let flow,selected=null,expandedProposal=null,lastSeenEvent,lastRequestedProposal=null,lastGuidanceNotice=null;
+let flow,expandedProposal=null,lastSeenEvent,lastRequestedProposal=null,lastGuidanceNotice=null;
 let phaseCache=new Map(),collapsedProposals=new Set(),dependencyFocus=null;
-let detailRevision;
 let toastTimer=null,bubbleFor=null;
 // When each change was asked for and first shown, by proposal, so its confirmation reports its own time.
 const timings=new Map();const timed=(result,started,shown,before)=>{if(result?.id)timings.set(result.id,{started,shown,before});if(timings.size>50)timings.delete(timings.keys().next().value);return result};
@@ -57,7 +59,7 @@ function hideToast(){if($('toast').matches(':hover,:focus-within')){toastTimer=s
 const notice=text=>toast(text);
 const task=id=>flow.snapshot().tasks.find(t=>t.id===id);
 const safely=async fn=>{try{return await fn()}catch(error){notice(error.message);return null}};
-let actionLabel,phaseLabel;function refreshLabels(){actionLabel={activate:tr("start"),snooze:tr("snooze"),todo:tr("back_to_to_do"),done:tr("complete"),retire:tr("retire"),restore:tr("undo"),declaration:tr("declaration_updated"),add:tr("create"),update:tr("update")};
+let actionLabel,phaseLabel;function refreshLabels(){actionLabel={activate:tr("start"),snooze:tr("snooze"),todo:tr("back_to_to_do"),done:tr("complete"),retire:tr("retire"),restore:tr("undo"),declaration:tr("declaration_updated"),add:tr("create"),update:tr("update"),reopen:tr("reopen"),dependency:tr("dependency_update"),related:tr("related_update")};
 phaseLabel={evaluating:tr("the_assistant_is_reviewing"),review:tr("phase_waits_for_you"),unavailable:tr("phase_left_waiting"),stale:tr("context_changed"),invalid:tr("phase_not_applied")};
 }
 refreshLabels();
@@ -74,18 +76,21 @@ function taskRow(t,s,data,proposal){
  const handle=s.draggable&&s.tasks.length>1&&!data.readOnly?'<button type="button" class="drag-handle" data-id="'+t.id+'" data-action="move" aria-label="'+label(tr('reorder'))+'" title="'+esc(tr('reorder_hint'))+'">'+gripIcon+'</button>':'';
  const state=t.state==='active'?'<button type="button" class="ib state-action on" data-id="'+t.id+'" data-action="todo" aria-label="'+label(tr('pause'))+'" title="'+esc(tr('pause'))+'"'+(off?' disabled':'')+'>'+pauseIcon+'</button>'
   :'<button type="button" class="ib state-action" data-id="'+t.id+'" data-action="activate" aria-label="'+label(t.state==='snoozed'?tr('resume_b3bd0b'):tr('start'))+'" title="'+esc(blockedStart?tr('start_blocked'):t.state==='snoozed'?tr('resume_b3bd0b'):tr('start'))+'"'+(off||blockedStart?' disabled':'')+'>'+playIcon+'</button>';
- return '<article class="task'+(t.pending?' saving':'')+'" data-task-id="'+t.id+'" data-section="'+esc(t.state+':'+s.key)+'"><div class="row-main">'
+ const open=expanded===t.id&&!t.pending;
+ return '<article class="task'+(t.pending?' saving':'')+(open?' expanded':'')+(titleEdit?.id===t.id?' editing':'')+'" data-task-id="'+t.id+'" data-section="'+esc(t.state+':'+s.key)+'"><div class="row-main">'
   +'<span class="row-grip">'+handle+'</span>'
   +'<button type="button" class="check" data-id="'+t.id+'" data-action="done" aria-label="'+label(tr('complete'))+'" title="'+esc(tr('complete'))+'"'+(off?' disabled':'')+'><span class="box">'+checkIcon+'</span></button>'
-  +'<div class="row-text">'+suggestionReason(t,data)+'<span class="title-wrap">'+suggestionMark(t,data)+'<button type="button" class="task-title" data-id="'+t.id+'" data-action="detail" aria-label="'+label(tr('view_details'))+'" aria-haspopup="dialog">'+esc(t.title)+'</button></span>'+'<span class="row-meta">'+rowMeta(t,data,proposal)+'</span></div>'
+  +'<div class="row-text">'+suggestionReason(t,data)+titleCell(t,data)+'<span class="row-meta">'+rowMeta(t,data,proposal)+'</span></div>'
   +'<div class="row-actions"><button type="button" class="priority-pill" data-priority="'+esc(t.priority)+'" data-id="'+t.id+'" data-action="priority" aria-haspopup="menu" aria-expanded="false" title="'+esc(tr('change_priority'))+'"'+(off?' disabled':'')+'><span class="visually-hidden">'+esc(tr('priority'))+': </span>'+esc(tr('priority_'+t.priority))+'</button>'
   +state+'<button type="button" class="ib" data-id="'+t.id+'" data-action="snooze" aria-haspopup="menu" aria-expanded="false" aria-label="'+label(tr('snooze'))+'" title="'+esc(tr('snooze'))+'"'+(off?' disabled':'')+'>'+clockIcon+'</button>'
   +'<button type="button" class="ib more" data-id="'+t.id+'" data-action="more" aria-haspopup="menu" aria-expanded="false" aria-label="'+label(tr('more_actions'))+'" title="'+esc(tr('more_actions_hint'))+'">'+moreIcon+'</button></div>'
-  +'<span class="port-slot" aria-hidden="true"></span></div>'+suggestionBubble(t,data)+'</article>'}
+  +'<span class="port-slot" aria-hidden="true"></span></div>'+suggestionBubble(t,data)+(open?expandView(t,data):'')+'</article>'}
 // The data line under or beside the title: group, dates, waiting, estimate, dependencies and a pending change.
 function rowMeta(t,data,proposal){const time=(key,value,cls)=>'<span class="'+cls+'" title="'+esc(full(value))+'">'+esc(tr(key).replace('{time}',short(value)))+'</span>';
- return (t.group&&orderView!=='group'?'<span class="group-chip">'+groupDot(t.group)+'<span class="visually-hidden">'+esc(tr('group'))+': </span>'+esc(t.group)+'</span>':'')
-  +(t.due?new Date(t.due)<NOW?time('meta_overdue',t.due,'task-due late'):time('meta_due',t.due,'task-due'):'')
+ const off=data.readOnly||t.pending,menuButton=(action,cls,content,hint)=>'<button type="button" class="'+cls+'" data-id="'+t.id+'" data-action="'+action+'" aria-haspopup="menu" aria-expanded="false" title="'+esc(hint)+'"'+(off?' disabled':'')+'>'+content+'</button>';
+ // Under group headings the chip is plain, without the dot the heading already shows.
+ return (t.group?menuButton('group','group-chip'+(orderView==='group'?' plain':''),(orderView==='group'?'':groupDot(t.group))+'<span class="visually-hidden">'+esc(tr('group'))+': </span>'+esc(t.group),tr('change_group')):menuButton('group','group-chip add','<span aria-hidden="true">+ </span>'+esc(tr('add_group_chip')),tr('add_group')))
+  +(t.due?menuButton('due','task-due'+(new Date(t.due)<NOW?' late':''),esc(tr(new Date(t.due)<NOW?'meta_overdue':'meta_due').replace('{time}',short(t.due))),full(t.due)+' · '+tr('change_deadline')):'')
   +(t.until?time('meta_resumes',t.until,'task-wait'):'')
   +(t.awaiting?'<span class="task-wait">'+esc(tr('meta_waiting'))+'</span>':'')
   +(data.context.availableMinutes!==null&&Number.isFinite(t.remainingMinutes)?'<span>'+esc(formatted('meta_remaining',{n:t.remainingMinutes}))+'</span>':'')
@@ -163,12 +168,16 @@ function render(data=flow.snapshot()) {
  $('task-count').textContent=data.tasks.filter(t=>!['done','retired'].includes(t.state)).length+tr("open");
  $('context-open').textContent=data.context.availableMinutes!==null?data.context.availableMinutes+tr("min_available"):tr("my_context");
  $('order-note').innerHTML=orderNote(data);
+ if(expanded&&!data.tasks.some(t=>t.id===expanded&&!t.pending&&!['done','retired'].includes(t.state)))expanded=null;
+ if(titleEdit&&!data.tasks.some(t=>t.id===titleEdit.id&&!['done','retired'].includes(t.state)))titleEdit=null;
+ const typing=typingState();rendering=true;
  $('board').innerHTML=[['active',tr("active")],['todo',tr("to_do")],['snoozed',tr("snoozed")]].map(([state,label])=>{
   const rows=data.tasks.filter(t=>t.state===state),sections=globalThis.dayOrdering.arrange(rows,orderView,{order:localOrder||data.taskOrder||[],suggestion:data.orderSuggestion?.result});
   return '<section class="lane" data-state="'+state+'"><header class="lane-heading"><span class="state-dot" aria-hidden="true"></span><h2>'+label+'</h2><span class="lane-count">'+rows.length+'</span></header><div class="lane-cards">'+sections.map(s=>(orderView==='group'?groupHeading(s):'')+s.tasks.map(t=>taskRow(t,s,data,proposals.find(p=>p.intent.taskId===t.id))).join('')).join('')+(rows.length?'':'<p class="lane-empty">'+esc(tr('lane_empty'))+'</p>')+'</div></section>';
  }).join('');
+ restoreTyping(typing);rendering=false;
  showDependencies(data);
- const closed=data.tasks.filter(t=>['done','retired'].includes(t.state));$('closed-count').textContent=closed.length;$('closed').innerHTML=closed.map(t=>'<p class="closed-row"><button type="button" class="link-button" data-closed-id="'+t.id+'">'+esc(t.title)+'</button> · '+(t.state==='done'?tr("completed"):tr("retired"))+'</p>').join('');
+ const closed=data.tasks.filter(t=>['done','retired'].includes(t.state));$('closed-count').textContent=closed.length;$('closed').innerHTML=closed.map(t=>'<p class="closed-row"><span class="closed-title">'+esc(t.title)+'</span> · '+(t.state==='done'?tr("completed"):tr("retired"))+'<button type="button" class="link-button" data-reopen-id="'+t.id+'"'+(data.readOnly?' disabled':'')+' aria-label="'+esc(tr('reopen')+': '+t.title)+'">'+esc(tr('reopen'))+'</button></p>').join('');
  // Only changes waiting for the person appear here: a retire from the conversation, or one an older
  // version left unapplied. Direct actions never wait.
  const shown=proposals.filter(p=>p.phase!=='evaluating');
@@ -186,13 +195,13 @@ function render(data=flow.snapshot()) {
  const last=data.lastFact;
  // The first view only remembers the latest change; later ones are announced as they arrive.
  if(lastSeenEvent===undefined)lastSeenEvent=last?.id??null;else if(last&&last.id!==lastSeenEvent){lastSeenEvent=last.id;announce(last,data)}
- if(active&&!active.isConnected){requestAnimationFrame(()=>{if(document.querySelector('dialog[open]'))return;const current=document.activeElement;if(current&&current!==document.body&&current!==active&&current.isConnected)return;let target;if(focusProposal)target=$('reviews').querySelector('[data-proposal="'+focusProposal+'"][data-review-action="'+reviewAction+'"]');if(!target&&focusTask)target=$('board').querySelector('[data-id="'+focusTask+'"][data-action="'+focusAction+'"]')||$('board').querySelector('[data-id="'+focusTask+'"][data-action="detail"]');if(!target)target=shown.length?$('review-title'):$('list-view');target.focus({preventScroll:true})})}
+ if(active&&!active.isConnected){requestAnimationFrame(()=>{if(document.querySelector('dialog[open]'))return;const current=document.activeElement;if(current&&current!==document.body&&current!==active&&current.isConnected)return;let target;if(focusProposal)target=$('reviews').querySelector('[data-proposal="'+focusProposal+'"][data-review-action="'+reviewAction+'"]');if(!target&&focusTask)target=$('board').querySelector('[data-id="'+focusTask+'"][data-action="'+focusAction+'"]')||$('board').querySelector('[data-id="'+focusTask+'"][data-action="title"]');if(!target)target=shown.length?$('review-title'):$('list-view');target.focus({preventScroll:true})})}
  if(newlyRelevant)notice(tr("a_pending_change_needs_review"));
  if(menu){const t=data.tasks.find(t=>t.id===menu.id);if(!t||['done','retired'].includes(t.state))closeMenu(false);else anchorOf(menu.id,menu.action)?.setAttribute('aria-expanded','true')}
 }
 // Confirms the latest saved change, how long it took to show, and Undo when it can be undone.
 function announce(last,data){const t=data.tasks.find(t=>t.id===last.taskId),action=aliases[last.action]||last.action;
- const text=last.undoOf?tr('change_undone'):action==='order'?tr('order_saved'):action==='snooze'&&t?.until?tr('snoozed_until').replace('{time}',short(t.until))+' · '+t.title:[actionLabel[action]||tr(last.action),t?.title||(action==='declaration'?tr('my_context'):'')].filter(Boolean).join(' · ');
+ const text=last.undoOf?tr('change_undone'):action==='order'?tr('order_saved'):action==='snooze'&&t?.until?tr('snoozed_until').replace('{time}',short(t.until))+' · '+t.title:[action==='declaration'&&t?tr('details_saved'):actionLabel[action]||tr(last.action),t?.title||(action==='declaration'?tr('my_context'):'')].filter(Boolean).join(' · ');
  // The time shown is from the click until the change was on screen.
  const timing=timings.get(last.proposalId);timings.delete(last.proposalId);if(timing?.before&&last.undoable)undoViews.set(String(last.id),{...timing.before,taskId:last.taskId});const ms=timing&&action!=='order'?Math.max(1,Math.round((timing.shown??performance.now())-timing.started)):null;
  toast(text,{undo:last.undoable&&!last.undoOf?last.id:null,detail:[ms===null?'':formatted('toast_ms',{ms}),last.reviewStatus==='deferred'&&data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · ')})}
@@ -209,10 +218,126 @@ function registerDialog(dialog){
 for(const dialog of document.querySelectorAll('[data-light-dismiss]'))registerDialog(dialog);
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close('cancel'));
 function ambiguous(d){for(let n=-180;n<=180;n+=30){if(!n)continue;const other=new Date(d.getTime()+n*60000);if(localValue(other)===localValue(d))return true}return false}
-function openDetail(id,origin,editEstimate=false){const t=task(id);if(!t||t.pending)return;selected=id;const revision=flow.snapshot().revision;detailRevision=revision;const focusAction=['done','retired'].includes(t.state)?'task_reopen':'activate';const act=async action=>{$('estimate-error').hidden=true;if(await request(action,{uuid:id},undefined,revision))$('detail-dialog').close('proposed');else{$('estimate-error').textContent=$('status').textContent;$('estimate-error').hidden=false}};$('detail-focus').onclick=()=>act(focusAction);$('detail-done').onclick=()=>act('done');$('confirm-retire').onclick=()=>act('retire');$('detail-title').textContent=t.title;$('detail-context').textContent=t.context+' '+t.next;$('detail-data').innerHTML=[[tr("state"),({todo:tr("to_do"),active:tr("active"),snoozed:tr("snoozed"),done:tr("completed"),retired:tr("retired")})[t.state]],[tr("priority"),tr('priority_'+t.priority)],[tr("group"),t.group||tr("no_group")],[tr("deadline"),t.due?full(t.due):tr("no_deadline")],...(t.until?[[tr("resume_b3bd0b"),full(t.until)]]:[]),[tr("time_zone"),zone]].map(([k,v])=>'<div><dt>'+k+'</dt><dd>'+esc(v)+'</dd></div>').join('');$('detail-focus').hidden=t.state==='active';$('detail-focus').textContent=t.state==='snoozed'?tr("resume_b3bd0b"):tr("start");$('estimate-input').value=t.remainingMinutes??'';$('estimate-error').hidden=true;$('retire-confirm').hidden=true;globalThis.dayDaily?.detail(t);openDialog($('detail-dialog'),origin,id,'detail');if(editEstimate){$('estimate-input').focus();$('estimate-input').select()}}
-$('estimate-save').onclick=async()=>{const raw=$('estimate-input').value,value=raw.trim()?Number(raw):null;try{await flow.setEstimate(selected,value,detailRevision);$('detail-dialog').close('declared')}catch(error){$('estimate-error').hidden=false;$('estimate-error').textContent=error.message}};
-$('detail-retire').onclick=()=>{$('retire-confirm').hidden=false;$('confirm-retire').focus()};$('keep-task').onclick=()=>{$('retire-confirm').hidden=true;$('detail-retire').focus()};
-$('closed').onclick=e=>{const b=e.target.closest('[data-closed-id]');if(b)openDetail(b.dataset.closedId,b)};
+// Editing stays in the row: the title in place, group and deadline from one-level menus, and the
+// rest in the row expanded below it. Each field saves by itself; nothing opens over anything else.
+let expanded=null,titleEdit=null,picker=null,savedNote=null,retireAsk=null,rendering=false;
+// What the person typed, by task and field, with the value it started from. A draft survives
+// every redraw and a conflict; it goes only once saved or discarded.
+const drafts=new Map(),fieldTimers=new Map(),draftKey=(id,field)=>id+'|'+field;
+const FIELD_ACTIONS={title:'task_update',context:'continuity_update',next:'continuity_update',remainingMinutes:'continuity_update',awaiting:'continuity_update'};
+const same=(a,b)=>(a??null)===(b??null);
+const draftValue=(t,field)=>{const d=drafts.get(draftKey(t.id,field));return d?d.value:field==='remainingMinutes'?(t.remainingMinutes??''):t[field]};
+function startDraft(id,field,value){const t=task(id);if(!t)return null;const k=draftKey(id,field);let d=drafts.get(k);if(!d){d={id,field,value,base:t[field],conflict:null,error:''};drafts.set(k,d)}d.value=value;d.error='';return d}
+function normalized(d){
+ if(d.field==='title'){const v=String(d.value).trim();if(!v||v.length>500)throw Error(tr('error_invalid_title'));return v}
+ if(d.field==='remainingMinutes'){const raw=String(d.value).trim();if(!raw)return null;const n=Number(raw);if(!Number.isFinite(n)||n<0||n>100000)throw Error(tr('error_invalid_estimate'));return n}
+ return d.field==='awaiting'?!!d.value:String(d.value)}
+function queueSave(id,field){const k=draftKey(id,field);clearTimeout(fieldTimers.get(k));fieldTimers.set(k,setTimeout(()=>saveDraft(id,field),700))}
+// A field saves against the latest state read. If someone else changed that same field since the
+// person started typing, nothing is sent: the row says so and keeps the draft. A service that saw a
+// newer state than this page reads it again and, if this field is still untouched, saves once more.
+async function saveDraft(id,field){
+ const k=draftKey(id,field),d=drafts.get(k);clearTimeout(fieldTimers.get(k));fieldTimers.delete(k);if(!d||d.saving||d.conflict)return;
+ const t=task(id);if(!t||flow.snapshot().readOnly)return;
+ let value;try{value=normalized(d)}catch(error){d.error=error.message;savedNote=null;render();return}
+ if(same(value,t[field])){drafts.delete(k);if(field==='title'&&titleEdit?.id===id)titleEdit=null;render();return}
+ if(!same(d.base,t[field])){d.conflict={current:t[field]};savedNote=null;if(field==='title')titleEdit={id};render();return}
+ d.saving=true;const sent=d.value;
+ try{await flow.request(FIELD_ACTIONS[field],{uuid:id,[field]:value});d.saving=false;d.retried=false;
+  if(drafts.get(k)===d){if(d.value===sent)drafts.delete(k);else{d.base=value;queueSave(id,field)}}
+  savedNote={id,field};render()}
+ catch(error){d.saving=false;
+  if(error.code==='stale_revision'){await flow.refresh().catch(()=>{});const now=task(id);if(now&&same(d.base,now[field])&&!d.retried){d.retried=true;return saveDraft(id,field)}d.conflict={current:now?.[field]};if(field==='title')titleEdit={id}}
+  else{d.error=error.message;if(field==='title')titleEdit={id}}
+  savedNote=null;render()}}
+const flush=()=>{for(const d of [...drafts.values()])if(!d.conflict&&!d.error&&d.field!=='title')saveDraft(d.id,d.field)};
+addEventListener('pagehide',flush);document.addEventListener('visibilitychange',()=>{if(document.hidden)flush()});
+function fieldNote(t,field){const d=drafts.get(draftKey(t.id,field));if(!d)return '';if(d.error)return '<p class="field-error" role="alert">'+esc(d.error)+'</p>';if(!d.conflict)return '';
+ const cur=d.conflict.current,shown=field==='awaiting'?tr(cur?'value_yes':'value_no'):cur===null||cur===undefined||cur===''?tr('value_empty'):String(cur);
+ const b=(kind,label,cls)=>'<button type="button" class="btn '+cls+'" data-conflict="'+kind+'" data-conflict-id="'+t.id+'" data-conflict-field="'+field+'">'+esc(tr(label))+'</button>';
+ return '<div class="field-conflict" role="alert"><p>'+esc(tr('conflict_changed').replace('{value}',shown))+'</p><div class="conflict-actions">'+b('mine','conflict_keep_mine','primary')+b('theirs','conflict_use_current','ghost')+'</div></div>'}
+function titleCell(t,data){
+ if(titleEdit?.id===t.id)return '<span class="title-editor"><input class="title-edit" data-id="'+t.id+'" data-field="title" maxlength="500" autocomplete="off" value="'+esc(draftValue(t,'title'))+'" aria-label="'+esc(tr('edit_title')+': '+t.title)+'"'+(data.readOnly?' disabled':'')+'><span class="edit-hint">'+esc(tr('title_edit_hint'))+'</span>'+fieldNote(t,'title')+'</span>';
+ return '<span class="title-wrap">'+suggestionMark(t,data)+'<button type="button" class="task-title" data-id="'+t.id+'" data-action="title" aria-label="'+esc(tr('edit_title')+': '+t.title)+'" title="'+esc(tr('edit_title_hint'))+'">'+esc(t.title)+'</button></span>'}
+function startTitleEdit(id){const t=task(id),data=flow.snapshot();if(!t||t.pending||data.readOnly||['done','retired'].includes(t.state))return;closeMenu(false);titleEdit={id};render();const input=$('board').querySelector('.title-edit[data-id="'+id+'"]');if(input){input.focus({preventScroll:true});input.select()}}
+function commitTitle(id){const d=drafts.get(draftKey(id,'title'));if(d?.conflict||d?.saving)return;titleEdit=null;
+ // An emptied title keeps the saved one, as Esc does.
+ if(d&&!String(d.value).trim())drafts.delete(draftKey(id,'title'));render();restoreTitleFocus(id);if(drafts.has(draftKey(id,'title')))saveDraft(id,'title')}
+function cancelTitle(id){drafts.delete(draftKey(id,'title'));titleEdit=null;render();restoreTitleFocus(id)}
+const restoreTitleFocus=id=>$('board').querySelector('[data-id="'+id+'"][data-action="title"]')?.focus({preventScroll:true});
+// Expanded details: continuity, links and source, saved field by field.
+const relationTitle=(o,data)=>esc(o.title)+(['done','retired'].includes(o.state)?' · '+esc(tr(o.state==='done'?'completed':'retired')):'');
+function relationRows(ids,kind,t,data){const rows=ids.map(id=>data.tasks.find(x=>x.id===id)).filter(Boolean);
+ return rows.length?rows.map(o=>'<div class="rel-item"><button type="button" class="rel-go" data-goto="'+o.id+'" title="'+esc(tr('go_to_task'))+'">'+relationTitle(o,data)+'</button>'+(data.readOnly||t.pending?'':'<button type="button" class="rel-remove" data-unlink="'+kind+':'+o.id+'" data-unlink-task="'+t.id+'" aria-label="'+esc(tr('remove_link')+': '+o.title)+'" title="'+esc(tr('remove_link'))+'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>')+'</div>').join(''):'<p class="rel-none">'+esc(tr('none'))+'</p>'}
+const pickerInput=(t,kind,data)=>data.readOnly||t.pending?'':'<div class="picker"><input type="text" class="picker-input" data-search="'+kind+'" data-picker-task="'+t.id+'" autocomplete="off" placeholder="'+esc(tr(kind==='dep'?'add_prerequisite':'add_related'))+'" aria-label="'+esc(tr(kind==='dep'?'add_prerequisite':'add_related'))+'" aria-expanded="false" aria-controls="picker-'+kind+'-'+t.id+'"><div class="picker-list" id="picker-'+kind+'-'+t.id+'" role="listbox" hidden></div></div>';
+function expandView(t,data){const off=data.readOnly||t.pending?' disabled':'',id=part=>'x-'+part+'-'+t.id,dependents=data.tasks.filter(r=>r.dependsOn.includes(t.id)).map(r=>r.id);
+ const field=(name,label,control)=>'<div class="xfield"><label class="xlabel" for="'+id(name)+'">'+esc(tr(label))+'</label>'+control+fieldNote(t,name)+'</div>';
+ const source=[[tr('source_label'),t.source&&t.source!=='general'?t.source:null],[tr('person_label'),t.person],[tr('reference_label'),t.reference],[tr('observed_label'),t.observedAt?full(t.observedAt):null],[tr('captured_label'),t.capturedAt?full(t.capturedAt):null],[tr('created_label'),t.createdAt?full(t.createdAt):null]].filter(([,v])=>v);
+ const note=savedNote?.id===t.id?tr('saved_field').replace('{field}',tr('field_'+savedNote.field)):'';
+ const foot=retireAsk===t.id?'<div class="inline-confirm" role="alert"><span>'+esc(tr('retire_this_responsibility_it_will_be_kept_s'))+'</span><button type="button" class="btn danger" data-x="retire-yes">'+esc(tr('yes_retire'))+'</button><button type="button" class="btn" data-x="retire-no">'+esc(tr('cancel'))+'</button></div>'
+  :'<button type="button" class="btn ghost danger" data-x="retire"'+off+'>'+esc(tr('retire_7ad0e0'))+'</button><button type="button" class="btn ghost" data-x="duplicate"'+off+'>'+esc(tr('duplicate'))+'</button><button type="button" class="btn ghost" data-x="close">'+esc(tr('close_details'))+'</button><span class="saved-note" aria-live="polite">'+(note?checkIcon+esc(note):'')+'</span>';
+ return '<div class="expand" data-expand="'+t.id+'"><div class="xgrid">'
+  +field('context','where_i_left_off','<textarea id="'+id('context')+'" data-id="'+t.id+'" data-field="context" rows="2" maxlength="2000" placeholder="'+esc(tr('where_i_left_off_placeholder'))+'"'+off+'>'+esc(draftValue(t,'context'))+'</textarea>')
+  +field('next','next_step','<input type="text" id="'+id('next')+'" data-id="'+t.id+'" data-field="next" maxlength="2000" autocomplete="off" placeholder="'+esc(tr('next_step_placeholder'))+'" value="'+esc(draftValue(t,'next'))+'"'+off+'>')
+  +field('remainingMinutes','remaining_minutes','<input type="number" id="'+id('remainingMinutes')+'" data-id="'+t.id+'" data-field="remainingMinutes" min="0" step="any" inputmode="decimal" placeholder="'+esc(tr('not_estimated'))+'" value="'+esc(draftValue(t,'remainingMinutes'))+'"'+off+'>')
+  +'<div class="xfield xswitch"><label class="switch"><input type="checkbox" data-id="'+t.id+'" data-field="awaiting"'+(draftValue(t,'awaiting')?' checked':'')+off+'><span>'+esc(tr('awaiting_label'))+'</span></label>'+fieldNote(t,'awaiting')+'</div>'
+  +'<div class="xfield"><span class="xlabel">'+esc(tr('requires_label'))+'</span><div class="rel-list">'+relationRows(t.dependsOn,'dep',t,data)+'</div>'+pickerInput(t,'dep',data)+'</div>'
+  +'<div class="xfield"><span class="xlabel">'+esc(tr('required_by_label'))+'</span><div class="rel-list">'+relationRows(dependents,'dependent',t,data)+'</div></div>'
+  +'<div class="xfield"><span class="xlabel">'+esc(tr('related_label'))+'</span><div class="rel-list">'+relationRows(t.relatedTo,'rel',t,data)+'</div>'+pickerInput(t,'rel',data)+'</div>'
+  +'<div class="xfield"><span class="xlabel">'+esc(tr('source_and_dates'))+'</span><dl class="meta-grid">'+source.map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl>'+(t.attachmentIds||[]).map(a=>'<a href="/api/attachments/'+esc(a)+'" target="_blank" rel="noopener">'+esc(tr('source_image'))+'</a>').join(' ')+'</div>'
+  +'</div><div class="expand-foot">'+foot+'</div></div>'}
+function toggleExpand(id,open=expanded!==id){const t=task(id);if(open&&(!t||t.pending))return;flush();expanded=open?id:null;retireAsk=null;savedNote=null;render();
+ const card=$('board').querySelector('[data-task-id="'+id+'"]');// An instant scroll: a smooth one would keep scrolling and close a menu opened right after.
+ if(open){card?.querySelector('.expand')?.scrollIntoView({block:'nearest'});card?.querySelector('[data-field="context"]')?.focus({preventScroll:true})}else restoreTitleFocus(id)}
+// Prerequisites offered by the picker never close a loop: a task cannot wait for one that waits for it.
+function waitsOn(from,to,data){const seen=new Set(),walk=id=>{if(id===to)return true;if(seen.has(id))return false;seen.add(id);return (data.tasks.find(x=>x.id===id)?.dependsOn||[]).some(walk)};return walk(from)}
+function showPicker(input){const data=flow.snapshot(),id=input.dataset.pickerTask,kind=input.dataset.search,t=data.tasks.find(x=>x.id===id),list=input.nextElementSibling;if(!t||!list)return;picker={id,kind,value:input.value};
+ const q=input.value.trim().toLocaleLowerCase(),taken=new Set([t.id,...(kind==='dep'?t.dependsOn:t.relatedTo)]);
+ const found=data.tasks.filter(o=>!['done','retired'].includes(o.state)&&!o.pending&&!taken.has(o.id)&&!(kind==='dep'&&waitsOn(o.id,t.id,data))&&(!q||o.title.toLocaleLowerCase().includes(q))).slice(0,8);
+ list.innerHTML=found.map(o=>'<button type="button" class="menu-item" role="option" data-pick="'+kind+':'+o.id+'" data-pick-task="'+t.id+'"><span class="priority-pill" data-priority="'+esc(o.priority)+'">'+esc(tr('priority_'+o.priority))+'</span><span class="menu-label">'+esc(o.title)+'</span></button>').join('')||'<p class="rel-none">'+esc(tr('no_matches'))+'</p>';
+ list.hidden=false;input.setAttribute('aria-expanded','true')}
+function hidePickers(except){for(const list of $('board').querySelectorAll('.picker-list:not([hidden])'))if(list!==except){list.hidden=true;list.previousElementSibling?.setAttribute('aria-expanded','false')}}
+function link(kind,taskId,otherId,add){const data=flow.snapshot(),t=data.tasks.find(x=>x.id===taskId),o=data.tasks.find(x=>x.id===otherId);if(!t||!o)return;
+ if(kind==='dep')request('dependency_update',{uuid:t.id,dependsOn:add?[...t.dependsOn,o.id]:t.dependsOn.filter(x=>x!==o.id)});
+ else if(kind==='dependent')request('dependency_update',{uuid:o.id,dependsOn:o.dependsOn.filter(x=>x!==t.id)});
+ else request('related_update',{uuid:t.id,relatedTo:add?[...t.relatedTo,o.id]:t.relatedTo.filter(x=>x!==o.id)})}
+function duplicate(t){request('task_add',{title:t.title,priority:t.priority,...(t.group?{group:t.group}:{}),...(t.due?{due:t.due}:{})})}
+function goTo(id){const card=$('board').querySelector('[data-task-id="'+id+'"]');if(!card){notice(tr('task_not_on_board'));return}card.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});card.classList.remove('flash');void card.offsetWidth;card.classList.add('flash');card.querySelector('[data-action="title"]')?.focus({preventScroll:true})}
+// Clicks inside a row that edit it in place. Returns true when it handled the click.
+function inlineClick(e){const el=e.target;
+ const c=el.closest('[data-conflict]');if(c){const {conflict,conflictId:id,conflictField:field}=c.dataset,k=draftKey(id,field),d=drafts.get(k);if(d){if(conflict==='mine'){d.base=d.conflict.current;d.conflict=null;d.retried=false;if(field==='title'){titleEdit=null;restoreTitleFocus(id)}saveDraft(id,field)}else{drafts.delete(k);if(field==='title')titleEdit=null;render()}}return true}
+ const pick=el.closest('[data-pick]');if(pick){const [kind,other]=pick.dataset.pick.split(':');picker=null;link(kind,pick.dataset.pickTask,other,true);return true}
+ const un=el.closest('[data-unlink]');if(un){const [kind,other]=un.dataset.unlink.split(':');link(kind,un.dataset.unlinkTask,other,false);return true}
+ const go=el.closest('[data-goto]');if(go){goTo(go.dataset.goto);return true}
+ const x=el.closest('[data-x]');if(x){const id=x.closest('[data-expand]').dataset.expand,act=x.dataset.x;
+  if(act==='close')toggleExpand(id,false);else if(act==='duplicate'){const t=task(id);if(t)duplicate(t)}
+  else if(act==='retire'){retireAsk=id;render();$('board').querySelector('[data-expand="'+id+'"] [data-x="retire-no"]')?.focus({preventScroll:true})}
+  else if(act==='retire-no'){retireAsk=null;render();$('board').querySelector('[data-expand="'+id+'"] [data-x="retire"]')?.focus({preventScroll:true})}
+  else if(act==='retire-yes'){retireAsk=null;expanded=null;request('retire',{taskId:id})}
+  return true}
+ if(el.closest('.expand,.title-editor,input,textarea,select,label,a'))return true;
+ return false}
+// The board redraws when state changes; whatever is being typed keeps its text, caret and focus.
+function typingState(){const a=document.activeElement;if(!a||!$('board').contains(a)||!a.matches('input,textarea'))return null;let start=null,end=null;try{start=a.selectionStart;end=a.selectionEnd}catch{}return {id:a.dataset.id||a.dataset.pickerTask,field:a.dataset.field,search:a.dataset.search,start,end,scroll:a.scrollTop,value:a.value,picking:!!a.nextElementSibling&&!a.nextElementSibling.hidden}}
+function restoreTyping(s){if(!s)return;const node=$('board').querySelector(s.search?'[data-search="'+s.search+'"][data-picker-task="'+s.id+'"]':'[data-field="'+s.field+'"][data-id="'+s.id+'"]');if(!node)return;
+ if(s.search)node.value=s.value;node.focus({preventScroll:true});node.scrollTop=s.scroll;if(s.start!==null)try{node.setSelectionRange(s.start,s.end)}catch{}if(s.search&&s.picking)showPicker(node)}
+$('board').addEventListener('input',e=>{const {field,id,search}=e.target.dataset||{};if(search){showPicker(e.target);return}if(!field||!id||field==='awaiting')return;startDraft(id,field,e.target.value);if(field!=='title')queueSave(id,field)});
+$('board').addEventListener('change',e=>{const {field,id}=e.target.dataset||{};if(field==='awaiting'&&id){startDraft(id,'awaiting',e.target.checked);saveDraft(id,'awaiting')}});
+$('board').addEventListener('focusin',e=>{if(e.target.dataset?.search){hidePickers(e.target.nextElementSibling);showPicker(e.target)}});
+$('board').addEventListener('focusout',e=>{if(rendering)return;const {field,id,search}=e.target.dataset||{};
+ if(search){setTimeout(()=>{const list=e.target.nextElementSibling;if(list&&!list.contains(document.activeElement)&&document.activeElement!==e.target){list.hidden=true;e.target.setAttribute('aria-expanded','false');if(picker?.id===e.target.dataset.pickerTask)picker=null}},150);return}
+ if(!field||!id)return;if(field==='title'){if(e.relatedTarget?.closest?.('[data-conflict]'))return;commitTitle(id)}else if(drafts.has(draftKey(id,field)))saveDraft(id,field)});
+$('board').addEventListener('keydown',e=>{const {field,id,search}=e.target.dataset||{};
+ if(field==='title'&&id){if(e.key==='Enter'&&!e.isComposing){e.preventDefault();commitTitle(id)}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cancelTitle(id)}return}
+ if(search&&e.key==='Enter'){e.preventDefault();e.target.nextElementSibling?.querySelector('[data-pick]')?.click();return}
+ if(search&&e.key==='Escape'&&!e.target.nextElementSibling?.hidden){e.preventDefault();e.stopPropagation();hidePickers();return}
+ if(field&&id&&e.key==='Enter'&&e.target.tagName==='INPUT'&&!e.isComposing){e.preventDefault();saveDraft(id,field)}});
+// Conflict buttons keep the focus where it is, so pressing one never commits the field first.
+$('board').addEventListener('mousedown',e=>{if(e.target.closest('[data-conflict],[data-pick]'))e.preventDefault()});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape'||!expanded||menu||document.querySelector('dialog[open]')||titleEdit)return;if(!$('board').querySelector('[data-expand="'+expanded+'"]'))return;e.preventDefault();toggleExpand(expanded,false)});
+$('closed').onclick=e=>{const b=e.target.closest('[data-reopen-id]');if(b)request('task_reopen',{uuid:b.dataset.reopenId})};
+// One menu at a time and one level deep, never over a dialog: priority from its chip, everything else
+// from ⋯, a right click or a long press. On a phone it opens as a sheet at the bottom.
 // One menu at a time and one level deep, never over a dialog: priority from its chip, snooze from the
 // clock, everything else from ⋯, a right click or a long press. On a phone it opens as a sheet at the bottom.
 let menu=null,press=null,swallowClick=false;
@@ -233,27 +358,57 @@ function snoozeMenu(t,data){const off=data.readOnly||t.pending,today=localValue(
  return '<p class="menu-title">'+esc(tr('snooze_until'))+'</p>'+items+(browserZone!==zone?'<p class="menu-note">'+esc(tr('snooze_zone_note').replace('{zone}',zone))+'</p>':'')
   +(t.state==='snoozed'?'<div class="menu-sep" role="separator"></div>'+menuItem('todo',esc(tr('resume_now')),{disabled:off}):'')}
 function moreMenu(t,data){const off=data.readOnly||t.pending,card=$('board').querySelector('[data-task-id="'+t.id+'"]'),ids=card?.querySelector('.drag-handle')?sectionIds(card.dataset.section):[],i=ids.indexOf(t.id);
- return '<p class="menu-title task-name">'+esc(t.title)+'</p>'+(t.state!=='todo'?menuItem('todo',esc(tr('back_to_to_do')),{disabled:off}):'')+menuItem('detail',esc(tr('view_details')),{icon:arrowIcon})
+ return '<p class="menu-title task-name">'+esc(t.title)+'</p>'+(t.state!=='todo'?menuItem('todo',esc(tr('back_to_to_do')),{disabled:off}):'')
+  +menuItem('edit-title',esc(tr('edit_title')),{icon:editIcon,disabled:off})+menuItem('details',esc(tr(expanded===t.id?'hide_details':'more_details')),{icon:arrowIcon,disabled:t.pending})
+  +menuItem('set-due',esc(tr(t.due?'change_deadline':'set_deadline')),{icon:calendarIcon,disabled:off})
   +(i>0?menuItem('move',esc(tr('move_up')),{value:i-1}):'')+(i>=0&&i<ids.length-1?menuItem('move',esc(tr('move_down')),{value:i+1}):'')
+  +menuItem('duplicate',esc(tr('duplicate')),{icon:copyIcon,disabled:off})
   +'<div class="menu-sep" role="separator"></div>'+menuItem('retire',esc(tr('retire_7ad0e0')),{kind:'danger',disabled:off})}
+// Groups already in use, none, or a new one typed in place.
+function groupMenu(t,data){const off=data.readOnly||t.pending,groups=[...new Set(data.tasks.map(x=>x.group).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+ return '<p class="menu-title">'+esc(tr('group'))+'</p><div class="menu-scroll">'+groups.map(g=>menuItem('group',groupDot(g)+esc(g),{value:g,checked:t.group===g,disabled:off})).join('')+'</div>'
+  +menuItem('group','<span class="group-dot ungrouped" aria-hidden="true"></span>'+esc(tr('no_group')),{value:'',checked:!t.group,disabled:off})
+  +'<div class="menu-form"><input type="text" class="menu-input" data-menu-input="group" maxlength="120" autocomplete="off" placeholder="'+esc(tr('new_group_placeholder'))+'" aria-label="'+esc(tr('new_group'))+'"'+(off?' disabled':'')+'></div><p class="menu-error" role="alert" hidden></p>'}
+// Deadlines at 18:00 in the profile's zone, or an exact local date and time.
+function localAt(days,hour){const wall=new Date(localValue(NOW).slice(0,10)+'T00:00Z');wall.setUTCDate(wall.getUTCDate()+days);const raw=wall.toISOString().slice(0,10)+'T'+String(hour).padStart(2,'0')+':00',d=parseLocal(raw);return Number.isFinite(d.getTime())&&localValue(d)===raw&&!ambiguous(d)?d:null}
+const dayHint=d=>new Intl.DateTimeFormat(formatLocale(),{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(d);
+function duePresets(){const weekday=new Date(localValue(NOW).slice(0,10)+'T00:00Z').getUTCDay(),seen=new Set();
+ return [['due_today',0],['due_tomorrow',1],['due_friday',(5-weekday+7)%7||7],['due_next_week',7]].map(([key,days])=>[key,localAt(days,18)]).filter(([,d])=>d&&d>NOW&&!seen.has(d.getTime())&&seen.add(d.getTime()))}
+function dueMenu(t,data){const off=data.readOnly||t.pending,opening=t.due?localValue(new Date(t.due)):(localAt(1,18)?localValue(localAt(1,18)):'');
+ return '<p class="menu-title">'+esc(tr('deadline'))+'</p>'+duePresets().map(([key,d])=>menuItem('due','<span>'+esc(tr(key))+'</span><span class="menu-hint">'+esc(dayHint(d))+'</span>',{value:d.toISOString(),checked:t.due?new Date(t.due).getTime()===d.getTime():null,disabled:off})).join('')
+  +'<div class="menu-form"><input type="datetime-local" step="60" class="menu-input" data-menu-input="due" value="'+esc(opening)+'" aria-label="'+esc(tr('exact_deadline'))+'"'+(off?' disabled':'')+'><button type="button" class="btn" data-menu-act="due-custom"'+(off?' disabled':'')+'>'+esc(tr('set'))+'</button></div><p class="menu-hint zone-hint">'+esc(zone)+'</p><p class="menu-error" role="alert" hidden></p>'
+  +(t.due?'<div class="menu-sep" role="separator"></div>'+menuItem('due-clear',esc(tr('remove_deadline')),{disabled:off}):'')}
+const menuBodies={priority:priorityMenu,snooze:snoozeMenu,more:moreMenu,group:groupMenu,due:dueMenu};
 function openMenu(id,action,point){const data=flow.snapshot(),t=data.tasks.find(t=>t.id===id);if(!t||document.querySelector('dialog[open]'))return;closeMenu(false);
- const node=document.createElement('div');node.className='row-menu';node.setAttribute('role','menu');node.innerHTML=({priority:priorityMenu,snooze:snoozeMenu,more:moreMenu})[action](t,data);
+ const node=document.createElement('div');node.className='row-menu';node.setAttribute('role','menu');node.innerHTML=menuBodies[action](t,data);
  const sheet=sheetMedia.matches,scrim=sheet?document.createElement('div'):null;if(scrim){scrim.className='menu-scrim';document.body.append(scrim)}
- node.classList.toggle('sheet',sheet);document.body.append(node);menu={id,action,node,scrim,at:performance.now()};
+ node.classList.toggle('sheet',sheet);document.body.append(node);menu={id,action,node,scrim,point,at:performance.now()};
  const anchor=anchorOf(id,action);anchor?.setAttribute('aria-expanded','true');if(!sheet)placeMenu(node,anchor,point);
- node.querySelector('button:not([disabled])')?.focus({preventScroll:true})}
+ (node.querySelector('[aria-checked=true]:not([disabled])')||node.querySelector('button:not([disabled])'))?.focus({preventScroll:true})}
 function placeMenu(node,anchor,point){const r=anchor?.getClientRects().length?anchor.getBoundingClientRect():null,w=node.offsetWidth,h=node.offsetHeight;
- let x=point?point.x:r?r.right-w:8,y=point?point.y:r?r.bottom+6:8;if(y+h>innerHeight-8)y=(point?point.y:r?r.top-6:innerHeight)-h;
+ // Menus for the data chips open under them, from their left edge; the others end at their button.
+ const start=anchor?.matches?.('.row-meta *');let x=point?point.x:r?(start?r.left:r.right-w):8,y=point?point.y:r?r.bottom+6:8;if(y+h>innerHeight-8)y=(point?point.y:r?r.top-6:innerHeight)-h;
  node.style.left=Math.max(8,Math.min(x,innerWidth-w-8))+'px';node.style.top=Math.max(8,y)+'px'}
 function closeMenu(restore=true){if(!menu)return;const {id,action,node,scrim}=menu;menu=null;node.remove();scrim?.remove();const anchor=anchorOf(id,action);anchor?.setAttribute('aria-expanded','false');
- if(restore)(anchor?.offsetWidth>1?anchor:anchorOf(id,'detail'))?.focus({preventScroll:true})}
+ if(restore)(anchor?.offsetWidth>1?anchor:anchorOf(id,'title'))?.focus({preventScroll:true})}
+// The deadline editor replaces the ⋯ list in the same place, so it stays one level deep.
+function swapMenu(kind){const t=task(menu.id);if(!t)return;menu.node.innerHTML=menuBodies[kind](t,flow.snapshot());if(!menu.node.classList.contains('sheet'))placeMenu(menu.node,null,{x:parseFloat(menu.node.style.left),y:parseFloat(menu.node.style.top)});(menu.node.querySelector('button:not([disabled])'))?.focus({preventScroll:true})}
+function menuError(text){const node=menu?.node.querySelector('.menu-error');if(node){node.textContent=text;node.hidden=false}}
+function customDue(){const raw=menu.node.querySelector('[data-menu-input=due]').value;if(!raw)return menuError(tr('choose_a_date_and_time')),null;const d=parseLocal(raw);if(!Number.isFinite(d.getTime())||localValue(d)!==raw)return menuError(tr('that_local_date_or_time_does_not_exist_choos')),null;if(ambiguous(d))return menuError(tr('that_time_repeats_in_this_zone_clarification')),null;return d.toISOString()}
 function retireConfirm(){menu.node.innerHTML='<p class="menu-confirm">'+esc(tr('retire_this_responsibility_it_will_be_kept_s'))+'</p><div class="menu-confirm-actions"><button type="button" class="btn" data-menu-act="keep">'+esc(tr('cancel'))+'</button><button type="button" class="btn danger" data-menu-act="retire-yes">'+esc(tr('yes_retire'))+'</button></div>';if(!menu.node.classList.contains('sheet'))placeMenu(menu.node,null,{x:parseFloat(menu.node.style.left),y:parseFloat(menu.node.style.top)});menu.node.querySelector('button').focus({preventScroll:true})}
 function menuAct(b){const {id}=menu,t=task(id),act=b.dataset.menuAct,value=b.dataset.value;if(!t){closeMenu(false);return}
  if(act==='retire'){retireConfirm();return}
  if(act==='keep'){closeMenu();return}
- if(act==='detail'){closeMenu(false);openDetail(id,anchorOf(id,'detail'));return}
+ if(act==='details'){closeMenu(false);toggleExpand(id);return}
+ if(act==='edit-title'){closeMenu(false);startTitleEdit(id);return}
+ if(act==='set-due'){swapMenu('due');return}
+ let due;if(act==='due-custom'&&!(due=customDue()))return;
  closeMenu();
- if(act==='priority'){if(value!==t.priority)request('task_update',{uuid:id,priority:value})}
+ if(act==='group'){if((t.group||'')!==value)request('task_update',{uuid:id,group:value})}
+ else if(act==='due'||act==='due-custom'){due=due||value;if(!t.due||new Date(t.due).getTime()!==new Date(due).getTime())request('task_update',{uuid:id,due})}
+ else if(act==='due-clear')request('task_update',{uuid:id,due:null});
+ else if(act==='duplicate')duplicate(t);
+ else if(act==='priority'){if(value!==t.priority)request('task_update',{uuid:id,priority:value})}
  else if(act==='snooze')request('snooze',{taskId:id,until:value});
  else if(act==='todo')request('todo',{taskId:id});
  else if(act==='retire-yes')request('retire',{taskId:id});
@@ -264,18 +419,23 @@ for(const type of ['pointerup','pointercancel'])document.addEventListener(type,(
 document.addEventListener('pointerdown',e=>{if(e.isPrimary)swallowClick=false;if(menu&&!menu.node.contains(e.target)&&e.target!==menu.scrim&&e.target.closest?.('[data-action]')!==anchorOf(menu.id,menu.action))closeMenu(false)},true);
 document.addEventListener('keydown',e=>{if(!menu||!menu.node.contains(document.activeElement)&&e.key!=='Escape')return;
  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeMenu();return}
- if(e.key==='Tab'){e.preventDefault();closeMenu();return}
- if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;e.preventDefault();
- const items=[...menu.node.querySelectorAll('button:not([disabled])')],i=items.indexOf(document.activeElement),n=items.length;
+ const typing=document.activeElement?.matches?.('.menu-input');
+ if(typing&&e.key==='Enter'&&!e.isComposing){e.preventDefault();const input=document.activeElement;if(input.dataset.menuInput==='due')menu.node.querySelector('[data-menu-act=due-custom]')?.click();else{const value=input.value.trim();if(!value)return;const t=task(menu.id);closeMenu();if(t&&value!==(t.group||''))request('task_update',{uuid:t.id,group:value})}return}
+ // A menu with a field keeps Tab inside it; a plain list closes on Tab.
+ if(e.key==='Tab'){e.preventDefault();const items=[...menu.node.querySelectorAll('button:not([disabled]),input:not([disabled])')];if(!menu.node.querySelector('.menu-input')||!items.length){closeMenu();return}const i=items.indexOf(document.activeElement);items[(i+(e.shiftKey?-1:1)+items.length)%items.length].focus();return}
+ if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key)||typing&&['Home','End'].includes(e.key))return;e.preventDefault();
+ const items=[...menu.node.querySelectorAll('button:not([disabled]),.menu-input:not([disabled])')],i=items.indexOf(document.activeElement),n=items.length;
  items[e.key==='Home'?0:e.key==='End'?n-1:(i+(e.key==='ArrowDown'?1:-1)+n)%n]?.focus()},true);
-// Only a scroll that moves the rows detaches the menu from its row; the chat log scrolling does not.
-addEventListener('scroll',e=>{if(menu&&!menu.node.classList.contains('sheet')&&(e.target===document||e.target.contains?.($('board'))))closeMenu(false)},true);addEventListener('resize',()=>closeMenu(false));
+// Only a scroll that moves the rows affects a menu; the chat log scrolling does not. A menu opened
+// from a button follows it, and closes once the button leaves the screen; one opened at the pointer closes.
+addEventListener('scroll',e=>{if(!menu||menu.node.classList.contains('sheet')||!(e.target===document||e.target.contains?.($('board'))))return;const a=anchorOf(menu.id,menu.action),r=a?.getClientRects().length?a.getBoundingClientRect():null;
+ if(menu.point||!r||r.bottom<0||r.top>innerHeight)closeMenu(false);else placeMenu(menu.node,a)},true);addEventListener('resize',()=>{if(!document.activeElement?.matches?.('.menu-input'))closeMenu(false)});
 $('board').addEventListener('contextmenu',e=>{const card=e.target.closest('.task');if(!card||drag)return;e.preventDefault();clearTimeout(press?.timer);press=null;if(menu?.id===card.dataset.taskId&&performance.now()-menu.at<800)return;openMenu(card.dataset.taskId,'more',{x:e.clientX,y:e.clientY})});
 // A long press on a touch screen opens the same menu; the tap that ends it does nothing else.
 $('board').addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'||!e.isPrimary)return;const card=e.target.closest('.task');if(!card||e.target.closest('.drag-handle'))return;clearTimeout(press?.timer);const {clientX:x,clientY:y,pointerId:pointer}=e;press={x,y,pointer,timer:setTimeout(()=>{press=null;swallowClick=true;openMenu(card.dataset.taskId,'more',{x,y})},500)}});
 $('board').addEventListener('pointermove',e=>{if(press?.pointer===e.pointerId&&Math.hypot(e.clientX-press.x,e.clientY-press.y)>8){clearTimeout(press.timer);press=null}});
 for(const type of ['pointerup','pointercancel'])$('board').addEventListener(type,e=>{if(press?.pointer===e.pointerId){clearTimeout(press.timer);press=null}});
-$('board').onclick=e=>{const sb=e.target.closest('[data-suggestion]');if(sb){const {suggestion,suggestionAction}=sb.dataset;bubbleFor=null;safely(async()=>{const started=performance.now();timed(flow.observe(await api('/api/suggestions/'+suggestion+'/'+suggestionAction,{})),started);await flow.refresh();render()});return}const b=e.target.closest('[data-action]');if(!b){if(dependencyFocus&&!e.target.closest('.task'))toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='suggestion'){bubbleFor=bubbleFor===id?null:id;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true});return}if(action==='priority'||action==='snooze'||action==='more'){if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='dependencies')toggleDependencies(id);else if(action==='detail')openDetail(id,b);else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
+$('board').onclick=e=>{const sb=e.target.closest('[data-suggestion]');if(sb){const {suggestion,suggestionAction}=sb.dataset;bubbleFor=null;safely(async()=>{const started=performance.now();timed(flow.observe(await api('/api/suggestions/'+suggestion+'/'+suggestionAction,{})),started);await flow.refresh();render()});return}if(inlineClick(e))return;const b=e.target.closest('[data-action]');if(!b){const card=e.target.closest('.task');if(card&&!e.target.closest('.assistant-bubble'))toggleExpand(card.dataset.taskId);else if(dependencyFocus&&!card)toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='suggestion'){bubbleFor=bubbleFor===id?null:id;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true});return}if(['priority','snooze','more','group','due'].includes(action)){if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='dependencies')toggleDependencies(id);else if(action==='title'){const t=task(id);if(t&&!t.pending&&!flow.snapshot().readOnly)startTitleEdit(id);else toggleExpand(id)}else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
 $('reviews').onclick=async e=>{const summary=e.target.closest('summary');if(summary){const d=summary.parentElement;if(d.open)collapsedProposals.add(d.dataset.proposal);else collapsedProposals.delete(d.dataset.proposal);}const b=e.target.closest('[data-review-action]');if(!b)return;const p=flow.snapshot().proposals.find(p=>p.id===b.dataset.proposal);if(!p)return;if(Number(b.dataset.generation)!==p.generation){notice(tr("the_review_changed_read_the_current_state"));return;}const action=b.dataset.reviewAction;if(action==='cancel'){await flow.cancel(p.id);notice(tr("change_canceled_the_responsibility_keeps_its"))}if(action==='retry')safely(()=>flow.retry(p.id));if(action==='continue')safely(()=>flow.commit(p.id,{generation:p.generation}))};
 $('reviews').addEventListener('toggle',e=>{if(!e.target.matches('details'))return;const id=e.target.dataset.proposal;if(e.target.open){collapsedProposals.delete(id);expandedProposal=id}else collapsedProposals.add(id)},true);
 $('undo').onclick=()=>{const id=$('undo').dataset.event;$('undo').hidden=true;safely(()=>flow.undo(id))};
@@ -300,7 +460,7 @@ function placeChat(){const modal=$('chat-dialog'),panel=$('assistant'),dock=$('c
 $('chat-dialog').addEventListener('close',()=>{if($('chat-dialog').returnValue==='reflow')return;chatOpen=false;placeChat()});$('chat-toggle').onclick=()=>{chatOpen=!chatOpen;placeChat()};$('chat-close').onclick=()=>{chatOpen=false;placeChat();$('chat-toggle').focus({preventScroll:true})};compact.addEventListener('change',placeChat);placeChat();
 
 
-const aliases={front_activate:'activate',front_todo:'todo',task_snooze:'snooze',task_done:'done',front_retire:'retire',task_restore:'restore',task_add:'add',task_update:'update',task_reopen:'reopen',context_update:'declaration',continuity_update:'declaration',order_update:'order'};
+const aliases={front_activate:'activate',front_todo:'todo',task_snooze:'snooze',task_done:'done',front_retire:'retire',task_restore:'restore',task_add:'add',task_update:'update',task_reopen:'reopen',context_update:'declaration',continuity_update:'declaration',order_update:'order',dependency_update:'dependency',related_update:'related'};
 const domain={activate:'front_activate',todo:'front_todo',snooze:'task_snooze',done:'task_done',retire:'front_retire'};
 // Reads bypass the HTTP cache: otherwise the browser holds a read behind an identical one in flight.
 async function api(path,body){const response=await fetch(path,{method:body===undefined?'GET':'POST',headers:body===undefined?{}:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:body===undefined?undefined:JSON.stringify(body)});const result=await response.json();if(!response.ok){const error=Error(errorText(result.error?.code,result.error?.message||tr("the_request_could_not_be_completed")));error.code=result.error?.code;error.status=response.status;throw error;}return result.data;}
@@ -340,6 +500,9 @@ class RemoteFlow{
    const fields=moves[body.action]||(body.action==='task_snooze'?{state:'snoozed',until:p.until}:Object.fromEntries(['title','priority','due','group'].filter(k=>k in p).map(k=>[k,k==='group'?p.group||null:p[k]])));
    if(!tasks.some(t=>t.id===p.uuid))return false;tasks=tasks.map(t=>t.id===p.uuid?{...t,...fields}:t)}
   else if(body.action==='task_add')tasks=[...tasks,{id:'draft:'+(++this.drafts),title:p.title,state:'todo',priority:p.priority||'medium',group:p.group||null,due:p.due||null,until:null,blocked:false,dependsOn:[],blockedBy:[],relatedTo:[],attachmentIds:[],context:'',next:'',awaiting:false,remainingMinutes:null,createdAt:NOW.toISOString(),pending:true}];
+  else if(body.action==='continuity_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const fields=Object.fromEntries(['context','next','awaiting','remainingMinutes'].filter(k=>k in p).map(k=>[k,p[k]]));tasks=tasks.map(t=>t.id===p.uuid?{...t,...fields}:t)}
+  else if(body.action==='dependency_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const done=new Set(tasks.filter(t=>t.state==='done').map(t=>t.id)),blockedBy=p.dependsOn.filter(id=>!done.has(id));tasks=tasks.map(t=>t.id===p.uuid?{...t,dependsOn:[...p.dependsOn],blockedBy,blocked:blockedBy.length>0}:t)}
+  else if(body.action==='related_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const wanted=new Set(p.relatedTo);tasks=tasks.map(t=>t.id===p.uuid?{...t,relatedTo:[...p.relatedTo]}:wanted.has(t.id)&&!t.relatedTo.includes(p.uuid)?{...t,relatedTo:[...t.relatedTo,p.uuid]}:!wanted.has(t.id)&&t.relatedTo.includes(p.uuid)?{...t,relatedTo:t.relatedTo.filter(x=>x!==p.uuid)}:t)}
   else if(body.action==='context_update')context={...context,...p};
   else return false;
   this.data={...data,tasks,context};render(this.data);return {tasks:data.tasks,context:data.context}}
@@ -369,7 +532,7 @@ function renderReview(state){const r=state.review||{},connected=!!state.agent?.c
  const text=!connected?tr('review_strip_offline'):r.running?tr('review_strip_running'):r.pending?formatted('review_strip_waiting',{n:r.pending}):['incomplete','interrupted'].includes(r.status)?tr('review_strip_incomplete'):r.finishedAt?tr('review_strip_done').replace('{time}',short(r.finishedAt)):tr('review_strip_saved');
  const strip=$('review-strip');if(strip.dataset.text!==text){strip.dataset.text=text;strip.innerHTML=(busy?'<span class="spinner" aria-hidden="true"></span>':checkIcon)+'<span>'+esc(text)+'</span>'}}
 // Brings a marked card into view from the chat log and opens its suggestion.
-function focusSuggestion(id){const data=flow.snapshot();if(currentSuggestion(id,data))bubbleFor=id;if($('chat-dialog').open){chatOpen=false;placeChat()}render();const card=$('board').querySelector('[data-task-id="'+id+'"]');card?.scrollIntoView({block:'center'});(card?.querySelector('[data-action="suggestion"]')||card?.querySelector('[data-action="detail"]'))?.focus({preventScroll:true})}
+function focusSuggestion(id){const data=flow.snapshot();if(currentSuggestion(id,data))bubbleFor=id;if($('chat-dialog').open){chatOpen=false;placeChat()}render();const card=$('board').querySelector('[data-task-id="'+id+'"]');card?.scrollIntoView({block:'center'});(card?.querySelector('[data-action="suggestion"]')||card?.querySelector('[data-action="title"]'))?.focus({preventScroll:true})}
 $('messages').addEventListener('click',e=>{const b=e.target.closest('[data-focus-task]');if(b){e.preventDefault();focusSuggestion(b.dataset.focusTask)}});
 function suggestionLog(s,state){const el=document.createElement('div');el.className='slog'+(s.current?'':' closed');const t=state.tasks.find(t=>t.id===s.taskId),link=document.createElement('a');link.href='#';link.dataset.focusTask=s.taskId;link.textContent='«'+(t?.title||'…')+'»';el.append(document.createTextNode(tr('suggestion_log_prefix')+' '),link,document.createTextNode(': '+suggestionText(s)+(s.current?'':' · '+tr('suggestion_handled'))));return el}
 function renderMessages(messages,state=flow.snapshot()){const box=$('messages'),oldScroll=box.scrollTop,nearEnd=box.scrollHeight-box.clientHeight-box.scrollTop<70;box.replaceChildren();
@@ -402,5 +565,5 @@ safely(boot);
 function poll(){safely(()=>flow.poll()).finally(()=>setTimeout(poll,document.hidden?5000:900))}
 setTimeout(poll,900);document.addEventListener('visibilitychange',()=>{if(!document.hidden)safely(()=>flow.poll())});
 globalThis.daySnapshot=()=>structuredClone(flow.snapshot());
-globalThis.dayUI={api,deliver,flow,openDialog,openDetail,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome,formatted,creates,showProposal};
+globalThis.dayUI={api,deliver,flow,openDialog,expandTask:id=>toggleExpand(id,true),editTitle:startTitleEdit,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome,formatted,creates,showProposal};
 })();
