@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact','snooze'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
@@ -37,6 +37,7 @@ const server=createServer(async(req,res)=>{
     if(body.action==='order_update')state.taskOrder=p.order;
     const nextState={front_activate:'active',front_todo:'todo',task_done:'done',front_retire:'retired',task_reopen:'todo'}[body.action];
     if(nextState)t.state=nextState;
+    if(body.action==='task_snooze')Object.assign(t,{state:'snoozed',until:p.until});
     if(body.action==='context_update')Object.assign(state.context,p);
     if(body.action==='event_update')Object.assign(state.calendar_events.find(e=>e.uuid===p.uuid),{title:p.title,start_at:p.start,end_at:p.end});
     if(body.action==='event_cancel')state.calendar_events=state.calendar_events.filter(e=>e.uuid!==p.uuid);
@@ -416,7 +417,6 @@ try{
  await detail();await click('#edit-card');await fill('card-due','2025-11-02T01:30');let before=requests.length;await submit('card-dialog');await failed('card-dialog');assert.equal(requests.length,before);await fill('card-due','2025-11-02T03:30');await submit('card-dialog');await saved('card-dialog');assert.equal(target.due,'2025-11-02T10:30:00.000Z');
  await click('#settings-open');await fill('policy-pause','2025-11-02T01:30');await submit('settings-dialog');await failed('settings-dialog');await fill('policy-pause','2025-11-02T03:30');await submit('settings-dialog');await saved('settings-dialog');
  await click('#context-open');await fill('context-minutes','10');await fill('context-until','2025-11-02T01:30');before=requests.length;await submit('context-dialog');await wait("!document.getElementById('context-error').hidden");assert.equal(requests.length,before);await fill('context-until','2025-11-02T03:30');await submit('context-dialog');await saved('context-dialog');
- await click(`[data-id="${target.id}"][data-action="snooze"]`);await click('#date-mode');await fill('snooze-date','2025-11-02T01:30');assert.equal(await evaluate("document.getElementById('snooze-apply').disabled"),true);await fill('snooze-date','2025-11-02T03:30');assert.equal(await evaluate("document.getElementById('snooze-apply').disabled"),false);await click('#snooze-apply');await saved('snooze-dialog');
  state.timezone='Australia/Lord_Howe';await refresh();assert.equal(await evaluate("dayUI.ambiguous(dayUI.parseLocal('2025-04-06T01:45'))"),true);
  for(const locale of ['en','es']){
   await fill('locale-choice',locale);
@@ -707,6 +707,72 @@ try{
   await fill('locale-choice','en');await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
   state.tasks=kept;state.revision++;await refresh();
   console.log('Compact row regressions passed: rows per screen, full long titles, one-click finish/start/pause, two-click priority, menus, Retire confirmation, board cards, phone targets and long press');
+ }
+ if(group==='all'||group==='snooze'){
+  // Snooze: the clock opens one menu of presets, each showing the exact time it saves in the
+  // profile's zone; one more click saves that time at once, with no dialog.
+  const size=(width,height,mobile=false)=>rpc('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile},sessionId);
+  const kept={tasks:state.tasks,timezone:state.timezone,now:state.now},plain=task('Plain'),due=task('Due soon'),later=task('Snoozed already');
+  Object.assign(due,{due:'2025-10-29T20:00:00Z'});Object.assign(later,{state:'snoozed',until:'2025-10-30T15:00:00Z'});
+  await close();await fill('locale-choice','en');await fill('order-choice','priority');await size(1440,900);
+  Object.assign(state,{tasks:[plain,due,later],instant:true,readOnly:false,proposals:[],suggestions:[],messages:[],calendar_events:[],orderSuggestion:null,taskOrder:[],timezone:'America/Edmonton',now:'2025-10-28T12:00:20Z'});
+  state.profile.timezone=state.timezone;state.revision++;await refresh();
+  const clock=id=>`[data-id="${id}"][data-action="snooze"]`,laneOf=id=>`document.querySelector('#board [data-task-id="${id}"]')?.closest('.lane')?.dataset.state??null`;
+  const items="[...document.querySelectorAll('.row-menu .menu-item')].map(e=>[e.querySelector('.menu-label').firstChild.textContent,e.querySelector('.menu-hint')?.textContent??'',e.dataset.value])";
+  await click(clock(plain.id));
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(clock(plain.id))}).getAttribute('aria-expanded')`),'true');
+  assert.equal(await evaluate("document.querySelector('.row-menu .menu-title').textContent"),'Snooze until');
+  assert.equal(await evaluate("document.activeElement.closest('.row-menu')!==null"),true,'focus moves into the menu');
+  // 06:00:20 in Edmonton: hours round up to the minute; days land at 9:00 local, also after the DST change on Nov 2.
+  assert.deepEqual(await evaluate(items),[
+   ['In 1 hour','07:01','2025-10-28T13:01:00.000Z'],['In 3 hours','09:01','2025-10-28T15:01:00.000Z'],['Tomorrow','09:00','2025-10-29T15:00:00.000Z'],
+   ['In 2 days','Thu, Oct 30, 09:00','2025-10-30T15:00:00.000Z'],['In 1 week','Tue, Nov 4, 09:00','2025-11-04T16:00:00.000Z']]);
+  assert.equal(await evaluate("document.querySelector('.row-menu .menu-note').textContent"),'Times in America/Edmonton','a browser in another zone is told which zone the times use');
+  assert.equal(await evaluate("document.querySelector('.row-menu .menu-item').title"),await evaluate("dayUI.full('2025-10-28T13:01:00.000Z')"));
+  assert.equal(await evaluate("document.querySelectorAll('.row-menu .menu-warn').length"),0);
+  // The second click applies before the service answers: the row is in Snoozed in the same task.
+  let sent=requests.length;
+  const applied=await evaluate(`(()=>{const s=performance.now();document.querySelector('.row-menu [data-value="2025-10-30T15:00:00.000Z"]').click();return {lane:${laneOf(plain.id)},ms:performance.now()-s,menu:!!document.querySelector('.row-menu'),dialog:!!document.querySelector('dialog[open]')}})()`);
+  assert.deepEqual({...applied,ms:undefined},{lane:'snoozed',ms:undefined,menu:false,dialog:false});assert.ok(applied.ms<100,'snooze shown in '+applied.ms+' ms');
+  await wait(`daySnapshot().revision>=${state.revision}`);
+  assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'task_snooze',{uuid:plain.id,until:'2025-10-30T15:00:00.000Z'}]);
+  assert.equal(plain.until,'2025-10-30T15:00:00.000Z');
+  await wait("document.getElementById('status').textContent==='Snoozed until Oct 30, 09:00 · Plain'");assert.equal(await evaluate("!document.getElementById('undo').hidden"),true);
+  assert.match(await evaluate(`document.querySelector('#board [data-task-id="${plain.id}"] .row-meta').textContent`),/Oct 30, 09:00/);
+  // Presets past the deadline say so; the earlier ones do not.
+  await click(clock(due.id));
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.querySelector('.menu-warn')?.textContent??'')"),['','','','after the deadline','after the deadline']);
+  // Escape closes it and returns focus to the clock; a second click on the clock closes it too.
+  await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  assert.equal(await evaluate(`document.querySelector('.row-menu')===null&&document.activeElement===document.querySelector(${JSON.stringify(clock(due.id))})`),true);
+  await click(clock(due.id));await click(clock(due.id));assert.equal(await evaluate("document.querySelector('.row-menu')"),null);
+  // A snoozed task can come back at once from the same menu.
+  await click(clock(later.id));assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent).at(-1)"),'Resume now');
+  sent=requests.length;await click('.row-menu [data-menu-act="todo"]');assert.equal(await evaluate(laneOf(later.id)),'todo');
+  await wait(`daySnapshot().revision>=${state.revision}`);assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'front_todo',{uuid:later.id}]);
+  // Spanish copy.
+  await fill('locale-choice','es');await click(clock(due.id));
+  assert.equal(await evaluate("document.querySelector('.row-menu .menu-title').textContent"),'Posponer hasta');
+  assert.deepEqual(await evaluate(items+".map(i=>i[0])"),['En 1 hora','En 3 horas','Mañana','En 2 días','En 1 semana']);
+  assert.equal(await evaluate("document.querySelector('.row-menu .menu-warn').textContent"),'después del vencimiento');
+  assert.equal(await evaluate("document.querySelector('.row-menu .menu-note').textContent"),'Horas en America/Edmonton');
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(clock(due.id))}).title`),'Posponer');
+  await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");await fill('locale-choice','en');
+  // When the browser shares the profile's zone, the note is left out.
+  state.timezone='UTC';state.profile.timezone='UTC';state.revision++;await refresh();await click(clock(due.id));
+  assert.equal(await evaluate("document.querySelector('.row-menu .menu-note')"),null);
+  assert.deepEqual((await evaluate(items))[2],['Tomorrow','09:00','2025-10-29T09:00:00.000Z']);
+  await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  // Phone: the same menu as a bottom sheet with full touch targets and no overflow.
+  await size(390,844,true);await new Promise(r=>setTimeout(r,100));if(await evaluate("document.getElementById('chat-dialog').open"))await click('#chat-close');
+  await click(clock(due.id));
+  assert.equal(await evaluate("document.querySelector('.row-menu.sheet')!==null&&document.querySelector('.menu-scrim')!==null"),true);
+  assert.ok(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].every(e=>e.getBoundingClientRect().height>=44)"));
+  assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll(".row-menu .menu-item")].every(e=>e.scrollWidth<=e.clientWidth)'),true);
+  sent=requests.length;await click('.menu-scrim');assert.equal(await evaluate("document.querySelector('.row-menu')"),null);assert.equal(requests.length,sent);
+  await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
+  Object.assign(state,{tasks:kept.tasks,timezone:kept.timezone,now:kept.now,instant:false});state.profile.timezone=kept.timezone;state.revision++;await refresh();
+  console.log('Snooze regressions passed: one-click presets with the saved time in the profile zone, DST, deadline warning, instant apply, Resume now, Spanish copy and phone sheet');
  }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');await new Promise(resolve=>chrome.exitCode!==null?resolve():chrome.once('exit',resolve));
