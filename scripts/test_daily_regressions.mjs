@@ -35,7 +35,7 @@ const server=createServer(async(req,res)=>{
     if(body.action==='related_update')t.relatedTo=p.relatedTo;
     if(body.action==='task_update')for(const key of ['title','priority','due','context','next','awaiting','group'])if(key in p)t[key]=p[key];
     if(body.action==='continuity_update')for(const key of ['context','next','awaiting','remainingMinutes'])if(key in p)t[key]=p[key];
-    if(body.action==='order_update')state.taskOrder=p.order;
+    if(p.order)state.taskOrder=p.order;
     // The quick capture group creates the task as the service does; other groups only record the request.
     if(body.action==='task_add'&&state.quickAdd)state.tasks.push({...task(p.title),priority:p.priority,group:p.group||null,due:p.due||null,createdAt:state.now});
     if(body.action==='group_color_update'){state.groupColors={...state.groupColors};if(p.color)state.groupColors[p.group.trim().toLowerCase()]=p.color;else delete state.groupColors[p.group.trim().toLowerCase()]}
@@ -1047,20 +1047,22 @@ try{
   sent=requests.length;const noGroup=await center('#board .group-section[data-group=""] .lane-heading');
   await drag(await grab(r1.id),{x:noGroup.x,y:noGroup.y+30});
   for(let i=0;i<100&&requests.length<sent+1;i++)await new Promise(r=>setTimeout(r,15));
-  assert.deepEqual([requests[sent].action,requests[sent].payload],['task_update',{uuid:r1.id,group:''}]);assert.equal(r1.group,'');
-  await wait("document.getElementById('status').textContent.startsWith('No group')");
+  // The new place travels with the change: one request, one write, one Undo.
+  const moved=request=>{const {order,...changed}=request.payload;return [request.action,changed]};
+  assert.deepEqual(moved(requests[sent]),['task_update',{uuid:r1.id,group:''}]);assert.equal(r1.group,'');assert.deepEqual(state.taskOrder,requests[sent].payload.order);
+  await wait("document.getElementById('status').textContent.startsWith('No group')");assert.equal(requests.length,sent+1);
   await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
   sent=requests.length;const home=await center('#board .group-section[data-group="Home"] .lane-heading');
   await drag(await grab(r5.id),{x:home.x,y:home.y+30});
   for(let i=0;i<100&&requests.length<sent+1;i++)await new Promise(r=>setTimeout(r,15));
-  assert.deepEqual([requests[sent].action,requests[sent].payload],['task_update',{uuid:r5.id,group:'Home'}]);
+  assert.deepEqual(moved(requests[sent]),['task_update',{uuid:r5.id,group:'Home'}]);
   await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
   // A folded section accepts a drop, keeps its tasks hidden, and leaves no lifted copy behind.
   await click('[data-fold="home"]');sent=requests.length;
   const foldedHome=await center('#board .group-section[data-group="Home"] .lane-heading');
   await drag(await grab(r1.id),foldedHome);
   await serverWait(()=>r1.group==='Home');
-  assert.deepEqual(requests[sent].payload,{uuid:r1.id,group:'Home'});
+  assert.deepEqual(moved(requests[sent]),['task_update',{uuid:r1.id,group:'Home'}]);
   await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
   assert.equal(await evaluate(`document.querySelector('#board [data-task-id="${r1.id}"]').getClientRects().length`),0);
   await wait("document.querySelector('#motion-layer .drag-ghost')===null");
@@ -1114,7 +1116,7 @@ try{
   assert.ok(await evaluate(`document.querySelector('#board [data-task-id="${r4.id}"]').classList.contains('pressing')`),'a held row shows it is ready to move');
   for(let i=1;i<=10;i++){await touch('touchMove',[{x:from.x+(to.x-from.x)*i/10,y:from.y+(to.y-from.y)*i/10}]);await new Promise(r=>setTimeout(r,16))}
   await touch('touchEnd',[]);for(let i=0;i<100&&requests.length<sent+1;i++)await new Promise(r=>setTimeout(r,15));
-  assert.deepEqual([requests[sent].action,requests[sent].payload],['front_activate',{uuid:r4.id}]);assert.equal(await laneOf(r4.id),'active');
+  assert.deepEqual(moved(requests[sent]),['front_activate',{uuid:r4.id}]);assert.equal(await laneOf(r4.id),'active');
   assert.equal(await evaluate("document.querySelector('.row-menu')"),null,'a drag opens no menu');
   await rpc('Emulation.setTouchEmulationEnabled',{enabled:false},sessionId);await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
   // Spanish copy for the drop's confirmation.

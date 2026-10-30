@@ -846,9 +846,10 @@ function dropCard(d){
  // The new place is set before the changes show, so the card stays exactly where it was let go.
  const gesture={id:'gesture:'+(++gestureSerial),taskId:t.id,notes,proposals:[],before:{tasks:data.tasks,taskOrder:data.taskOrder},started:performance.now()};
  gestures.set(gesture.id,gesture);if(gestures.size>20)gestures.delete(gestures.keys().next().value);
- if(reordered)localOrder=next;
- for(const [action,payload] of changes)request(action,payload,undefined,undefined,gesture);
- if(reordered)request('order_update',{order:next},undefined,undefined,gesture).then(()=>{if(localOrder===next){localOrder=null;orderBase=null;render()}});
+ // The new place travels with the last change, so the drop saves in one write less.
+ if(reordered){localOrder=next;changes.at(-1)[1].order=next}
+ let saved;for(const [action,payload] of changes)saved=request(action,payload,undefined,undefined,gesture);
+ if(reordered)saved.then(()=>{if(localOrder===next){localOrder=null;orderBase=null;render()}});
  gesture.shown=performance.now();return true;
 }
 const themeMedia=matchMedia('(prefers-color-scheme:dark)');let themeChoice='system';try{themeChoice=localStorage.getItem('day-attendant-theme')||'system'}catch{}if(!['system','light','dark'].includes(themeChoice))themeChoice='system';$('theme-choice').value=themeChoice;const applyTheme=()=>root.dataset.theme=themeChoice==='system'?(themeMedia.matches?'dark':'light'):themeChoice;$('theme-choice').onchange=()=>{themeChoice=$('theme-choice').value;try{localStorage.setItem('day-attendant-theme',themeChoice)}catch{}applyTheme()};themeMedia.addEventListener('change',applyTheme);applyTheme();
@@ -913,25 +914,28 @@ class RemoteFlow{
  // saves it while the page shows it.
  dispatch(task){const sent=this.sending>1?this.queue.then(task):task();this.queue=sent.catch(()=>{});return sent}
  async send(body,key,expectedRevision){const revision=expectedRevision??this.data.revision;return this.observe(key?await api('/api/proposals',{...body,key,expected_revision:revision}):await deliver('/api/proposals',body,revision,{refresh:false}))}
- async request(action,payload,key,expectedRevision,gesture){const started=performance.now();const body={action:domain[action]||action,payload:{...(payload.taskId?{uuid:payload.taskId}:{}),...(payload.until?{until:payload.until}:{}),...(!payload.taskId?payload:{})}};
+ async request(action,payload,key,expectedRevision,gesture){const started=performance.now();const body={action:domain[action]||action,payload:{...(payload.taskId?{uuid:payload.taskId}:{}),...(payload.until?{until:payload.until}:{}),...(payload.taskId&&payload.order?{order:payload.order}:{}),...(!payload.taskId?payload:{})}};
   this.sending++;this.barrier=this.started;const sent=this.dispatch(()=>this.send(body,key,expectedRevision)),previewed=this.preview(body),shown=previewed?performance.now():undefined;
   let p;try{p=timed(await sent,started,shown,previewed||undefined);if(gesture&&p?.id){gesture.proposals.push(p.id);gestureOf.set(p.id,gesture);if(gestureOf.size>60)gestureOf.delete(gestureOf.keys().next().value)}}catch(error){this.settle();if(previewed){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();
-  await this.refresh();return {...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]};}
+  // A read started while another change is on its way would be dropped, so only the last one reads.
+  if(!this.sending)await this.refresh();return {...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]};}
  settle(){this.sending--;this.barrier=this.started}
  async cancel(id){const r=await api('/api/proposals/'+id+'/cancel',{});await this.refresh();return r}
  async retry(id){const started=performance.now();const r=timed(this.observe(await api('/api/proposals/'+id+'/retry',{})),started);await this.refresh();return r}
  async commit(id,options){const started=performance.now();const r=this.observe(await api('/api/proposals/'+id+'/confirm',{generation:options.generation,without_review:!!options.withoutReview}));timings.set(id,{started});await this.refresh();return r}
  async undo(id){const started=performance.now(),view=undoViews.get(String(id));undoViews.delete(String(id));
+  this.sending++;this.barrier=this.started;const sent=this.dispatch(async()=>this.observe(await deliver('/api/undo',{fact_id:id},this.data.revision,{refresh:false})));
   if(view?.groupColor){const colors={...this.data.groupColors},[key,color]=view.groupColor;if(color)colors[key]=color;else delete colors[key];this.data={...this.data,groupColors:colors};paintGroupColor(this.data,key)}
   else if(view?.calendar_events){this.data={...this.data,calendar_events:view.calendar_events};globalThis.dayDaily?.update(this.data)}
   else if(view){const back=new Map(view.tasks.map(t=>[t.id,t]));this.data={...this.data,tasks:this.data.tasks.filter(t=>!t.pending&&(back.has(t.id)||t.id!==view.taskId)).map(t=>back.get(t.id)||t),context:view.context};render(this.data)}
-  this.sending++;this.barrier=this.started;const shown=view?performance.now():undefined,sent=this.queue.then(async()=>this.observe(await deliver('/api/undo',{fact_id:id},this.data.revision,{refresh:false})));this.queue=sent.catch(()=>{});
+  const shown=view?performance.now():undefined;
   let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();if(view){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();await this.refresh();return r}
  // Undo of a drop puts the card back at once, then reverts every change the drop saved, newest first.
  async undoGesture(gesture){const started=performance.now(),back=gesture.before.tasks.find(t=>t.id===gesture.taskId);gestures.delete(gesture.id);
   const ids=new Set(gesture.taskIds||[gesture.taskId]),before=new Map(gesture.before.tasks.filter(t=>ids.has(t.id)).map(t=>[t.id,t]));
+  this.sending++;this.barrier=this.started;const sent=this.dispatch(async()=>{const undone=await deliver('/api/undo',{proposal_ids:gesture.proposals},this.data.revision,{refresh:false});return this.observe(undone.at(-1))});
   if(back){localOrder=null;this.data={...this.data,tasks:this.data.tasks.map(t=>before.get(t.id)||t),taskOrder:gesture.before.taskOrder};render(this.data)}
-  this.sending++;this.barrier=this.started;const shown=performance.now(),sent=this.queue.then(async()=>{const undone=await deliver('/api/undo',{proposal_ids:gesture.proposals},this.data.revision,{refresh:false});return this.observe(undone.at(-1))});this.queue=sent.catch(()=>{});
+  const shown=performance.now();
   let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();this.digest='';this.tag='';await this.refresh().catch(()=>{});throw error}this.settle();await this.refresh();return r}
  async setEstimate(id,value,revision){return this.request('continuity_update',{uuid:id,remainingMinutes:value},undefined,revision)}
  async setContext(value,revision){return this.request('context_update',{availableMinutes:value.availableMinutes,availableUntil:value.availableUntil,rest:value.rest},undefined,revision)}

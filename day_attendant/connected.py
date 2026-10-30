@@ -36,9 +36,9 @@ FOLLOWUP_PROMPT = """Look at changes the person already made. They are saved; yo
 
 ALLOWED = {
     "task_add": {"title", "priority", "due", "source", "zone", "person", "reference", "observed_at", "estimate_minutes", "remainingMinutes", "awaiting", "context", "next", "group"},
-    "task_update": {"uuid", "title", "priority", "due", "zone", "progress", "context", "next", "awaiting", "remainingMinutes", "group"},
-    "front_activate": {"uuid"}, "front_todo": {"uuid"}, "front_retire": {"uuid"},
-    "task_snooze": {"uuid", "until", "zone", "fold"}, "task_done": {"uuid"}, "task_reopen":{"uuid"},
+    "task_update": {"uuid", "title", "priority", "due", "zone", "progress", "context", "next", "awaiting", "remainingMinutes", "group", "order"},
+    "front_activate": {"uuid", "order"}, "front_todo": {"uuid", "order"}, "front_retire": {"uuid"},
+    "task_snooze": {"uuid", "until", "zone", "fold", "order"}, "task_done": {"uuid"}, "task_reopen":{"uuid"},
     "context_update": {"availableMinutes", "availableUntil", "rest"},
     "continuity_update": {"uuid", "remainingMinutes", "awaiting", "context", "next"},
     "dependency_update": {"uuid","dependsOn"},
@@ -457,7 +457,7 @@ class Connected:
     def _undoable(plan):
         steps,effect=plan["steps"],set(plan["effect"])
         if len(steps)==1 and steps[0].get("before") is None:return plan.get("action")=="task_add"
-        if len(steps)==1:return not effect-{"attachments_link","continuity_set"} and ("continuity_set" not in effect or "continuity" in plan.get("inverse",{}))
+        if len(steps)==1:return not effect-{"attachments_link","continuity_set","order_set"} and ("continuity_set" not in effect or "continuity" in plan.get("inverse",{}))
         return not steps and bool(effect) and bool(plan.get("inverse")) and not effect-RESTORABLE
 
     def _capacity(self, tasks, context):
@@ -544,9 +544,12 @@ class Connected:
                     (identity,key,digest,encoded(intent),entity,origin,request_text,phase,0,self._pending_fingerprint(intent) if waits else None,encoded(CONFIRMATION if waits else []),self.app.now()))
                 if message_guard:con.execute('UPDATE proposals SET message_key=? WHERE id=?',(message_guard[0],identity))
                 if phase=='unchanged' and superseded:con.execute("UPDATE proposals SET result=? WHERE id=?",(encoded({'superseded':superseded}),identity))
+                # A change without a message commits with its admission, so it needs one disk write less.
+                direct=phase=="evaluating" and connection is None
+                if direct and not message_guard:self._admit(con,self.unpack(con.execute('SELECT * FROM proposals WHERE id=?',(identity,)).fetchone()),plan)
             # Applied in this request; a batch sharing one transaction applies after it commits.
-            if phase=="evaluating" and connection is None:
-                try:self._admit_direct(identity,plan)
+            if direct:
+                try:self._admit_direct(identity,plan) if message_guard else self._apply_admitted(identity,plan)
                 except AssistantError as error:
                     with self.store.connect() as con:con.execute("UPDATE proposals SET phase='invalid',error=? WHERE id=? AND phase='evaluating'",(error.code,identity))
                     raise
@@ -640,21 +643,28 @@ class Connected:
         if not plan["steps"] and not plan["effect"]:
             with self.store.connect() as con:con.execute("UPDATE proposals SET phase='unchanged' WHERE id=?",(identity,))
             return dict(plan["result"],revision=self.store.revision())
+        with self.store.connect() as con:self._admit(con,proposal,plan)
+        return self._apply_admitted(identity,plan)
+
+    def _admit(self, con, proposal, plan):
+        """Record the authorization and the prepared operation in the caller's transaction."""
+        identity,intent=proposal["id"],proposal["intent"]
         action = intent["action"]
         # Rearranging is presentation only, so the later review never looks at it.
-        plan.update(revision=self.store.revision(),proposal_id=identity,action=action,origin=proposal["origin"],
+        plan.update(revision=int(con.execute("SELECT value FROM state WHERE key='revision'").fetchone()[0]),proposal_id=identity,action=action,origin=proposal["origin"],
             target_uuid=intent["payload"].get("uuid") or plan["result"].get("uuid"),undo_of=intent["payload"].get("undo_of"),
             review_complete=False,review_status="not_required" if action in PRESENTATION else "deferred")
         if proposal.get('message_key'):
             images=self.message_images(proposal['message_key'])
             if images and plan['target_uuid']:plan['effect']['attachments_link']=[plan['target_uuid'],[i['id'] for i in images]]
         operation_key = "proposal:"+identity
-        with self.store.connect() as con:
-            con.execute("INSERT INTO decisions VALUES(?,?,?,?,?,?,?,?)",(operation_key,identity,proposal["generation"],proposal["digest"],fingerprint([plan["steps"],plan["effect"]]),encoded(proposal["facts"] or []),0,self.app.now()))
-            con.execute("INSERT INTO operations(key,digest,action,plan,status,created_at) VALUES(?,?,?,?, 'prepared',?)",(operation_key,proposal["digest"],action,encoded(plan),self.app.now()))
-            con.execute("UPDATE proposals SET phase='admitted',operation_key=? WHERE id=?",(operation_key,identity))
+        con.execute("INSERT INTO decisions VALUES(?,?,?,?,?,?,?,?)",(operation_key,identity,proposal["generation"],proposal["digest"],fingerprint([plan["steps"],plan["effect"]]),encoded(proposal["facts"] or []),0,self.app.now()))
+        con.execute("INSERT INTO operations(key,digest,action,plan,status,created_at) VALUES(?,?,?,?, 'prepared',?)",(operation_key,proposal["digest"],action,encoded(plan),self.app.now()))
+        con.execute("UPDATE proposals SET phase='admitted',operation_key=? WHERE id=?",(operation_key,identity))
+
+    def _apply_admitted(self, identity, plan):
         self.app.fault("after_admission")
-        result = self.app._apply(operation_key,plan)
+        result = self.app._apply("proposal:"+identity,plan)
         self._refresh_pending(identity)
         return result
 
@@ -705,6 +715,9 @@ class Connected:
                     "patch":{"status":"deleted","end":wire(self.app.now()),"start":None,"wait":None}}
             payload={"uuid":step["uuid"],"expected_after":step["after"],"patch":{k:step["before"].get(k) for k in step["patch"]},"undo_of":fact_id}
             if "continuity_set" in effect:expect_continuity();payload["continuity"]=inverse["continuity"][1]
+            if "order_set" in effect:
+                if self.store.state_value("task_order",[])!=effect["order_set"]:raise conflict
+                payload["order"]=inverse["order"]
             return "task_restore",payload
         if "order_set" in effect:
             if self.store.state_value("task_order",[])!=effect["order_set"]:raise conflict

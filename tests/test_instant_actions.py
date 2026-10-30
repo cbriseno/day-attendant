@@ -1,4 +1,5 @@
 """Direct actions apply in their request with Undo; the assistant only looks afterwards and suggests."""
+from contextlib import contextmanager
 from datetime import timedelta
 import json
 from pathlib import Path
@@ -178,6 +179,60 @@ Connected(app).undo(int(sys.argv[2]),'death-undo-'+sys.argv[3])
                 with self.app.store.connect() as con:
                     self.assertEqual(con.execute("SELECT count(*) FROM facts WHERE action='event_restore' AND json_extract(plan,'$.target_uuid')=?", (uid,)).fetchone()[0], 1)
                 self.assertEqual(self.app.store.unresolved(), [])
+
+    def test_a_direct_change_writes_each_store_as_few_times_as_recovery_allows(self):
+        uid = self.add('A')
+        def writes(action, payload, key):
+            counted = {'assistant': 0, 'tasks': 0}
+            def count(owner, name):
+                original = owner.connect
+                @contextmanager
+                def connect(*args, **kwargs):
+                    with original(*args, **kwargs) as con:
+                        before = con.total_changes
+                        yield con
+                        counted[name] += con.total_changes > before
+                return patch.object(owner, 'connect', connect)
+            with count(self.app.store, 'assistant'), count(self.app.tasks, 'tasks'):
+                self.assertEqual(self.board.request(action, payload, key)['phase'], 'applied')
+            return counted
+        # Admission before any effect and the commit after it; the task store changes only in between.
+        self.assertEqual(writes('task_update', {'uuid': uid, 'priority': 'high'}, 'one-task-write'), {'assistant': 2, 'tasks': 1})
+        self.assertEqual(writes('order_update', {'order': [uid]}, 'one-order-write'), {'assistant': 2, 'tasks': 0})
+
+    def test_a_drop_saves_its_change_and_new_place_as_one_fact_with_one_undo(self):
+        a, b, c = self.add('A'), self.add('B'), self.add('C')
+        self.apply('order_update', {'order': [a, b, c]})
+        facts = self.board.snapshot()['lastFact']['id']
+        for action, payload in (('front_activate', {'uuid': c}), ('task_update', {'uuid': c, 'priority': 'high'}), ('task_snooze', {'uuid': c, 'until': stamp(NOW + timedelta(days=1))})):
+            with self.subTest(action=action):
+                before, order = self.state(), [c, a, b]
+                self.apply(action, dict(payload, order=order))
+                last = self.board.snapshot()['lastFact']
+                self.assertEqual((last['id'], last['action'], last['undoable']), (facts + 1, action, True))
+                self.assertEqual(self.board.snapshot()['taskOrder'], order)
+                self.board.undo(last['id'], 'undo-' + action)
+                self.assertEqual(self.state(), before)
+                facts = self.board.snapshot()['lastFact']['id']
+        # A later reorder is not overwritten, and neither half of the drop is undone alone.
+        self.apply('front_activate', {'uuid': c, 'order': [c, a, b]})
+        fact = self.board.snapshot()['lastFact']['id']
+        self.apply('order_update', {'order': [b, c, a]})
+        with self.assertRaises(AssistantError) as error: self.board.undo(fact, 'undo-after-reorder')
+        self.assertEqual(error.exception.code, 'undo_conflict')
+        self.assertEqual((self.board.snapshot()['taskOrder'], self.app.tasks.get(c).get('start') is not None), ([b, c, a], True))
+        with self.assertRaises(AssistantError) as error: self.board.request('front_todo', {'uuid': c, 'order': [c, c]}, 'bad-order')
+        self.assertEqual(error.exception.code, 'invalid_order')
+
+    def test_a_retry_after_a_failed_apply_clears_its_error_and_finishes(self):
+        uid = self.add('A')
+        self.app.fault = lambda point: (_ for _ in ()).throw(AssistantError('interrupted', 'Interrupted.')) if point == 'before_commit' else None
+        with self.assertRaises(AssistantError):
+            self.board.request('task_update', {'uuid': uid, 'priority': 'high'}, 'failed-apply')
+        self.assertEqual([(o['status'], o['error']) for o in self.app.store.unresolved()], [('applying', 'Interrupted.')])
+        self.app.fault = lambda point: None
+        self.assertEqual(self.board.startup() or self.app.store.unresolved(), [])
+        self.assertEqual(self.app.tasks.get(uid)['priority'], 'H')
 
     def test_rejections_are_immediate_with_a_stable_code_and_save_nothing(self):
         a, b = self.add('A'), self.add('B')

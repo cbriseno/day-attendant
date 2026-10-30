@@ -282,13 +282,7 @@ class Assistant:
             plan['result']={'uuid':uid}
         elif action=='order_update':
             # A display order only; it never changes a task's priority, group or state.
-            refs=p.get('order')
-            if not isinstance(refs,list) or len(refs)>5000 or any(not isinstance(x,str) for x in refs):raise AssistantError('invalid_order','The order must be a bounded list of task UUIDs.')
-            wanted=[self.validate_uuid(x) for x in refs]
-            if len(set(wanted))!=len(wanted):raise AssistantError('invalid_order','Each responsibility can appear only once in the order.')
-            known={r['uuid'] for r in self.tasks.rows()}
-            if any(x not in known for x in wanted):raise AssistantError('task_not_found','The order refers to a missing responsibility.')
-            if wanted!=self.store.state_value('task_order',[]):plan['effect']['order_set']=wanted
+            wanted=self.place_order(p.get('order'),plan)
             plan['result']={'order':len(wanted)}
         elif action=='group_color_update':
             # Presentation only, like the order: it changes no task and is never reviewed.
@@ -427,11 +421,22 @@ class Assistant:
             plan["result"] = p
         else:
             raise AssistantError("unknown_action", "Unsupported mutation.")
+        # A drop's new place travels with its change, so both are one write and one Undo.
+        if action!='order_update' and 'order' in p:self.place_order(p['order'],plan)
         # Persist both read and write preconditions for recovery.
         native=self.tasks.rows();written={step['uuid'] for step in plan['steps']}
         plan['reads']={r['uuid']:canonical(r) for r in native if r['uuid'] not in written}
         plan['known_uuids']=sorted({r['uuid'] for r in native}|written)
         return plan
+
+    def place_order(self,refs,plan):
+        if not isinstance(refs,list) or len(refs)>5000 or any(not isinstance(x,str) for x in refs):raise AssistantError('invalid_order','The order must be a bounded list of task UUIDs.')
+        wanted=[self.validate_uuid(x) for x in refs]
+        if len(set(wanted))!=len(wanted):raise AssistantError('invalid_order','Each responsibility can appear only once in the order.')
+        known={r['uuid'] for r in self.tasks.rows()}
+        if any(x not in known for x in wanted):raise AssistantError('task_not_found','The order refers to a missing responsibility.')
+        if wanted!=self.store.state_value('task_order',[]):plan['effect']['order_set']=wanted
+        return wanted
 
     def read_observations(self,plan):
         if 'reads' not in plan:return {'matching':True,'participants':[],'unexpected':[]}
@@ -455,7 +460,8 @@ class Assistant:
                 if not admitted:
                     raise AssistantError("authorization_missing", "The connected operation has no durable authorization.")
             with self.store.connect() as con:
-                con.execute("UPDATE operations SET status='applying',error=NULL WHERE key=?", (key,))
+                # Recovery treats prepared and applying alike, so only a retry with an error writes to disk here.
+                con.execute("UPDATE operations SET status='applying',error=NULL WHERE key=? AND (status!='prepared' OR error IS NOT NULL)", (key,))
             if self.store.revision() != plan["revision"]:
                 raise AssistantError("external_conflict", "The auxiliary revision changed during an incomplete operation.")
             self.validate_reads(plan)
