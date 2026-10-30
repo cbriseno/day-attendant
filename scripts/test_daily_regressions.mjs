@@ -758,6 +758,12 @@ try{
   // A refused change confirms nothing and the page returns to what the service has.
   state.refuseNext=true;await click(`[data-id="${a.id}"][data-action="activate"]`);await wait(settled+'&&'+laneOf+"==='todo'");
   assert.notEqual(await evaluate("document.getElementById('status').textContent"),'Start · A');assert.equal(await evaluate("document.getElementById('undo').hidden"),true);
+  // A changed row is replaced where it is; the rows after it stay put, so a long list redraws one row.
+  const firstRow=await evaluate("document.querySelector('#board .lane[data-state=\"todo\"] .task').dataset.taskId"),changed=state.tasks.find(t=>t.id===firstRow),title=changed.title;
+  assert.ok(await evaluate("document.querySelectorAll('#board .lane[data-state=\"todo\"] .task').length>1"));
+  await evaluate("(()=>{globalThis.rowsAdded=[];globalThis.rowWatch=new MutationObserver(list=>rowsAdded.push(...list.flatMap(m=>[...m.addedNodes].map(n=>n.dataset?.taskId))));document.querySelectorAll('#board .lane-cards').forEach(box=>rowWatch.observe(box,{childList:true}));return true})()");
+  changed.title='Changed in place';state.revision++;await refresh();
+  assert.deepEqual(await evaluate("(()=>{rowWatch.disconnect();return rowsAdded})()"),[firstRow]);changed.title=title;state.revision++;await refresh();
   // A calendar addition shows before the answer; the next read holds what the service saved.
   await evaluate("(()=>{dayUI.flow.preview({action:'event_add',payload:{title:'New commitment',start:'2099-01-01T10:00:00Z',end:'2099-01-01T11:00:00Z'}});return true})()");
   assert.match(await evaluate("document.getElementById('calendar-area').textContent"),/New commitment/);

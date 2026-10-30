@@ -150,8 +150,9 @@ function morphBoard(lanes,data){
   const head=section.firstElementChild,box=section.lastElementChild;if(head._html!==lane.head){head.innerHTML=lane.head;head._html=lane.head}
   const extras=new Map([...box.children].filter(n=>n._key).map(n=>[n._key,n]));
   const wanted=lane.items.map(item=>{let node=item.id?old.get(item.id)||groupViewNodes.get(item.id):extras.get(item.key);if(item.id)old.delete(item.id);if(!node||node._html!==item.html){node=make(item.html);node._key=item.key}if(item.id)groupViewNodes.set(item.id,node);return node});
+  // What leaves goes first: left in place it would push every row after it down one, each a DOM move.
+  const kept=new Set(wanted);for(const node of [...box.children])if(!kept.has(node))node.remove();
   wanted.forEach((node,j)=>{if(box.children[j]!==node)box.insertBefore(node,box.children[j]||null)});
-  while(box.children.length>wanted.length)box.lastElementChild.remove();
  });
  while(board.children.length>lanes.length)board.lastElementChild.remove();
  const openIds=new Set(data.tasks.filter(t=>!['done','retired'].includes(t.state)).map(t=>t.id));for(const id of groupViewNodes.keys())if(!openIds.has(id))groupViewNodes.delete(id);
