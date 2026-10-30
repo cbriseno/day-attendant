@@ -166,6 +166,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200,{'data':data})
             except AssistantError as error:self.reply(409,{'error':{'code':error.code,'message':str(error)}})
             return
+        if route=='/api/zone-rules':
+            try:self.reply(200,{'data':self.server.board.zone_year(int(parse_qs(query)['year'][0]))})
+            except (KeyError,ValueError):self.reply(400,{'error':{'code':'invalid_time','message':'Choose a calendar year.'}})
+            except AssistantError as error:self.reply(400,{'error':{'code':error.code,'message':str(error)}})
+            return
         self.reply(404,{'error':{'code':'not_found','message':'Route unavailable.'}})
 
     def do_POST(self):

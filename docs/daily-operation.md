@@ -41,7 +41,8 @@ Unchanged task deadlines, calendar bounds, reminder pauses and availability time
 retain their exact stored instants, including seconds and the resolved occurrence
 of a repeated hour. Editing other fields or the profile timezone does not
 reinterpret them. Changed local dates use the profile timezone with the service's rules, not the
-browser's own time zone data, within one year back and five years ahead; the browser rejects
+browser's own time zone data; years outside the usual window are requested from the
+service, and a date it cannot confirm is not saved. The browser rejects
 missing or repeated local times and retains the draft for correction. Date fields also
 show a readable preview in the interface language beside the browser's native picker.
 

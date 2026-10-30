@@ -7,13 +7,14 @@ const known=code=>tr('error_'+code)!=='error_'+code;
 const errorText=(code,message)=>known(code)?tr('error_'+code):tr('the_request_could_not_be_completed');
 const formatLocale=()=>locale==='es'?'es-MX':'en-US';
 function translateChrome(){root.lang=locale;document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=tr(e.dataset.i18n));for(const attr of ['aria-label','placeholder','title'])document.querySelectorAll('[data-i18n-'+attr+']').forEach(e=>e.setAttribute(attr,tr(e.getAttribute('data-i18n-'+attr))));}
-let NOW=new Date();let zone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';let zoneRules=null;
+let NOW=new Date();let zone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';let zoneRules=null;const zoneYears=new Map();
 // One formatter per kind, locale and options: building one for each date of every row took most of a render.
 const formatters=new Map();
 function intl(kind,locale,options={}){const key=kind+'|'+locale+'|'+JSON.stringify(options);let f=formatters.get(key);if(!f){f=new Intl[kind](locale,options);formatters.set(key,f)}return f}
 // The service's offsets for the profile zone, so the browser's own time zone data never decides an instant.
-function offsetAt(ms){const r=zoneRules;if(!r||r.zone!==zone||!(ms>=r.from&&ms<r.until))return null;let o=null;for(const [at,m] of r.offsets){if(at>ms)break;o=m}return o}
-function zoned(options,value){const d=new Date(value),o=offsetAt(d.getTime());if(o===null)return intl('DateTimeFormat',formatLocale(),{...options,timeZone:zone}).format(d);const {timeZoneName,...rest}=options,text=intl('DateTimeFormat',formatLocale(),{...rest,timeZone:'UTC'}).format(new Date(d.getTime()+o*60000));return timeZoneName?text+' GMT'+(o?(o<0?'-':'+')+Math.floor(Math.abs(o)/60)+(Math.abs(o)%60?':'+String(Math.abs(o)%60).padStart(2,'0'):''):''):text}
+function rulesAt(ms){for(const r of [zoneRules,...(zoneRules?.years||[]),...zoneYears.values()])if(r?.zone===zone&&ms>=r.from&&ms<r.until)return r;return null}
+function offsetAt(ms){const r=rulesAt(ms);if(!r)return null;let o=null;for(const [at,m] of r.offsets){if(at>ms)break;o=m}return o}
+function zoned(options,value){const d=new Date(value),o=offsetAt(d.getTime());const {timeZoneName,...rest}=options;if(o===null)return intl('DateTimeFormat',formatLocale(),{...rest,timeZone:'UTC'}).format(d)+' UTC';const text=intl('DateTimeFormat',formatLocale(),{...rest,timeZone:'UTC'}).format(new Date(d.getTime()+o*60000));return timeZoneName?text+' GMT'+(o?(o<0?'-':'+')+Math.floor(Math.abs(o)/60)+(Math.floor(Math.abs(o)%60)?':'+String(Math.floor(Math.abs(o)%60)).padStart(2,'0'):''):''):text}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const full=value=>zoned({weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZoneName:'shortOffset'},value);
 // Creation is the native entry instant, never a modification or optimistic capture time.
@@ -34,13 +35,16 @@ function refreshCreationAges(){
  for(const node of document.querySelectorAll('time.task-created')){const text=creationAge(node.dateTime);if(node.textContent!==text)node.textContent=text}
 }
 const short=value=>{const d=new Date(value);return (localValue(d).slice(0,10)===localValue(NOW).slice(0,10)?tr("today"):zoned({day:'numeric',month:'short'},d))+', '+zoned({hour:'2-digit',minute:'2-digit',hour12:false},d)};
-const localValue=d=>{const o=offsetAt(d.getTime());if(o!==null)return new Date(d.getTime()+o*60000).toISOString().slice(0,16);const p=Object.fromEntries(intl('DateTimeFormat','en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));return p.year+'-'+p.month+'-'+p.day+'T'+p.hour+':'+p.minute;};
-// Outside the service's rules no new local time is accepted, rather than guessing an instant.
+const localValue=d=>new Date(d.getTime()+(offsetAt(d.getTime())||0)*60000).toISOString().slice(0,16);
+// Every local time resolves with the service's rules: a year the state does not carry is requested first.
+function needsRules(raw){const base=Date.parse(raw+'Z');return Number.isFinite(base)&&[-864e5,0,864e5].some(x=>!rulesAt(base+x))}
+function loadRules(raw){const year=Number(raw.slice(0,4)),key=zone+'|'+year;if(!zoneYears.has(key))zoneYears.set(key,api('/api/zone-rules?year='+year).then(r=>{zoneYears.set(key,r);return r},e=>{zoneYears.delete(key);throw e}));return Promise.resolve(zoneYears.get(key))}
+async function zoneReady(root){for(const input of root.querySelectorAll('input[type="datetime-local"]'))if(input.value&&needsRules(input.value))try{await loadRules(input.value)}catch{throw Error(tr('date_rules_unavailable'))}}
 function parseLocal(raw){const base=Date.parse(raw+'Z');if(!Number.isFinite(base))return new Date(NaN);let guess=base;for(let i=0;i<4;i++){const wall=Date.parse(localValue(new Date(guess))+'Z');const delta=base-wall;if(!delta)break;guess+=delta;}return offsetAt(guess)===null?new Date(NaN):new Date(guess)}
 function localizedDates(container=document){
  for(const input of container.querySelectorAll('input[type="datetime-local"]')){
   let note=input.nextElementSibling;if(!note?.classList.contains('date-readable')){note=document.createElement('span');note.className='date-readable hint';note.id='date-note-'+crypto.randomUUID();input.after(note);input.setAttribute('aria-describedby',((input.getAttribute('aria-describedby')||'')+' '+note.id).trim())}
-  const update=()=>{const date=parseLocal(input.value);note.textContent=!input.value?'':!Number.isFinite(date.getTime())||localValue(date)!==input.value||ambiguous(date)?tr('choose_an_unambiguous_local_date_and_time'):full(date);note.hidden=!note.textContent};if(!input._dateUpdate){input._dateUpdate=update;input.addEventListener('input',update)}update();
+  const update=()=>{const raw=input.value;if(raw&&needsRules(raw)){note.textContent=tr('confirming_date');note.hidden=false;loadRules(raw).then(()=>{if(input.value===raw)update()},()=>{if(input.value===raw)note.textContent=tr('date_rules_unavailable')});return}const date=parseLocal(raw);note.textContent=!input.value?'':!Number.isFinite(date.getTime())||localValue(date)!==input.value||ambiguous(date)?tr('choose_an_unambiguous_local_date_and_time'):full(date);note.hidden=!note.textContent};if(!input._dateUpdate){input._dateUpdate=update;input.addEventListener('input',update)}update();
  }
 }
 const clockIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>';
@@ -704,7 +708,7 @@ function menuAct(b){const {id}=menu,t=task(id),act=b.dataset.menuAct,value=b.dat
  if(act==='link-remove'){const [kind,other]=value.split(':');unlinkFrom(id,kind,other);swapMenu('dependencies');return}
  if(act==='link-go'){closeMenu(false);goTo(value);return}
  if(act==='connect'||act==='connect-needs'){closeMenu(false);startConnectMode(id,act==='connect'?'blocks':'needs');return}
- let due;if(act==='due-custom'&&!(due=customDue()))return;
+ let due;if(act==='due-custom'){const raw=menu.node.querySelector('[data-menu-input=due]').value,node=menu.node;if(raw&&needsRules(raw)){zoneReady(node).then(()=>{if(menu?.node===node)menuAct(b)},e=>menuError(e.message));return}if(!(due=customDue()))return}
  closeMenu();
  if(act==='group'){if((t.group||'')!==value)request('task_update',{uuid:id,group:value})}
  else if(act==='due'||act==='due-custom'){due=due||value;if(!t.due||new Date(t.due).getTime()!==new Date(due).getTime())request('task_update',{uuid:id,due})}
@@ -741,7 +745,7 @@ $('reviews').addEventListener('toggle',e=>{if(!e.target.matches('details'))retur
 $('undo').onclick=()=>{const id=$('undo').dataset.event,gesture=gestures.get(id);$('undo').hidden=true;safely(()=>gesture?flow.undoGesture(gesture):flow.undo(id))};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&bubbleFor&&!document.querySelector('dialog[open]')){const id=bubbleFor;bubbleFor=null;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true})}});
 function openContext(origin){const revision=flow.snapshot().revision,c=flow.snapshot().context;$('context-minutes').value=c.availableMinutes??'';$('context-until').value=c.availableUntil?localValue(new Date(c.availableUntil)):'';const openingUntil=$('context-until').value;$('context-rest').checked=c.rest;$('context-error').hidden=true;
- $('context-form').onsubmit=async e=>{e.preventDefault();const raw=$('context-minutes').value,until=$('context-until').value;try{let availableUntil=c.availableUntil;if(raw.trim()){if(until!==openingUntil){const date=parseLocal(until);if(!Number.isFinite(date.getTime())||ambiguous(date)||localValue(date)!==until)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"));availableUntil=date.toISOString()}if(!availableUntil)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"))}await flow.setContext({availableMinutes:raw.trim()?Number(raw):null,availableUntil:raw.trim()?availableUntil:null,rest:$('context-rest').checked},revision);$('context-dialog').close('declared')}catch(error){$('context-error').hidden=false;$('context-error').textContent=error.message}};
+ $('context-form').onsubmit=async e=>{e.preventDefault();const raw=$('context-minutes').value,until=$('context-until').value;try{await zoneReady($('context-form'));let availableUntil=c.availableUntil;if(raw.trim()){if(until!==openingUntil){const date=parseLocal(until);if(!Number.isFinite(date.getTime())||ambiguous(date)||localValue(date)!==until)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"));availableUntil=date.toISOString()}if(!availableUntil)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"))}await flow.setContext({availableMinutes:raw.trim()?Number(raw):null,availableUntil:raw.trim()?availableUntil:null,rest:$('context-rest').checked},revision);$('context-dialog').close('declared')}catch(error){$('context-error').hidden=false;$('context-error').textContent=error.message}};
  openDialog($('context-dialog'),origin,null,null)}
 $('context-open').onclick=e=>openContext(e.currentTarget);$('context-cancel').onclick=()=>$('context-dialog').close('cancel');
 function setTaskView(view){closeMenu();taskView=view;dependencyFocus=null;selectedLink=null;hoverTask=hoverKeep=null;expanded=null;
@@ -1012,5 +1016,5 @@ safely(boot);
 function poll(){safely(()=>flow.poll()).finally(()=>setTimeout(poll,document.hidden?5000:900))}
 setTimeout(poll,900);document.addEventListener('visibilitychange',()=>{if(!document.hidden)safely(()=>flow.poll())});
 globalThis.daySnapshot=()=>structuredClone(flow.snapshot());
-globalThis.dayUI={api,deliver,flow,openDialog,expandTask:id=>toggleExpand(id,true),editTitle:startTitleEdit,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome,localizedDates,formatted,creates,showProposal,groupDot};
+globalThis.dayUI={api,deliver,flow,openDialog,expandTask:id=>toggleExpand(id,true),editTitle:startTitleEdit,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome,localizedDates,zoneReady,formatted,creates,showProposal,groupDot};
 })();

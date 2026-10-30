@@ -8,11 +8,13 @@ import tempfile
 import threading
 import unittest
 from zoneinfo import ZoneInfo
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from day_attendant.connected import Connected, PENDING, RECENT_PROPOSALS
 from day_attendant.service import Assistant, encoded
-from day_attendant.timeutil import parse, zone_rules
+from day_attendant.errors import AssistantError
+from day_attendant.timeutil import parse, zone_rules, zone_year
 from day_attendant.web import LocalServer
 from test_connected import NOW, ReviewFixture
 
@@ -130,6 +132,21 @@ class StateViewTests(unittest.TestCase):
         self.assertIn([parse('2026-11-01T06:00:00Z').timestamp() * 1000, -300], york)
         self.assertEqual(zone_rules('UTC', NOW.date())['offsets'], [[zone_rules('UTC', NOW.date())['from'], 0]])
 
+    def test_far_stored_dates_carry_their_year_only(self):
+        self.assertEqual(self.board.view()['zoneRules']['years'], [])
+        self.apply('task_update', {'uuid': self.ids[0], 'due': '2040-01-15T15:00:00Z'})
+        self.apply('task_update', {'uuid': self.ids[1], 'due': '1901-01-15T15:00:00Z'})
+        years = self.board.view()['zoneRules']['years']
+        self.assertEqual(len(years), 2)
+        self.assertEqual(self.board.zone_year(2040), years[1])
+        january = parse('2040-01-01T00:00:00Z').timestamp() * 1000
+        self.assertLess(years[1]['from'], january - 86400000)
+        self.assertGreater(years[1]['until'], parse('2041-01-01T00:00:00Z').timestamp() * 1000 + 86400000)
+        self.assertEqual(zone_year('Asia/Kolkata', 2040)['offsets'][0][1], 330)
+        self.assertEqual(self.board.snapshot().get('zoneRules'), None)
+        with self.assertRaises(AssistantError):
+            self.board.zone_year(9999)
+
 
 class StateRouteTests(unittest.TestCase):
     def setUp(self):
@@ -158,6 +175,16 @@ class StateRouteTests(unittest.TestCase):
         with urlopen(request, timeout=10) as response:
             body = response.read()
         return len(body), json.loads(body)['data']
+
+    def test_zone_rules_route_is_one_year_and_rejects_others(self):
+        size, rules = self.get('/api/zone-rules?year=2040')
+        self.assertLess(size, 1000)
+        self.assertEqual(rules['zone'], self.server.board.view()['timezone'])
+        for query in ('year=9999', 'year=x', ''):
+            with self.subTest(query=query), self.assertRaises(HTTPError) as caught:
+                self.get('/api/zone-rules?' + query)
+            self.assertEqual(caught.exception.code, 400)
+            caught.exception.close()
 
     def test_unchanged_poll_is_tiny_and_full_view_stays_for_the_cli(self):
         _, view = self.get('/api/state')

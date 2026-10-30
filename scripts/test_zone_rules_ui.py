@@ -71,15 +71,25 @@ with tempfile.TemporaryDirectory(prefix='day-zone-rules-') as state, tempfile.Te
         for locale in ('es', 'en'):
             page(f"()=>{{const e=document.getElementById('locale-choice');e.value='{locale}';e.dispatchEvent(new Event('change',{{bubbles:true}}));return true}}")
             axi('run', script="await page.click('#capture-open');await page.wait('#capture-due');")
-            previews = page("""()=>['2026-11-09T14:30','2026-03-08T02:30','2026-11-01T01:30','2026-11-01T02:00','2032-01-01T10:00'].map(v=>{const el=document.querySelector('#capture-due');el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));return el.nextElementSibling.textContent})""")
+            previews = page("""()=>['2026-11-09T14:30','2026-03-08T02:30','2026-11-01T01:30','2026-11-01T02:00'].map(v=>{const el=document.querySelector('#capture-due');el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));return el.nextElementSibling.textContent})""")
             report[locale] = {'previews': previews}
             check('14:30 GMT-5' in previews[0] and ('lun' in previews[0] if locale == 'es' else 'Mon' in previews[0]), f'Localized preview in service offset: {previews[0]}')
             refusal = 'Elige una fecha y hora local inequívoca.' if locale == 'es' else 'Choose an unambiguous local date and time.'
-            check(previews[1] == previews[2] == previews[4] == refusal, f'Nonexistent, repeated and out-of-rules times are refused: {previews}')
+            check(previews[1] == previews[2] == refusal, f'Nonexistent and repeated times are refused: {previews}')
             check('02:00 GMT-5' in previews[3], f'Hour after the repeat is exact: {previews[3]}')
             check(page("()=>document.querySelector('#capture-dialog .modal-footer, #capture-dialog footer')?.textContent.trim()") in ('Guardar', 'Save'), 'Save label')
             before = len(board.snapshot()['tasks'])
-            for value in ('2026-11-01T01:30', '2032-01-01T10:00'):
+            # Beyond the state's window: a year's rules arrive from the service and its DST limits still hold.
+            far = []
+            for value in ('2040-01-15T10:00', '2041-03-10T02:30', '2041-11-03T01:30', '9999-06-01T10:00'):
+                page(f"()=>{{const el=document.querySelector('#capture-due');el.value='{value}';el.dispatchEvent(new Event('input',{{bubbles:true}}));return true}}")
+                axi('run', script="await page.wait(500);")
+                far.append(page("()=>document.querySelector('#capture-due').nextElementSibling.textContent"))
+            report[locale]['far'] = far
+            check('10:00 GMT-5' in far[0] and ('ene' in far[0] if locale == 'es' else 'Jan' in far[0]), f'Far date in service rules: {far}')
+            check(far[1] == far[2] == refusal, f'Far nonexistent and repeated hours keep their refusal: {far}')
+            check(far[3] == ('No se pudo confirmar esta fecha. No se guardó nada; inténtalo de nuevo.' if locale == 'es' else 'This date could not be confirmed. Nothing was saved; try again.'), f'Unconfirmed is not called nonexistent: {far}')
+            for value in ('2026-11-01T01:30', '2041-11-03T01:30', '9999-06-01T10:00'):
                 page(f"()=>{{document.querySelector('#capture-title').value='Rechazada';const el=document.querySelector('#capture-due');el.value='{value}';el.dispatchEvent(new Event('input',{{bubbles:true}}));document.querySelector('#capture-dialog form').requestSubmit();return true}}")
                 axi('run', script="await page.wait(500);")
             check(len(board.snapshot()['tasks']) == before, 'Refused times save nothing')
@@ -88,6 +98,24 @@ with tempfile.TemporaryDirectory(prefix='day-zone-rules-') as state, tempfile.Te
             axi('run', script=f"await page.wait(800);")
             if locale == 'es':
                 axi('screenshot', str(out / 'today-es.png'))
+            # A far deadline and event from the forms, with a year not yet loaded in this page.
+            year = {'es': 2042, 'en': 2043}[locale]
+            axi('run', script="await page.click('#capture-open');await page.wait('#capture-due');")
+            page(f"()=>{{document.querySelector('#capture-title').value='Lejana {locale}';const el=document.querySelector('#capture-due');el.value='{year}-01-15T10:00';document.querySelector('#capture-dialog form').requestSubmit();return true}}")
+            axi('run', script="await page.wait(900);")
+            far_due = next(t['due'] for t in board.snapshot()['tasks'] if t['title'] == f'Lejana {locale}')
+            check(far_due == f'{year}-01-15T15:00:00Z', f'Far deadline: {far_due}')
+            axi('run', script="await page.click('#capture-open');await page.wait('#capture-kind');")
+            page(f"()=>{{const k=document.querySelector('#capture-kind');k.value='event';k.dispatchEvent(new Event('change',{{bubbles:true}}));document.querySelector('#capture-title').value='Evento lejano {locale}';document.querySelector('#capture-start').value='{year + 2}-07-01T10:00';document.querySelector('#capture-end').value='{year + 2}-07-01T11:00';document.querySelector('#capture-dialog form').requestSubmit();return true}}")
+            axi('run', script="await page.wait(900);")
+            far_event = next((e['start_at'], e['end_at']) for e in board.snapshot()['calendar_events'] if e['title'] == f'Evento lejano {locale}')
+            check(far_event == (f'{year + 2}-07-01T14:00:00Z', f'{year + 2}-07-01T15:00:00Z'), f'Far event: {far_event}')
+            # A fresh page has only the state: stored far dates still show in the service's rules.
+            axi('run', script="await page.eval(()=>location.reload());await page.wait('[data-task-id]');await page.wait(400);")
+            shown = page(f"()=>[[...document.querySelectorAll('[data-task-id]')].map(c=>c.getAttribute('data-task-id')&&c.textContent).find(x=>x?.includes('Lejana {locale}')),[...document.querySelectorAll('.daily-row')].map(x=>x.textContent).find(t=>t.includes('Evento lejano {locale}'))]")
+            check('10:00' in shown[0] and '10:00 GMT-4' in shown[1] and '11:00 GMT-4' in shown[1], f'Stored far dates after reload: {shown}')
+            report[locale]['farStored'] = {'due': far_due, 'event': far_event, 'shown': shown}
+            page(f"()=>{{const e=document.getElementById('locale-choice');e.value='{locale}';e.dispatchEvent(new Event('change',{{bubbles:true}}));return true}}")
             due = next(t['due'] for t in board.snapshot()['tasks'] if t['title'] == title)
             check(due == '2026-11-09T19:30:00Z', f'Typed 14:30 is 14:30 for the service: {due}')
             row = page(f"()=>[...document.querySelectorAll('[data-task-id]')].map(c=>c.textContent).find(x=>x.includes('{title}'))")
@@ -97,6 +125,12 @@ with tempfile.TemporaryDirectory(prefix='day-zone-rules-') as state, tempfile.Te
             check('01:30 GMT-5' in events and '03:00 GMT-5' in events, f'Stored event shows its service-local times: {events}')
             report[locale]['event'] = events
         # Header and snooze presets resolve in the service's rules.
+        # The row's deadline menu reaches the same rules.
+        axi('run', script="await page.eval(()=>[...document.querySelectorAll('[data-task-id]')].find(c=>c.textContent.includes('Lejana en')).querySelector('.task-due').click());await page.wait('[data-menu-input=due]');")
+        page("()=>{const el=document.querySelector('[data-menu-input=due]');el.value='2045-02-01T08:00';el.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-menu-act=due-custom]').click();return true}")
+        axi('run', script="await page.wait(900);")
+        moved = next(t['due'] for t in board.snapshot()['tasks'] if t['title'] == 'Lejana en')
+        check(moved == '2045-02-01T13:00:00Z', f'Far deadline from the row menu: {moved}')
         report['header'] = page("()=>document.querySelector('.date').textContent")
         check('thursday, november 5' in report['header'].lower(), report['header'])
         axi('run', script=f"await page.eval(()=>[...document.querySelectorAll('[data-task-id]')].find(c=>c.textContent.includes('Posponer prueba')).querySelector('[data-action=snooze]').click());await page.wait('.row-menu');")
@@ -112,7 +146,7 @@ with tempfile.TemporaryDirectory(prefix='day-zone-rules-') as state, tempfile.Te
         report['eventEdit'] = page("()=>{const el=document.querySelector('#capture-end');el.value='2027-11-07T04:00';el.dispatchEvent(new Event('input',{bubbles:true}));const values=[document.querySelector('#capture-start').value,el.value,el.nextElementSibling.textContent];document.querySelector('#capture-dialog form').requestSubmit();return values}")
         axi('run', script="await page.wait(800);")
         stored = [(e['start_at'], e['end_at']) for e in board.snapshot()['calendar_events']]
-        check(stored == [('2027-11-07T06:30:00Z', '2027-11-07T09:00:00Z')], f'Event edit keeps start and resolves end in service rules: {stored}')
+        check(('2027-11-07T06:30:00Z', '2027-11-07T09:00:00Z') in stored, f'Event edit keeps start and resolves end in service rules: {stored}')
         console = axi('console')
         check('<no console messages found>' in console, console)
         report['passed'] = True

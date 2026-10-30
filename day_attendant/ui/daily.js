@@ -11,7 +11,7 @@ function dialog(id,title,body,footer){
  document.body.append(el);ui.registerDialog(el);el.querySelector('[data-dismiss]').onclick=()=>el.close('cancel');return el;
 }
 function fail(id,error){$(id+'-error').hidden=false;$(id+'-error').textContent=error.message}
-async function formAction(id,fn){$(id+'-error').hidden=true;const buttons=[...$(id).querySelectorAll('button[type=submit]')];buttons.forEach(b=>b.disabled=true);try{await fn()}catch(e){fail(id,e)}finally{buttons.forEach(b=>b.disabled=false)}}
+async function formAction(id,fn){$(id+'-error').hidden=true;const buttons=[...$(id).querySelectorAll('button[type=submit]')];buttons.forEach(b=>b.disabled=true);try{await ui.zoneReady($(id));await fn()}catch(e){fail(id,e)}finally{buttons.forEach(b=>b.disabled=false)}}
 function requiredTime(id){const raw=$(id).value;if(!raw)return null;const date=ui.parseLocal(raw);if(!Number.isFinite(date.getTime())||ui.localValue(date)!==raw||ui.ambiguous(date))throw Error(text('Choose an unambiguous local date and time.','Elige una fecha y hora local inequívoca.'));return date.toISOString()}
 function storedTime(id,instant){$(id).value=instant?ui.localValue(new Date(instant)):'';const opening=$(id).value;return ()=>$(id).value===opening?instant||null:requiredTime(id)}
 function submit(label){return `<button type="submit" class="btn primary">${esc(label)}</button>`}
