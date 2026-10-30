@@ -649,16 +649,22 @@ try{
   await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);assert.equal(row.state,'todo');
   // Priority: the chip opens a one-level menu and the choice applies at once.
   sent=requests.length;await click(sel('priority'));
-  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent+':'+e.getAttribute('aria-checked'))"),['High:false','Medium:true','Low:false']);
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent+':'+e.getAttribute('aria-checked'))"),['Urgent:false','High:false','Medium:true','Low:false']);
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(sel('priority'))}).getAttribute('aria-expanded')`),'true');
   assert.equal(await evaluate("document.activeElement.closest('.row-menu')!==null"),true,'focus moves into the menu');
   await click('.row-menu [data-value="high"]');assert.equal(await evaluate(`document.querySelector(${JSON.stringify(sel('priority'))}).dataset.priority`),'high');
   assert.equal(await evaluate("document.querySelector('.row-menu')"),null);await wait(`daySnapshot().revision>=${state.revision}`);
   assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'task_update',{uuid:row.id,priority:'high'}]);
   sent=requests.length;await click(sel('priority'));await click('.row-menu [data-value="high"]');assert.equal(requests.length,sent,'choosing the current priority sends nothing');
+  // Urgent, the fourth level, applies the same way and leads the Priority order; back to High afterwards.
+  sent=requests.length;await click(sel('priority'));await click('.row-menu [data-value="urgent"]');await wait(`daySnapshot().revision>=${state.revision}`);
+  assert.deepEqual([requests.length-sent,requests.at(-1).payload],[1,{uuid:row.id,priority:'urgent'}]);
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(sel('priority'))}).textContent`),'Priority: Urgent');
+  assert.equal(await evaluate(`document.querySelector('#board .lane[data-state="todo"] .task').dataset.taskId`),row.id,'urgent is first in the Priority order');
+  await click(sel('priority'));await click('.row-menu [data-value="high"]');await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
   // Escape closes a menu and returns focus to its chip; arrows move inside it.
   await click(sel('priority'));await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))");
-  assert.equal(await evaluate("document.activeElement.dataset.value"),'medium');
+  assert.equal(await evaluate("document.activeElement.dataset.value"),'high','focus starts on Urgent, the first item');
   await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   assert.equal(await evaluate(`document.querySelector('.row-menu')===null&&document.activeElement===document.querySelector(${JSON.stringify(sel('priority'))})`),true);
   // A right click opens the more menu where the pointer is; Retire asks once, Cancel keeps the task.
@@ -684,6 +690,12 @@ try{
   assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'task_done',{uuid:row.id}]);
   // The Board uses the same row pieces as small cards in three columns.
   await click('#board-view');assert.deepEqual(await evaluate("(()=>{const lanes=[...document.querySelectorAll('#board .lane')].map(l=>Math.round(l.getBoundingClientRect().top));const card=document.querySelector('.lane[data-state=todo] .task');return [new Set(lanes).size,['done','priority','activate','snooze','more'].every(a=>card.querySelector('[data-action='+a+']'))]})()"),[1,true]);
+  // Urgente, the widest label, takes no more room on a card than the others, so it never wraps where they fit.
+  await fill('locale-choice','es');const widest=state.tasks.find(t=>t.state==='todo');Object.assign(widest,{priority:'urgent'});state.revision++;await refresh();
+  const pills=await evaluate("JSON.stringify([...document.querySelectorAll('#board .priority-pill[data-action=priority]')].map(p=>[p.dataset.priority,p.getBoundingClientRect().width]))");
+  const widths=JSON.parse(pills),urgent=widths.find(([p])=>p==='urgent')[1];
+  assert.ok(widths.every(([,w])=>urgent<=w+0.5),'Urgente is as wide as the other chips: '+pills);
+  Object.assign(widest,{priority:'medium'});state.revision++;await fill('locale-choice','en');await refresh();
   await click('#list-view');
   // Phone: at least seven rows, 34 px targets, ⋯ through a long press, and no overflow.
   await size(390,844,true);await rpc('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1},sessionId);await new Promise(r=>setTimeout(r,100));

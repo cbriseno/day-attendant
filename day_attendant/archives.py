@@ -293,6 +293,22 @@ def restore(archive_path,target,legacy_task_bin=None):
             'reminders_enabled':False,'jobs_installed':False,'native_tasks':len(native),'pending_reasoning':'stale'}
 
 
+def upgrade_tasks(app):
+    """Let a schema-1 task store hold urgent. A verified migration backup comes first and
+    every row stays byte-for-byte the same, so earlier priorities keep their level."""
+    from .taskstore import SCHEMA
+    if app.tasks.schema()>=SCHEMA:return None
+    backup=snapshot(app,category='migration')
+    expected=verify(backup['path'])
+    with app.store.lock():
+        if task_digest(app.tasks.rows())!=expected['task_fingerprint'] or app.store.revision()!=backup['revision']:
+            raise AssistantError('stale_migration','The profile changed after its backup; retry the upgrade. No tasks were changed.')
+        app.tasks.upgrade()
+        receipt={'at':app.now(),'task_schema':SCHEMA,'tasks':len(app.tasks.rows()),'task_fingerprint':expected['task_fingerprint'],'backup':backup}
+        with app.store.connect() as con:con.execute("INSERT OR REPLACE INTO state VALUES('priority_migration',?)",(encoded(receipt),))
+    return receipt
+
+
 def upgrade_profile(state):
     from .web import preflight
     from .service import Assistant
@@ -300,11 +316,13 @@ def upgrade_profile(state):
     app=Assistant(preflight(state))
     with exclusive(app.store.path/'server.lock',timeout=0):
         with app.store.connect() as con:version=con.execute('PRAGMA user_version').fetchone()[0]
-        if version==4:return {'upgraded':False,'schema':4,'profile':app.store.state_value('profile')}
-        if version!=3 or not app.store.state_value('connected',False):raise AssistantError('unsupported_migration','Only the known connected v3 profile is upgraded automatically; legacy data is not imported.')
-        backup=snapshot(app,category='migration')
-        Connected(app).initialize(_upgrade_backup=backup['path'])
-        return {'upgraded':True,'schema':4,'profile':app.store.state_value('profile'),'backup':backup}
+        if version not in (3,4) or version==3 and not app.store.state_value('connected',False):raise AssistantError('unsupported_migration','Only the known connected v3 profile is upgraded automatically; legacy data is not imported.')
+        backup=None
+        if version==3:
+            backup=snapshot(app,category='migration')
+            Connected(app).initialize(_upgrade_backup=backup['path'])
+        tasks=upgrade_tasks(app)
+        return {'upgraded':bool(backup or tasks),'schema':4,'task_schema':app.tasks.schema(),'profile':app.store.state_value('profile'),'backup':backup,'priority_migration':tasks}
 
 
 def prune(folder,profile_id):

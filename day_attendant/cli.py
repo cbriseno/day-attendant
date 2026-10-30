@@ -224,6 +224,9 @@ def execute(app, args):
     raise AssistantError("invalid_arguments", "Unsupported command.")
 
 
+SPANISH_PRIORITY = {"urgent": "urgente", "high": "alta", "medium": "media", "low": "baja"}
+
+
 def human(data, language, group):
     es = language == "es"
     if group == "brief":
@@ -231,14 +234,13 @@ def human(data, language, group):
         if not task:
             return "Sin tareas accionables." if es else "No actionable tasks."
         lines = [("Sigue: " if es else "Next: ") + f"{task['title']} ({task['uuid']})"]
-        priority = {"high": "alta", "medium": "media", "low": "baja"}.get(task["priority"]) if es else task["priority"]
+        priority = SPANISH_PRIORITY.get(task["priority"]) if es else task["priority"]
         lines.append(("Prioridad: " if es else "Priority: ") + priority)
         lines += [("Choque de agenda: " if es else "Calendar conflict: ") + e["title"] for e in data["conflicts"]]
         return "\n".join(lines[:8])
     if "tasks" in data:
-        priorities = {"high": "alta", "medium": "media", "low": "baja"}
         states = {"pending": "pendiente", "waiting": "pospuesta", "blocked": "bloqueada", "completed": "terminada", "deleted": "eliminada"}
-        return "\n".join(f"{t['uuid']} · {t['title']} · {priorities.get(t['priority'], t['priority']) if es else t['priority']} · {states.get(t['status'], t['status']) if es else t['status']}" for t in data["tasks"][:8]) or ("Sin tareas pendientes." if es else "No pending tasks.")
+        return "\n".join(f"{t['uuid']} · {t['title']} · {SPANISH_PRIORITY.get(t['priority'], t['priority']) if es else t['priority']} · {states.get(t['status'], t['status']) if es else t['status']}" for t in data["tasks"][:8]) or ("Sin tareas pendientes." if es else "No pending tasks.")
     if group == "pulse":
         kinds = {"due": "vence pronto o está vencida", "stale": "sin avance registrado", "chat_waiting": "mensaje capturado pendiente", "event": "evento próximo o en curso", "snooze_ready": "terminó la posposición"}
         return "\n".join(f"{kinds.get(n['kind'], n['kind']) if es else n['kind']} · {n['title']}" for n in data["notices"][:8])

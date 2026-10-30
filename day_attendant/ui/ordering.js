@@ -2,10 +2,11 @@
 (() => {
 'use strict';
 const VIEWS=['priority','manual','newest','group','suggested'];
-const RANK={high:0,medium:1,low:2};
+// Most pressing first; an unknown value sorts and groups as medium.
+const PRIORITIES=['urgent','high','medium','low'],RANK=Object.fromEntries(PRIORITIES.map((p,i)=>[p,i]));
 const cmp=(a,b)=>a<b?-1:a>b?1:0;
 // Tasks not placed by hand follow placed ones by priority, deadline, creation and UUID.
-const fallback=(a,b)=>(RANK[a.priority]??1)-(RANK[b.priority]??1)||cmp(a.due||'~',b.due||'~')||cmp(a.createdAt||'',b.createdAt||'')||cmp(a.id,b.id);
+const fallback=(a,b)=>(RANK[a.priority]??RANK.medium)-(RANK[b.priority]??RANK.medium)||cmp(a.due||'~',b.due||'~')||cmp(a.createdAt||'',b.createdAt||'')||cmp(a.id,b.id);
 function manualIds(tasks,order=[]){const index=new Map(order.map((id,i)=>[id,i]));return [...tasks.filter(t=>index.has(t.id)).sort((a,b)=>index.get(a.id)-index.get(b.id)),...tasks.filter(t=>!index.has(t.id)).sort(fallback)].map(t=>t.id)}
 const groupKey=t=>(t.group||'').trim().toLocaleLowerCase();
 function hue(label){let h=0;for(const c of label.trim().toLocaleLowerCase())h=(h*31+c.codePointAt(0))%360;return h}
@@ -19,9 +20,9 @@ function arrange(tasks,view,{order=[],suggestion=null}={}){
   const groups=new Map();for(const t of [...tasks].sort(manual)){const key=groupKey(t);if(!groups.has(key))groups.set(key,{key:'group:'+key,label:(t.group||'').trim()||null,draggable:true,tasks:[]});groups.get(key).tasks.push(t)}
   return [...groups.values()].sort((a,b)=>(a.label===null)-(b.label===null)||(a.label??'').localeCompare(b.label??'',undefined,{sensitivity:'base'}));
  }
- return ['high','medium','low'].map(p=>({key:p,draggable:true,tasks:tasks.filter(t=>(RANK[t.priority]===undefined?'medium':t.priority)===p).sort(manual)})).filter(s=>s.tasks.length);
+ return PRIORITIES.map(p=>({key:p,draggable:true,tasks:tasks.filter(t=>(RANK[t.priority]===undefined?'medium':t.priority)===p).sort(manual)})).filter(s=>s.tasks.length);
 }
 // Reinsert next to the new neighbour within the whole order, so every other relative position persists.
 function move(order,section,id,to){const rest=section.filter(x=>x!==id),index=Math.max(0,Math.min(to,rest.length));if(!rest.length||!order.includes(id)||section.indexOf(id)===index)return order.slice();const result=order.filter(x=>x!==id);result.splice(index<rest.length?result.indexOf(rest[index]):result.indexOf(rest.at(-1))+1,0,id);return result}
-globalThis.dayOrdering={VIEWS,manualIds,arrange,move,hue};
+globalThis.dayOrdering={VIEWS,PRIORITIES,manualIds,arrange,move,hue};
 })();
