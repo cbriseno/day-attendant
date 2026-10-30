@@ -31,9 +31,11 @@ The next runnable tick reevaluates current conditions instead of replaying misse
 
 ## Editing and local dates
 
-Task actions in Details and editor submissions use the displayed task and opening
-revision. A stale submission is rejected and the dialog stays open; reopen it to
-compare current state before submitting again.
+Task fields are edited in their row and save against the latest state read. If the
+same field changed elsewhere since you started typing, nothing is sent: the row shows
+the current value and keeps your draft, with Save mine and Use the current one. Dialog
+editors (capture, calendar, settings, context) use their opening revision; a stale
+submission is rejected and the dialog stays open.
 
 Unchanged task deadlines, calendar bounds, reminder pauses and availability times
 retain their exact stored instants, including seconds and the resolved occurrence

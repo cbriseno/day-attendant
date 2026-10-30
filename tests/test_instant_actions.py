@@ -113,6 +113,39 @@ class InstantActionTests(DailyBase):
         self.assertEqual(self.app.store.revision(), revision)
         self.assertEqual(self.app.store.unresolved(), [])
 
+    def test_row_edits_save_one_field_at_a_time_and_keep_the_rest(self):
+        """The row saves each field by itself; the others, and unrequested links, stay as they were."""
+        a, b, c = self.add('A'), self.add('B'), self.add('C')
+        self.apply('continuity_update', {'uuid': a, 'context': 'Page 3', 'next': 'Call', 'remainingMinutes': 40, 'awaiting': False})
+        self.apply('task_update', {'uuid': a, 'group': 'Home', 'due': stamp(NOW + timedelta(days=1))})
+        self.apply('dependency_update', {'uuid': a, 'dependsOn': [b]})
+        task = lambda: next(t for t in self.board.snapshot()['tasks'] if t['id'] == a)
+        for action, payload, field, value in (
+                ('continuity_update', {'uuid': a, 'next': 'Email instead'}, 'next', 'Email instead'),
+                ('continuity_update', {'uuid': a, 'awaiting': True}, 'awaiting', True),
+                ('continuity_update', {'uuid': a, 'remainingMinutes': None}, 'remainingMinutes', None),
+                ('task_update', {'uuid': a, 'title': 'A renamed'}, 'title', 'A renamed'),
+                ('task_update', {'uuid': a, 'group': ''}, 'group', None),
+                ('task_update', {'uuid': a, 'due': None}, 'due', None),
+                ('dependency_update', {'uuid': a, 'dependsOn': [b, c]}, 'dependsOn', [b, c])):
+            with self.subTest(payload=payload):
+                before = task()
+                self.assertEqual(self.request(action, payload)['phase'], 'applied')
+                after = task()
+                self.assertEqual(sorted(after[field]) if isinstance(value, list) else after[field], sorted(value) if isinstance(value, list) else value)
+                self.assertEqual({k: v for k, v in after.items() if k not in (field, 'blocked', 'blockedBy')}, {k: v for k, v in before.items() if k not in (field, 'blocked', 'blockedBy')})
+                # Undo puts back only that field.
+                self.board.undo(self.board.snapshot()['lastFact']['id'], 'undo-row-' + field)
+                self.assertEqual(task()[field], before[field]); self.request(action, payload)
+        with self.app.store.connect() as con:
+            self.assertEqual(con.execute('SELECT count(*) FROM evaluations').fetchone()[0], 0)
+        # A field saved against an older revision is refused and changes nothing.
+        revision = self.app.store.revision()
+        self.apply('continuity_update', {'uuid': b, 'next': 'Elsewhere'})
+        with self.assertRaises(AssistantError) as error:
+            self.board.request('continuity_update', {'uuid': a, 'context': 'Stale draft'}, 'stale-row-edit', expected_revision=revision)
+        self.assertEqual(error.exception.code, 'stale_revision'); self.assertEqual(task()['context'], 'Page 3')
+
     def test_review_spends_no_turn_without_new_changes(self):
         fixture = ReviewFixture(); self.board.bridge = fixture
         self.assertIsNone(self.board.review_changes())
