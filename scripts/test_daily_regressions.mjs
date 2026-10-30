@@ -31,7 +31,7 @@ const server=createServer(async(req,res)=>{
     data=new URL(req.url,'http://local').searchParams.get('since')===tag?{unchanged:true,tag,now}:{...read,tag};
    }else if(req.url==='/api/proposals'){
     requests.push(body);
-    if(body.expected_revision!==state.revision){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{code:'stale_revision',message:'State changed; reopen this editor.'}}));return}
+    if(body.expected_revision!==state.revision||state.refuseNext){state.refuseNext=false;res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{code:'stale_revision',message:'State changed; reopen this editor.'}}));return}
     const p=body.payload,t=state.tasks.find(t=>t.id===p.uuid),beforeTask=t&&{...t},beforeOrder=state.taskOrder,beforeColors={...state.groupColors};
     if(body.action==='dependency_update')t.dependsOn=p.dependsOn;
     if(body.action==='related_update')t.relatedTo=p.relatedTo;
@@ -756,7 +756,7 @@ try{
   state.quickAdd=true;stateDelay=300;await evaluate("(dayUI.flow.request('task_add',{title:'From the reply'}),true)");await wait("document.getElementById('status').textContent.endsWith(' · From the reply')");
   stateDelay=0;await wait(settled);state.quickAdd=false;state.tasks=state.tasks.filter(t=>t.title!=='From the reply');Object.assign(b,{state:'todo'});state.revision++;await refresh();
   // A refused change confirms nothing and the page returns to what the service has.
-  state.revision++;await click(`[data-id="${a.id}"][data-action="activate"]`);await wait(settled+'&&'+laneOf+"==='todo'");
+  state.refuseNext=true;await click(`[data-id="${a.id}"][data-action="activate"]`);await wait(settled+'&&'+laneOf+"==='todo'");
   assert.notEqual(await evaluate("document.getElementById('status').textContent"),'Start · A');assert.equal(await evaluate("document.getElementById('undo').hidden"),true);
   // A calendar addition shows before the answer; the next read holds what the service saved.
   await evaluate("(()=>{dayUI.flow.preview({action:'event_add',payload:{title:'New commitment',start:'2099-01-01T10:00:00Z',end:'2099-01-01T11:00:00Z'}});return true})()");
