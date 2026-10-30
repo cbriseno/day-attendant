@@ -69,13 +69,13 @@ class Assistant:
             raise AssistantError("task_not_found", "The task does not exist.", {"uuid": uid})
         return row
 
-    def actionable(self, row, by_id):
+    def actionable(self, row, by_id, connected=None):
         return (row is not None and row["status"] == "pending"
                 and not (row.get("wait") and parse(row["wait"]) > self.clock())
-                and not self.blockers(row,by_id))
+                and not self.blockers(row,by_id,connected))
 
-    def blockers(self,row,by_id):
-        connected=self.store.state_value('connected',False)
+    def blockers(self,row,by_id,connected=None):
+        if connected is None:connected=self.store.state_value('connected',False)
         if connected:return [dep for dep in row.get('depends',[]) if by_id.get(dep,{}).get('status')!='completed']
         return [dep for dep in row.get('depends',[]) if by_id.get(dep,{}).get('status') in ('pending','recurring')]
 
@@ -520,21 +520,22 @@ class Assistant:
         meta = self.store.metadata()
         frames = self.store.frames()
         focused = frames[-1]["target"] if frames else None
+        connected = self.store.state_value("connected", False)  # Read once: every lookup opens the database.
         view = []
         for row in rows:
             uid = row["uuid"]
             status = row["status"]
             if status == "pending" and row.get("wait") and parse(row["wait"]) > self.clock():
                 status = "waiting"
-            elif status == "pending" and not self.actionable(row, by_id):
+            elif status == "pending" and not self.actionable(row, by_id, connected):
                 status = "blocked"
             view.append({"uuid": uid, "title": row["description"], "status": status,
                          "priority": PUBLIC_PRIORITY.get(row.get("priority"), "medium"),
                          "group": row.get("project"), "created_at": stamp(parse(row["entry"])) if row.get("entry") else None,
                          "due_at": stamp(parse(row["due"])) if row.get("due") else None,
                          "snoozed_until": stamp(parse(row["wait"])) if row.get("wait") else None,
-                         "focused": bool(row.get("start")) and row["status"]=="pending" if self.store.state_value("connected",False) else uid==focused and bool(row.get("start")) and status=="pending",
-                         "dependsOn":row.get('depends',[]),"blockedBy":self.blockers(row,by_id) if row['status']=='pending' else [],
+                         "focused": bool(row.get("start")) and row["status"]=="pending" if connected else uid==focused and bool(row.get("start")) and status=="pending",
+                         "dependsOn":row.get('depends',[]),"blockedBy":self.blockers(row,by_id,connected) if row['status']=='pending' else [],
                          "metadata": meta.get(uid, {})})
         return view
 

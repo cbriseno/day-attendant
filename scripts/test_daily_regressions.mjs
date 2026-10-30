@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {readFile,mkdtemp,rm} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
@@ -9,18 +9,25 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation','dependencies','ordering'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
 const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2025-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
 const requests=[],settings=[],chats=[],clears=[],suggestions=[];let catalogs=null;
+// State reads can be slowed to reproduce a service that answers after the poll interval.
+const stateReads=[];let stateDelay=0,slowRevision=null,proposalReplied=0;
 const server=createServer(async(req,res)=>{
  try{
   if(req.url.startsWith('/api/')){
    let body='';for await(const chunk of req)body+=chunk;body=body?JSON.parse(body):{};
    let data=state;
-   if(req.url==='/api/proposals'){
+   if(req.url.startsWith('/api/state')){
+    stateReads.push({url:req.url,at:Date.now()});const read=structuredClone(state),{now,...content}=read;
+    const tag=createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0,32);
+    if(stateDelay||read.revision===slowRevision)await new Promise(r=>setTimeout(r,read.revision===slowRevision?800:stateDelay));
+    data=new URL(req.url,'http://local').searchParams.get('since')===tag?{unchanged:true,tag,now}:{...read,tag};
+   }else if(req.url==='/api/proposals'){
     requests.push(body);
     if(body.expected_revision!==state.revision){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{code:'stale_revision',message:'State changed; reopen this editor.'}}));return}
     const p=body.payload,t=state.tasks.find(t=>t.id===p.uuid);
@@ -34,7 +41,7 @@ const server=createServer(async(req,res)=>{
     if(body.action==='event_update')Object.assign(state.calendar_events.find(e=>e.uuid===p.uuid),{title:p.title,start_at:p.start,end_at:p.end});
     if(body.action==='event_cancel')state.calendar_events=state.calendar_events.filter(e=>e.uuid!==p.uuid);
     state.revision++;
-    data={id:randomUUID(),key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[]};
+    data={id:randomUUID(),key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[]};proposalReplied=Date.now();
    }else if(req.url==='/api/settings'){
     settings.push(body);
     if(body.expected_revision!==undefined&&body.expected_revision!==state.revision){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{message:'State changed'}}));return}
@@ -402,6 +409,32 @@ try{
   }
  }
  console.log('Daily UI regressions passed: snapshot revisions, capture outcomes, dates, calendar and localization');
+ }
+ if(group==='all'||group==='refresh'){
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  // Polls send the last content tag; an unchanged reply carries only the clock and keeps the board.
+  await refresh();const tasks=await evaluate("document.querySelectorAll('#board .task').length");let first=stateReads.length;await sleep(2000);
+  const polls=stateReads.slice(first).map(r=>r.url);assert.ok(polls.length>=1&&polls.every(u=>u.includes('since=')),'polls are conditional: '+polls);
+  assert.equal(await evaluate("document.querySelectorAll('#board .task').length"),tasks);
+  // A service slower than the poll interval never stacks polls, and a caller waits only for its own load.
+  stateDelay=1500;first=stateReads.length;
+  for(let i=0;i<3;i++){const waited=await evaluate('(async()=>{const s=performance.now();await Promise.race([dayUI.flow.refresh(),new Promise(r=>setTimeout(r,5000))]);return performance.now()-s})()');assert.ok(waited<2500,'refresh waited '+waited+' ms');await sleep(300)}
+  const reads=stateReads.length-first;await sleep(3000);assert.ok(stateReads.length-first-reads<=2,'polls stacked: '+(stateReads.length-first-reads)+' in 3 s');
+  stateDelay=0;await sleep(1600);
+  // A slower older load never overwrites state that a newer load already showed.
+  slowRevision=state.revision;await evaluate('window.__older=dayUI.flow.refresh()');await sleep(50);
+  target.title='Newer title';state.revision++;await refresh();await evaluate('window.__older');await sleep(1000);slowRevision=null;
+  assert.equal(await evaluate(`daySnapshot().tasks.find(t=>t.id===${JSON.stringify(target.id)}).title`),'Newer title');
+  assert.equal(await evaluate('daySnapshot().revision'),state.revision);
+  // A saved action waits for one read that includes it, not a second one.
+  await evaluate(`dayUI.flow.request('order_update',{order:${JSON.stringify([c.id,b.id,a.id,target.id])}})`);const done=Date.now();
+  assert.equal(stateReads.filter(r=>r.at>=proposalReplied&&r.at<=done).length,1);delete state.taskOrder;
+  // The view sends only the last fact, already summarized, without its plan.
+  state.events=[{id:7,action:'task_done',at:state.now,proposal_id:randomUUID(),taskId:target.id,undoOf:null,undoable:true,reviewComplete:true}];state.revision++;await refresh();
+  assert.equal(await evaluate("document.getElementById('undo').hidden"),false);
+  assert.match(await evaluate("document.getElementById('status').textContent"),/Newer title/);
+  state.events=[];target.title='Responsabilidad original';state.revision++;await refresh();
+  console.log('Refresh regressions passed: conditional polls, slow service, ordering of loads and summarized facts');
  }
  if(group==='all'||group==='ordering'){
   // Views and drags only rearrange the display: no priority, group or state change and no model call.

@@ -312,7 +312,7 @@ def main(argv=None):
                         if (Path(state)/'ui-server.json').exists():data=client(state,'/api/settings',{'values':values,'key':args.key,'expected_revision':getattr(args,'expect',None)})
                         else:data=configure(app,values,args.key,getattr(args,'expect',None))
             elif args.command == "list":
-                data = client(state)
+                data = client(state, "/api/state?view=full")
             elif args.command == "request":
                 try:
                     payload = json.loads(args.payload)

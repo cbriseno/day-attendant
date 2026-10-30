@@ -54,6 +54,8 @@ ALLOWED = {
     "event_cancel": {"uuid"},
 }
 PENDING = ("evaluating", "review", "unavailable", "stale", "invalid")
+# Settled proposals the browser view keeps so a lost reply can still find its own key.
+RECENT_PROPOSALS = 20
 
 
 def review_schema(evidence):
@@ -81,6 +83,7 @@ class Connected:
         self.inflight = {}
         self.inflight_lock = threading.Lock()
         self.suggesting = set()
+        self.fact_targets = {}  # Facts are append-only; their operation key confirms a cached target.
 
     def initialize(self,kind=None,zone=None,name=None,_upgrade_backup=None):
         """Initialize an explicitly selected empty profile, never import personal data."""
@@ -251,20 +254,65 @@ class Connected:
         with self.store.connect() as con:
             return self.unpack(con.execute("SELECT * FROM proposals WHERE id=?", (identity,)).fetchone())
 
-    def _snapshot(self):
+    @staticmethod
+    def _fact_summary(row):
+        """The last fact as the browser shows it, without the plan's recovery preconditions."""
+        plan = json.loads(row["plan"])
+        return {"id": row["id"], "action": row["action"], "at": row["at"], "proposal_id": row["proposal_id"],
+                "taskId": plan.get("target_uuid"), "undoOf": plan.get("undo_of"),
+                "undoable": bool(plan.get("steps")) and all(k == "attachments_link" for k in plan.get("effect") or {}),
+                "reviewComplete": plan.get("review_status") == "not_required" or plan.get("review_complete") is not False}
+
+    def _fact_targets(self, con):
+        facts = [dict(r) for r in con.execute("SELECT id,operation_key,action,at FROM facts ORDER BY id")]
+        missing = [f["id"] for f in facts if self.fact_targets.get(f["id"], (None,))[0] != f["operation_key"]]
+        for start in range(0, len(missing), 500):
+            chunk = missing[start:start+500]
+            for r in con.execute("SELECT id,operation_key,json_extract(plan,'$.target_uuid') FROM facts WHERE id IN (" + ",".join("?" * len(chunk)) + ")", chunk):
+                self.fact_targets[r[0]] = (r[1], r[2])
+        for f in facts:f["target_uuid"] = self.fact_targets[f["id"]][1]
+        return facts
+
+    def _snapshot(self, history="targets"):
+        """history="all" is the public snapshot; "last" is the browser view; internal reads ("targets")
+        need no proposals and only each fact's action, time and target, never its recorded plan."""
         unresolved=self.store.unresolved()
         maintenance=self.store.state_value('maintenance')
         rows = self.app._view(coherent=not bool(unresolved or maintenance))
         with self.store.connect() as con:
             continuation = {r["uuid"]: json.loads(r["data"]) for r in con.execute("SELECT * FROM continuity")}
-            proposals = [self.unpack(r) for r in con.execute("SELECT * FROM proposals ORDER BY rowid")]
-            failures = {r["proposal_id"]: (r["generation"], json.loads(r["result"] or "{}").get("code") or "review_failed")
-                        for r in con.execute("SELECT proposal_id,generation,result FROM evaluations WHERE status='failed' ORDER BY id")}
-            for proposal in proposals:proposal["error_code"] = error_code(proposal, failures)
-            facts = [dict(r) for r in con.execute("SELECT * FROM facts ORDER BY id")]
             # Only the current conversation is shown and sent; /clear keeps older messages stored locally.
             conversation=self.store.state_value('conversation') or {}
             messages = [dict(r) for r in con.execute("SELECT * FROM messages WHERE id>? ORDER BY id",(conversation.get('floor',0),))]
+            if history == "targets":
+                proposals = None;failed = ()
+                facts = self._fact_targets(con)
+            elif history == "all":
+                proposals = [self.unpack(r) for r in con.execute("SELECT * FROM proposals ORDER BY rowid")]
+                failed = con.execute("SELECT proposal_id,generation,result FROM evaluations WHERE status='failed' ORDER BY id")
+                facts = [dict(r) for r in con.execute("SELECT * FROM facts ORDER BY id")]
+            else:
+                # The browser needs pending decisions, the receipts of this conversation and recent keys
+                # for lost replies; settled history stays local, so the view does not grow per action.
+                cited = set()
+                for m in messages:
+                    data = json.loads(m["data"] or "null")
+                    if isinstance(data, dict):cited.update(i for i in data.get("proposal_ids") or [] if isinstance(i, str))
+                keys = [m["key"] for m in messages]
+                marks = lambda n: ",".join("?" * n)
+                proposals = [self.unpack(r) for r in con.execute(
+                    "SELECT * FROM proposals WHERE phase IN (" + marks(len(PENDING)) + ") OR rowid > (SELECT coalesce(max(rowid),0) FROM proposals)-?"
+                    " OR id IN (" + marks(len(cited)) + ") OR message_key IN (" + marks(len(keys)) + ") ORDER BY rowid",
+                    (*PENDING, RECENT_PROPOSALS, *cited, *keys))]
+                # Settled proposals outside this conversation are only matched by key after a lost reply.
+                proposals = [p if p["phase"] in PENDING or p["id"] in cited or p.get("message_key") in keys
+                             else {k: p[k] for k in ("id", "key", "phase", "origin")} for p in proposals]
+                ids = [p["id"] for p in proposals]
+                failed = con.execute("SELECT proposal_id,generation,result FROM evaluations WHERE status='failed' AND proposal_id IN (" + marks(len(ids)) + ") ORDER BY id", ids)
+                facts = [self._fact_summary(r) for r in con.execute("SELECT * FROM facts ORDER BY id DESC LIMIT 1")]
+            failures = {r["proposal_id"]: (r["generation"], json.loads(r["result"] or "{}").get("code") or "review_failed") for r in failed}
+            for proposal in proposals or ():
+                if "generation" in proposal:proposal["error_code"] = error_code(proposal, failures)
             transport_issues=[dict(r) for r in con.execute("SELECT id,entity,status,error,retry_at FROM notices WHERE status IN ('failed','uncertain') OR status='pending' AND error IS NOT NULL")]
             related=[dict(r) for r in con.execute('SELECT * FROM related ORDER BY a,b')]
             image_links=[dict(r) for r in con.execute('SELECT * FROM item_attachments')]
@@ -310,7 +358,14 @@ class Connected:
 
     def snapshot(self):
         with self.store.lock():
-            return self._snapshot()
+            return self._snapshot("all")
+
+    def view(self):
+        """The browser's state: the snapshot without plan history, tagged by its content."""
+        with self.store.lock():
+            data = self._snapshot("last")
+        data["tag"] = fingerprint({k: v for k, v in data.items() if k != "now"})[:32]
+        return data
 
     def _plan(self, intent, key):
         if intent["action"] not in ALLOWED and intent["action"] != "task_restore":
@@ -423,8 +478,7 @@ class Connected:
                 concerns.append({"code":"capacity", "message":f"The fronts in this window require {capacity['required']:g} estimated minutes, compared with at most {capacity['possible']:g} available minutes. Some progress may be unrecorded.",
                     "message_key":"risk_capacity","message_params":{"required":capacity['required'],"possible":capacity['possible']},
                     "refs":["capacity.requiredMinutes","capacity.availableMinutes"],"signature":capacity["signature"]})
-        history = [{"action": f["action"], "at": f["at"]} for f in snapshot["events"]
-                   if json.loads(f["plan"]).get("target_uuid") == target_id][-8:]
+        history = [{"action": f["action"], "at": f["at"]} for f in snapshot["events"] if f["target_uuid"] == target_id][-8:]
         evidence["history.confirmed"] = history
         horizon=max([parse(snapshot['context'].get('availableUntil') or self.app.now())]+[parse(t[k]) for t in snapshot['tasks'] if t['id']==target_id or t['state']=='active' for k in ('due','until') if t.get(k)])
         horizon=max(horizon,self.app.clock()+timedelta(days=1))
