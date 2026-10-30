@@ -42,7 +42,10 @@ html[data-theme=dark] .line-bar{box-shadow:0 10px 30px #0000004d}
    Only Urgent and overdue dates use red; High is an outline; Medium and Low have no fill. */
 :root{--line2:#eeeef2;--ok:#18794e;--ok-bg:#e6f6eb;--p-urgent:#fff;--p-urgent-bg:#b4232c;--p-high:#a24a00}html[data-theme=dark]{--line2:#31343a;--ok:#8fc9a8;--ok-bg:#25352d;--p-urgent:#f6e7e7;--p-urgent-bg:#a8474b;--p-high:#d9a173}
 .board.is-list .lane-cards{display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px}.board.is-list .lane-cards>:first-child{border-radius:11px 11px 0 0}.board.is-list .lane-cards>:last-child{border-radius:0 0 11px 11px}.board.is-list .lane-cards>:only-child{border-radius:11px}
-.task{position:relative;min-width:0;background:var(--surface);transition:background .15s,opacity .2s;-webkit-touch-callout:none}.board.is-list .task{border-top:1px solid var(--line2)}.board.is-list .lane-cards>.task:first-child{border-top:0}.board:not(.is-list) .task{border:1px solid var(--line);border-radius:10px;box-shadow:0 1px 3px #1c202409}
+.task{position:relative;min-width:0;background:var(--surface);transition:background .15s,opacity .2s;-webkit-touch-callout:none}
+/* Without containment, the end of a glide lays out what is positioned inside each gliding row: thousands of objects on a long board. Containment also makes a stacking context, so an expanded row, whose picker lists cover the next rows, goes without it. */
+.task:not(.expanded){contain:layout}
+.board.is-list .task{border-top:1px solid var(--line2)}.board.is-list .lane-cards>.task:first-child{border-top:0}.board:not(.is-list) .task{border:1px solid var(--line);border-radius:10px;box-shadow:0 1px 3px #1c202409}
 @media(hover:hover){.task:hover{background:color-mix(in srgb,var(--soft) 45%,var(--surface))}}
 .board.is-list .group-heading{margin:0;padding:8px 12px 4px 14px;border-top:1px solid var(--line2)}.board.is-list .lane-cards>.group-heading:first-child{border-top:0}
 .lane-empty{font-size:12px;color:var(--muted);padding:8px 14px;text-align:center}.board:not(.is-list) .lane-empty{border:1px dashed var(--line);border-radius:10px}

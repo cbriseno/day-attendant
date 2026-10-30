@@ -393,6 +393,8 @@ try{
   assert.deepEqual(await evaluate(`[...document.querySelectorAll(${JSON.stringify(row('.rel-go'))})].map(e=>e.textContent)`),['A']);
   const picks=row(`[data-search=${kind}] + .picker-list:not([hidden]) [data-pick]`);
   await put(row(`[data-search=${kind}]`),'B');assert.deepEqual(await evaluate(`[...document.querySelectorAll(${JSON.stringify(picks)})].map(e=>e.dataset.pick)`),[kind+':'+b.id]);
+  // The list opens over the rows after its own, so an expanded row keeps no stacking context to trap it.
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('[data-task-id="${target.id}"]')).contain`),'none','the picker list covers the next rows');
   let before=requests.length;await click(picks);await serverWait(()=>target[key].length===2);
   assert.deepEqual([requests.length-before,requests.at(-1).action,requests.at(-1).payload],[1,action,{uuid:target.id,[key]:[a.id,b.id]}]);
   // A link changed elsewhere and not read yet: the service refuses, nothing is lost, and the next try keeps it.
@@ -1110,6 +1112,14 @@ try{
   await evaluate(`(()=>{const real=Element.prototype.getBoundingClientRect;globalThis.realRect=real;globalThis.reads=0;Element.prototype.getBoundingClientRect=function(){if(this.matches('.task'))globalThis.reads++;return real.call(this)};globalThis.kept=document.querySelector('#board .task').animate([{opacity:.5},{opacity:1}],{duration:60000});return true})()`);
   await evaluate("(()=>{globalThis.heading=[document.getElementById('task-count').firstChild,document.getElementById('order-note').firstChild];dayUI.flow.digest='';dayUI.flow.tag='';return dayUI.flow.refresh().then(()=>true)})()");
   assert.deepEqual(await evaluate("(()=>{const seen=[globalThis.reads,globalThis.kept.playState,globalThis.heading[0]===document.getElementById('task-count').firstChild,globalThis.heading[1]===document.getElementById('order-note').firstChild];Element.prototype.getBoundingClientRect=globalThis.realRect;globalThis.kept.cancel();return seen})()"),[0,'running',true,true]);
+  // A change made while rows glide leaves those glides running, and a row it moves carries on from
+  // where it is: restarting them would lay out and repaint every row in the frame that shows a drop.
+  const [one,two,...others]=await ids('todo'),order=state.taskOrder;
+  await evaluate(`(()=>{globalThis.glides=${JSON.stringify([one,two,others.at(-1)])}.map(id=>{const glide=document.querySelector('#board [data-task-id="'+id+'"]').animate([{transform:'translateY(40px)'},{transform:'none'}],{duration:60000});glide.pause();glide.currentTime=15000;return glide});globalThis.seen=glides[0].effect.target.getBoundingClientRect().top;return true})()`);
+  state.taskOrder=order.map(id=>id===one?two:id===two?one:id);state.revision++;await refresh();
+  const glided=await evaluate(`(()=>{const card=glides[0].effect.target,added=card.getAnimations().find(a=>a!==glides[0]);added.pause();added.currentTime=0;const seen=[glides.map(g=>g.playState),glides[2].effect.target.getAnimations().length,added.effect.composite,Math.abs(card.getBoundingClientRect().top-globalThis.seen)<1];for(const a of document.getAnimations())a.cancel();return seen})()`);
+  assert.deepEqual(glided,[['paused','paused','paused'],1,'add',true]);
+  state.taskOrder=order;state.revision++;await refresh();
   // In Group order a drop into another group's section takes that group; into No group it has none.
   await click('#list-view');await fill('order-choice','group');await wait(`daySnapshot().revision>=${state.revision}`);
   sent=requests.length;const noGroup=await center('#board .group-section[data-group=""] .lane-heading');

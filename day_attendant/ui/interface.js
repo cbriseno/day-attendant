@@ -112,13 +112,15 @@ const cardOf=id=>$('board').querySelector('.task[data-task-id="'+id+'"]');
 const cardRects=()=>new Map(boardCards().filter(c=>c.getClientRects().length).map(c=>[c.dataset.taskId,c.getBoundingClientRect()]));
 // Reads every position first and writes every animation after, so the browser lays out once.
 function playFlip(first,{duration=DURATION+80,delay=0,enter=true}={}){
- // Read animations once before cancelling: alternating getAnimations/cancel per row forces a
- // style flush for every card on a large board.
- const all=boardCards(),animations=$('board').getAnimations({subtree:true});for(const a of animations)a.cancel();const cards=all.filter(card=>card.getClientRects().length);
+ // A running glide stays: animations only advance between tasks, so it shifts a card equally in both
+ // readings and their difference is what this change moved. Cancelling and restarting every glide
+ // would restyle, lay out and repaint all of those cards in the frame that shows the change.
+ const gliding=new Set($('board').getAnimations({subtree:true}).map(a=>a.effect?.target)),cards=boardCards().filter(card=>card.getClientRects().length);
  const moves=cards.map(card=>{const was=first.get(card.dataset.taskId);if(!was)return [card,null];const now=card.getBoundingClientRect();return [card,[was.left-now.left,was.top-now.top]]});
  for(const [card,delta] of moves){
   if(!delta){if(enter)card.animate([{opacity:0,transform:'scale(.98)'},{opacity:1,transform:'none'}],{duration,delay,easing:'ease-out',fill:'backwards'});continue}
-  const [dx,dy]=delta;if(Math.abs(dx)>=1||Math.abs(dy)>=1)card.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],{duration,delay,easing:EASE,fill:'backwards'});
+  // Over a running glide the move adds to it. Alone it replaces, which the compositor can run.
+  const [dx,dy]=delta;if(Math.abs(dx)>=1||Math.abs(dy)>=1)card.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],{duration,delay,easing:EASE,fill:'backwards',composite:gliding.has(card)?'add':'replace'});
  }
  if(dependencyLines.style.display==='block')setTimeout(()=>drawDependencies(),duration+delay+20);
 }
