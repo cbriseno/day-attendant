@@ -302,10 +302,10 @@ try{
   assert.equal(await evaluate("document.getElementById('send-message').getClientRects().length>0&&document.getElementById('composer-hint').getClientRects().length===0"),true);
   await press();assert.equal(chats.length,3);assert.equal(await evaluate(typed),'Not yet\n');state.messages=[];await refresh();await click('#send-message');await wait('dayUI.flow.snapshot().messages.length===2');assert.equal(chats.at(-1).text,'Not yet');
   await rpc('Emulation.setEmulatedMedia',{features:[]},sessionId);await rpc('Emulation.setTouchEmulationEnabled',{enabled:false},sessionId);
-  // The status line shows only what the harness reported for the current model; never a zero for missing data.
-  const status=()=>evaluate("document.getElementById('context-status').textContent.replace(/\\s/g,' ')");
+  // The status line shows only what the harness reported for the current model; without a report it stays hidden, never a zero.
+  const status=()=>evaluate("document.getElementById('context-status').textContent.replace(/\\s/g,' ')"),noStatus=()=>evaluate("(()=>{const e=document.getElementById('context-status');return e.hidden&&e.textContent===''})()");
   const reply=(usage,extra={})=>({key:'r:assistant',role:'assistant',text:'Reply',status:'completed',at:state.now,attachments:[],data:JSON.stringify({provider:'codex',model:'controlled',usage,...extra})});
-  state.messages=[];await refresh();assert.equal(await status(),'Context: no data');
+  state.messages=[];await refresh();assert.equal(await noStatus(),true);
   state.messages=[reply({contextTokens:9706,contextWindow:475000})];await refresh();assert.equal(await status(),'Context 9.7K / 475K · 97% free');
   assert.equal(await evaluate("document.getElementById('context-status').classList.contains('tight')"),false);
   state.messages.push({key:'s',role:'user',text:'Next',status:'incomplete',at:state.now,attachments:[]},{key:'s:assistant',role:'assistant',text:'Incomplete',status:'incomplete',at:state.now,attachments:[],data:JSON.stringify({code:'agent_error'})});await refresh();
@@ -313,8 +313,8 @@ try{
   state.messages=[reply({contextTokens:190000,contextWindow:200000})];await refresh();assert.equal(await status(),'Context 190K / 200K · 5% free');
   assert.equal(await evaluate("document.getElementById('context-status').classList.contains('tight')"),true);
   state.messages=[reply({contextTokens:1200,contextWindow:null})];await refresh();assert.equal(await status(),'Context 1.2K used · window not reported');
-  state.messages=[reply(null)];await refresh();assert.equal(await status(),'Context: no data');
-  state.messages=[reply({contextTokens:1200,contextWindow:200000},{model:'previous-model'})];await refresh();assert.equal(await status(),'Context: no data');
+  state.messages=[reply(null)];await refresh();assert.equal(await noStatus(),true);
+  state.messages=[reply({contextTokens:1200,contextWindow:200000},{model:'previous-model'})];await refresh();assert.equal(await noStatus(),true);
   state.messages=[reply({contextTokens:9706,contextWindow:475000})];await refresh();await fill('locale-choice','es');
   assert.equal(await status(),'Contexto 9.7 k / 475 k · 97% libre');assert.equal(await evaluate("document.getElementById('composer-hint').textContent"),'Enter para enviar · Mayús+Enter para nueva línea');
   await fill('locale-choice','en');state.messages=[];await refresh();await click('#chat-close');
@@ -352,7 +352,7 @@ try{
  if(group==='all'||group==='dependencies'){
   // Dependency chips only change the view: direct links are highlighted, and lines appear where there is room.
   const before=requests.length,chip=(t,kind)=>`[data-task-id="${t.id}"] .${kind}`,size=(width,height)=>rpc('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<600},sessionId);
-  const view=`(()=>{const ids=${JSON.stringify([a,target,b,c].map(t=>t.id))};return JSON.stringify({focus:document.getElementById('board').classList.contains('dependency-focus'),roles:ids.map(id=>document.querySelector('[data-task-id="'+id+'"]').dataset.dependencyRole||null),tags:[...document.querySelectorAll('#board .dependency-role')].map(e=>e.textContent),pressed:[...new Set([...document.querySelectorAll('#board [aria-pressed=true]')].map(e=>e.closest('[data-task-id]').dataset.taskId))],lines:document.querySelectorAll('.dependency-lines > path').length})})()`;
+  const view=`(()=>{const ids=${JSON.stringify([a,target,b,c].map(t=>t.id))};return JSON.stringify({focus:document.getElementById('board').classList.contains('dependency-focus'),roles:ids.map(id=>document.querySelector('[data-task-id="'+id+'"]').dataset.dependencyRole||null),tags:[...document.querySelectorAll('#board .dependency-role')].map(e=>e.textContent),pressed:[...new Set([...document.querySelectorAll('#board [aria-pressed=true]')].map(e=>e.closest('[data-task-id]').dataset.taskId))],lines:document.querySelectorAll('.dependency-lines > .link-line').length})})()`;
   const shows=expected=>wait(`${view}===${JSON.stringify(JSON.stringify(expected))}`).catch(async error=>{throw Error(error.message+' '+await evaluate(view))});
   const none={focus:false,roles:[null,null,null,null],tags:[],pressed:[],lines:0};
   await size(1440,1000);a.state='active';for(const t of [target,b]){t.state='todo';t.dependsOn=[a.id];t.blockedBy=[a.id];t.blocked=true}state.revision++;await refresh();
@@ -369,7 +369,7 @@ try{
   await fill('locale-choice','en');await shows(fromA);
   await click('#board-view');await shows(fromA);
   // Lines redraw after the board relayout; list-mode gutter lines also count two until then.
-   await wait("(()=>{const paths=[...document.querySelectorAll('.dependency-lines > path')];return paths.length===2&&paths.every(p=>p.getAttribute('d').includes('C'))})()").catch(()=>assert.fail('Board columns use curved cross-column links'));
+   await wait("(()=>{const paths=[...document.querySelectorAll('.dependency-lines > .link-line')];return paths.length===2&&paths.every(p=>p.getAttribute('d').includes('C'))})()").catch(()=>assert.fail('Board columns use curved cross-column links'));
   for(const width of [390,320]){await size(width,844);await shows({...fromA,lines:0});assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,'Dependency chips fit at '+width+'px')}
   await size(1440,1000);await shows(fromA);
   await click('#list-view');await shows(fromA);
@@ -546,8 +546,9 @@ try{
   target.title='Newer title';state.revision++;await refresh();await evaluate('window.__older');await sleep(1000);slowRevision=null;
   assert.equal(await evaluate(`daySnapshot().tasks.find(t=>t.id===${JSON.stringify(target.id)}).title`),'Newer title');
   assert.equal(await evaluate('daySnapshot().revision'),state.revision);
-  // A saved action waits for one read that includes it, not a second one.
-  await evaluate(`dayUI.flow.request('order_update',{order:${JSON.stringify([c.id,b.id,a.id,target.id])}})`);const done=Date.now();
+  // A saved action waits for one read that includes it, not a second one. The background poll is held
+  // and the window ends in the page, so a poll landing beside the save is not counted as its read.
+  const done=await evaluate(`(async()=>{const flow=dayUI.flow,poll=flow.poll;flow.poll=()=>null;try{while(flow.loading)await new Promise(r=>setTimeout(r,5));await flow.request('order_update',{order:${JSON.stringify([c.id,b.id,a.id,target.id])}});return Date.now()}finally{flow.poll=poll}})()`);
   assert.equal(stateReads.filter(r=>r.at>=proposalReplied&&r.at<=done).length,1);delete state.taskOrder;
   // The view sends only the last fact, already summarized, without its plan.
   const summary={id:7,action:'task_done',at:state.now,proposal_id:randomUUID(),taskId:target.id,undoOf:null,undoable:true,reviewComplete:true,reviewStatus:'deferred'};
@@ -834,7 +835,7 @@ try{
   const kept=state.tasks;await close();await fill('locale-choice','en');await fill('order-choice','priority');
   for(const t of [target,a,b,c])Object.assign(t,{state:'todo',dependsOn:[],blockedBy:[],blocked:false,group:null,priority:'medium'});
   Object.assign(state,{tasks:[...kept,...extra],readOnly:false,proposals:[],suggestions:[],messages:[],calendar_events:[],orderSuggestion:null,taskOrder:[]});state.revision++;
-  const fully="[...document.querySelectorAll('#board .task')].filter(c=>{const r=c.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}).length";
+  const fully=`(async()=>{${still}return [...document.querySelectorAll('#board .task')].filter(c=>{const r=c.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}).length})()`;
   await size(1440,900);await refresh();
   if(await evaluate("document.querySelector('#chat-toggle').getAttribute('aria-expanded')==='false'"))await click('#chat-toggle');
   assert.ok(await evaluate("document.getElementById('workspace').classList.contains('chat-open')"),'chat stays open beside the list');
@@ -883,7 +884,7 @@ try{
   // It opens at the pointer, or ends there when it would not fit below.
   const placed=await evaluate("(()=>{const m=document.querySelector('.row-menu');return [parseFloat(m.style.left),parseFloat(m.style.top),m.offsetHeight]})()");
   assert.equal(placed[0],point.x);assert.ok(placed[1]===point.y||placed[1]+placed[2]===point.y,JSON.stringify([placed,point]));
-  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['Edit title','More details','Change deadline','Move down','Duplicate','Retire…']);
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['Edit title','More details','Change deadline','Move down','See links…','Connect to…','Duplicate','Retire…']);
   sent=requests.length;await click('.row-menu [data-menu-act="retire"]');assert.match(await evaluate("document.querySelector('.row-menu').textContent"),/Retire this responsibility\?/);
   await click('.row-menu [data-menu-act="keep"]');assert.equal(await evaluate("document.querySelector('.row-menu')"),null);assert.equal(requests.length,sent);
   await click(`[data-id="${other.id}"][data-action="more"]`);await click('.row-menu [data-menu-act="retire"]');await click('.row-menu [data-menu-act="retire-yes"]');
@@ -891,7 +892,7 @@ try{
   assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'front_retire',{uuid:other.id}]);
   // Move down in the menu keeps the same section rules as dragging.
   await fill('order-choice','manual');const ids="[...document.querySelectorAll('.lane[data-state=\"todo\"] .task')].map(e=>e.dataset.taskId)";const order=await evaluate(ids);
-  await click(`[data-id="${order[0]}"][data-action="more"]`);assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['Edit title','More details',state.tasks.find(t=>t.id===order[0]).due?'Change deadline':'Set deadline','Move down','Duplicate','Retire…']);
+  await click(`[data-id="${order[0]}"][data-action="more"]`);assert.deepEqual(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].map(e=>e.textContent)"),['Edit title','More details',state.tasks.find(t=>t.id===order[0]).due?'Change deadline':'Set deadline','Move down','See links…','Connect to…','Duplicate','Retire…']);
   await click('.row-menu [data-menu-act="move"]');assert.deepEqual(await evaluate(ids),[order[1],order[0],...order.slice(2)]);
   await wait(`${JSON.stringify(JSON.stringify(requests.at(-1)?.payload))}!==undefined&&true`);
   for(let i=0;i<100&&requests.at(-1).action!=='order_update';i++)await new Promise(r=>setTimeout(r,15));assert.equal(requests.at(-1).action,'order_update');
@@ -923,7 +924,7 @@ try{
   await rpc('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]},sessionId);await new Promise(r=>setTimeout(r,100));
   assert.equal(await evaluate("document.querySelector('.row-menu.sheet')!==null&&document.querySelector('.menu-scrim')!==null"),true,'a long press opens the sheet');
   assert.equal(await evaluate("document.querySelector('.title-edit,.expand')"),null,'the tap that ends a long press does nothing else');
-  assert.ok(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].every(e=>e.getBoundingClientRect().height>=44)"));
+  assert.ok(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].every(e=>e.offsetHeight>=44)"));
   await click('.menu-scrim');assert.equal(await evaluate("document.querySelector('.row-menu')"),null);assert.equal(requests.length,sent);
   await rpc('Emulation.setTouchEmulationEnabled',{enabled:false},sessionId);
   // Localized controls.
@@ -992,7 +993,7 @@ try{
   await size(390,844,true);await new Promise(r=>setTimeout(r,100));if(await evaluate("document.getElementById('chat-dialog').open"))await click('#chat-close');
   await click(clock(due.id));
   assert.equal(await evaluate("document.querySelector('.row-menu.sheet')!==null&&document.querySelector('.menu-scrim')!==null"),true);
-  assert.ok(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].every(e=>e.getBoundingClientRect().height>=44)"));
+  assert.ok(await evaluate("[...document.querySelectorAll('.row-menu .menu-item')].every(e=>e.offsetHeight>=44)"));
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll(".row-menu .menu-item")].every(e=>e.scrollWidth<=e.clientWidth)'),true);
   sent=requests.length;await click('.menu-scrim');assert.equal(await evaluate("document.querySelector('.row-menu')"),null);assert.equal(requests.length,sent);
   await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
