@@ -161,6 +161,11 @@ def parser():
             p.add_argument("--without-review", action="store_true")
     p = command(board, "undo", True)
     p.add_argument("fact_id", type=int)
+    p = command(board, "undo-message", True)
+    p.add_argument("message_key")
+    for name in ("accept", "dismiss"):
+        p = command(board, name)
+        p.add_argument("suggestion_id")
     command(board, "clear", True)
     command(board, "suggest", True)
     p = command(board, "chat", True)
@@ -334,6 +339,10 @@ def main(argv=None):
                 data = client(state, "/api/suggestion", {"key": args.key})
             elif args.command == "undo":
                 data = client(state, "/api/undo", {"fact_id": args.fact_id, "key": args.key, "expected_revision": getattr(args,"expect",None)})
+            elif args.command == "undo-message":
+                data = client(state, "/api/undo", {"message_key": args.message_key, "key": args.key, "expected_revision": getattr(args,"expect",None)})
+            elif args.command in ("accept", "dismiss"):
+                data = client(state, "/api/suggestions/" + args.suggestion_id + "/" + args.command, {})
             else:
                 body = {"generation": args.generation, "without_review": args.without_review} if args.command == "confirm" else {}
                 data = client(state, "/api/proposals/" + args.proposal_id + "/" + args.command, body)

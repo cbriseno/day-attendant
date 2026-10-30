@@ -116,18 +116,21 @@ const upload=document.createElement('div');upload.className='attachment-list';up
 $('chat-images').onchange=()=>safely(async()=>{const files=[...$('chat-images').files];for(const file of files){const encoded=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file)});const result=await deliver('/api/attachments',{name:file.name,mime:file.type,base64:encoded});selectedImages.push(result)}$('chat-images').value='';renderSelectedImages()});
 function renderSelectedImages(){$('chat-image-list').replaceChildren();for(const item of selectedImages){const row=document.createElement('div'),b=document.createElement('button');row.textContent=item.name+' ';b.type='button';b.className='link-button';b.textContent=text('Remove','Quitar');b.onclick=()=>{selectedImages=selectedImages.filter(x=>x.id!==item.id);renderSelectedImages()};row.append(b);$('chat-image-list').append(row)}}
 const originalSend=$('send-message').onclick;$('send-message').onclick=()=>{if(!selectedImages.length||$('conversation-input').value.trim()==='/clear')return originalSend();return safely(async()=>{const input=$('conversation-input'),value=input.value.trim();if(!value)throw Error(text('Tell the assistant what to capture from these images.','Indica al asistente qué capturar de estas imágenes.'));$('send-message').disabled=true;const ids=selectedImages.map(x=>x.id);try{await deliver('/api/chat',{text:value,attachments:ids,capture_only:true});selectedImages=selectedImages.filter(x=>!ids.includes(x.id));renderSelectedImages();if(input.value.trim()===value)input.value=''}finally{$('send-message').disabled=false}})};
-function receipts(state){for(const [index,el] of [...$('messages').children].entries()){
- const message=state.messages[index];if(message?.role!=='assistant')continue;let data;try{data=JSON.parse(message.data||'{}')||{}}catch{continue}
+const undoneMessages=new Set();
+function receipts(state){for(const el of $('messages').children){
+ const message=state.messages.find(m=>m.key===el.dataset.key);if(message?.role!=='assistant')continue;let data;try{data=JSON.parse(message.data||'{}')||{}}catch{continue}
  let box=el.querySelector('.receipt-list');if(!box){box=document.createElement('div');box.className='receipt-list';el.append(box)}box.replaceChildren();
- const ids=data.proposal_ids||[];let saved=0,waiting=0;
+ const ids=data.proposal_ids||[];let saved=0,waiting=0,applied=0;
  for(const id of ids){const p=state.rawProposals?.find(x=>x.id===id)||state.proposals.find(x=>x.id===id);const row=document.createElement('span'),title=p?.intent?.payload?.title||p?.intent?.action||id.slice(0,8);
-  if(['applied','unchanged'].includes(p?.phase))saved++;
+  if(['applied','unchanged'].includes(p?.phase))saved++;if(p?.phase==='applied')applied++;
   // A proposal waiting for the person says it was not saved and links to where it is decided.
   if(['unavailable','review','stale','invalid'].includes(p?.phase)){waiting++;const kind=p.phase==='unavailable'&&p.error_code==='review_insufficient'?'insufficient':p.phase;
    row.textContent=title+' · '+tr('receipt_wait_'+kind+(ui.creates(p.intent.action)?'':'_change'))+' ';const open=document.createElement('button');open.type='button';open.className='link-button';open.textContent=tr('receipt_open');open.onclick=()=>ui.showProposal(id);row.append(open)}
   else row.textContent=title+' · '+(p?tr('phase_'+p.phase):text('See activity for outcome','Ver resultado en actividad'));
   box.append(row)}
  if(waiting){const summary=document.createElement('p');summary.className='receipt-summary';summary.textContent=ui.formatted(waiting===1?'receipt_saved_summary_one':'receipt_saved_summary',{saved,total:ids.length,waiting});box.prepend(summary)}
+ // Changes from the conversation applied at once; one Undo reverts all of them, newest first.
+ const user=message.key.replace(/:assistant$/,'');if(applied&&!undoneMessages.has(user)&&!state.readOnly){const undo=document.createElement('button');undo.type='button';undo.className='link-button';undo.textContent=tr(applied===1?'undo_message_change':'undo_message_changes');undo.onclick=()=>safely(async()=>{undo.disabled=true;await deliver('/api/undo',{message_key:user});undoneMessages.add(user);notice(tr('changes_undone'));receipts(flow.snapshot())});box.append(undo)}
  for(const [items,label] of [[data.unprocessed,text('Not processed','Sin procesar')],[data.uncertainties,text('Clarification needed','Hace falta aclarar')]])for(const item of items||[]){const row=document.createElement('p');row.textContent=label+': '+item;box.append(row)}
 }}
 function update(state){

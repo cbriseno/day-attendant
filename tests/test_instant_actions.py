@@ -1,0 +1,260 @@
+"""Direct actions apply in their request with Undo; the assistant only looks afterwards and suggests."""
+from datetime import timedelta
+import json
+from pathlib import Path
+import tempfile
+import threading
+import time
+import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+from day_attendant import web
+from day_attendant.connected import Connected
+from day_attendant.errors import AssistantError
+from day_attendant.service import Assistant
+from day_attendant.taskstore import canonical
+from day_attendant.timeutil import stamp
+from test_connected import NOW, ReviewFixture
+from test_daily_domain import DailyBase
+
+
+class RefusingBridge(ReviewFixture):
+    """Any model turn in the click path is a failure."""
+    def turn(self, *args, **kwargs):
+        raise AssertionError('A direct action waited for the model.')
+
+
+class InstantActionTests(DailyBase):
+    def setUp(self):
+        super().setUp()
+        self.board.bridge = RefusingBridge()
+
+    def state(self):
+        snapshot = self.board.snapshot()
+        return {'tasks': {r['uuid']: canonical(r) for r in self.app.tasks.rows()}, 'context': snapshot['context'],
+                'order': snapshot['taskOrder'], 'continuity': {t['id']: (t['remainingMinutes'], t['awaiting'], t['context'], t['next']) for t in snapshot['tasks']},
+                'related': {t['id']: t['relatedTo'] for t in snapshot['tasks']}, 'events': [(e['uuid'], e['title'], e['start_at'], e['end_at']) for e in snapshot['calendar_events']]}
+
+    def test_every_direct_action_applies_at_once_and_can_be_undone(self):
+        a, b, c = self.add('A'), self.add('B'), self.add('C')
+        event = self.apply('event_add', {'title': 'Meeting', 'start': stamp(NOW + timedelta(hours=3)), 'end': stamp(NOW + timedelta(hours=4))})['result']['uuid']
+        actions = [
+            ('task_done', {'uuid': a}), ('front_activate', {'uuid': b}), ('task_snooze', {'uuid': c, 'until': stamp(NOW + timedelta(days=2))}),
+            ('task_update', {'uuid': b, 'priority': 'high'}), ('task_add', {'title': 'Pay the light bill', 'group': 'Home'}),
+            ('front_todo', {'uuid': b}), ('task_update', {'uuid': b, 'group': 'Home'}), ('task_update', {'uuid': b, 'title': 'B renamed', 'next': 'Call'}),
+            ('order_update', {'order': [c, b, a]}), ('context_update', {'availableMinutes': 30, 'availableUntil': stamp(NOW + timedelta(hours=2)), 'rest': False}),
+            ('continuity_update', {'uuid': b, 'remainingMinutes': 25}), ('dependency_update', {'uuid': b, 'dependsOn': [c]}),
+            ('related_update', {'uuid': a, 'relatedTo': [b]}), ('task_reopen', {'uuid': a}), ('front_retire', {'uuid': a}),
+            ('event_update', {'uuid': event, 'title': 'Moved meeting', 'start': stamp(NOW + timedelta(hours=5)), 'end': stamp(NOW + timedelta(hours=6))}),
+            ('event_add', {'title': 'Dentist', 'start': stamp(NOW + timedelta(days=1)), 'end': stamp(NOW + timedelta(days=1, hours=1))}),
+        ]
+        for action, payload in actions:
+            with self.subTest(action=action, payload=payload):
+                before = self.state()
+                started = time.perf_counter()
+                proposal = self.request(action, payload)
+                elapsed = time.perf_counter() - started
+                self.assertEqual(proposal['phase'], 'applied')
+                self.assertLess(elapsed, 3.0)  # A model review takes 7–14 s; a direct action never waits for one.
+                last = self.board.snapshot()['lastFact']
+                self.assertTrue(last['undoable'], last)
+                self.assertNotEqual(self.state(), before)
+                undo = self.board.undo(last['id'], 'undo-' + str(last['id']))
+                self.assertEqual(undo['phase'], 'applied')
+                after = self.state()
+                if action == 'task_add':
+                    # A capture is retired, never erased.
+                    created = proposal['result']['uuid']
+                    self.assertEqual(after['tasks'][created]['status'], 'deleted')
+                    del after['tasks'][created]
+                    after['continuity'].pop(created); after['related'].pop(created)
+                self.assertEqual(after, before)
+                self.assertTrue(self.board.snapshot()['lastFact']['undoOf'])
+                self.request(action, payload)  # Keep the change for the next action.
+        with self.app.store.connect() as con:
+            self.assertEqual(con.execute('SELECT count(*) FROM evaluations').fetchone()[0], 0)
+
+    def test_undo_never_overwrites_a_later_change_to_the_same_data(self):
+        a, b = self.add('A'), self.add('B')
+        cases = [
+            (('order_update', {'order': [a, b]}), ('order_update', {'order': [b, a]})),
+            (('context_update', {'availableMinutes': 30, 'availableUntil': stamp(NOW + timedelta(hours=2))}), ('context_update', {'rest': True})),
+            (('continuity_update', {'uuid': a, 'remainingMinutes': 20}), ('continuity_update', {'uuid': a, 'remainingMinutes': 5})),
+            (('related_update', {'uuid': a, 'relatedTo': [b]}), ('related_update', {'uuid': b, 'relatedTo': []})),
+            (('task_add', {'title': 'Captured'}), None),
+        ]
+        for first, later in cases:
+            with self.subTest(first=first):
+                self.apply(*first)
+                fact = self.board.snapshot()['lastFact']['id']
+                if later: self.apply(*later)
+                else: self.apply('task_update', {'uuid': self.board.snapshot()['lastFact']['taskId'], 'title': 'Renamed after capture'})
+                before = self.state()
+                with self.assertRaises(AssistantError) as error: self.board.undo(fact, 'late-undo-' + str(fact))
+                self.assertEqual(error.exception.code, 'undo_conflict')
+                self.assertEqual(self.state(), before)
+
+    def test_rejections_are_immediate_with_a_stable_code_and_save_nothing(self):
+        a, b = self.add('A'), self.add('B')
+        self.apply('dependency_update', {'uuid': a, 'dependsOn': [b]})
+        revision = self.app.store.revision()
+        for action, payload, code in (('dependency_update', {'uuid': b, 'dependsOn': [a]}, 'dependency_cycle'),
+                                      ('dependency_update', {'uuid': a, 'dependsOn': [a]}, 'dependency_cycle'),
+                                      ('task_done', {'uuid': 'not-a-uuid'}, 'invalid_uuid'),
+                                      ('front_activate', {'uuid': '00000000-0000-4000-8000-000000000000'}, 'task_not_found'),
+                                      ('related_update', {'uuid': a, 'relatedTo': [a]}, 'invalid_relations')):
+            with self.subTest(code=code, payload=payload):
+                started = time.perf_counter()
+                with self.assertRaises(AssistantError) as error: self.request(action, payload)
+                self.assertEqual(error.exception.code, code)
+                self.assertLess(time.perf_counter() - started, 3.0)
+        self.assertEqual(self.app.store.revision(), revision)
+        self.assertEqual(self.app.store.unresolved(), [])
+
+    def test_review_spends_no_turn_without_new_changes(self):
+        fixture = ReviewFixture(); self.board.bridge = fixture
+        self.assertIsNone(self.board.review_changes())
+        self.add('A'); self.add('B'); self.add('C')
+        self.board.review_changes()
+        self.assertEqual(fixture.turns, 1)
+        for _ in range(3): self.assertIsNone(self.board.review_changes())
+        self.assertEqual(fixture.turns, 1)
+        restarted = Connected(Assistant(self.temp.name, clock=lambda: NOW), fixture); restarted.startup()
+        self.assertIsNone(restarted.review_changes()); self.assertEqual(fixture.turns, 1)
+
+    def test_finished_prerequisite_suggests_starting_the_unblocked_task(self):
+        self.board.bridge = ReviewFixture()
+        a, b = self.add('Buy paint'), self.add('Paint the room')
+        self.apply('dependency_update', {'uuid': b, 'dependsOn': [a]})
+        self.apply('task_done', {'uuid': a})
+        self.board.review_changes()
+        found = [s for s in self.board.snapshot()['suggestions'] if s['current']]
+        self.assertEqual([(s['taskId'], s['code'], s['messageKey'], s['messageParams']) for s in found], [(b, 'unblocked', 'suggest_unblocked', {'title': 'Buy paint'})])
+        self.board.accept_suggestion(found[0]['id'])
+        self.assertEqual(next(t for t in self.board.snapshot()['tasks'] if t['id'] == b)['state'], 'active')
+        current = next(s for s in self.board.snapshot()['suggestions'] if s['id'] == found[0]['id'])
+        self.assertEqual((current['status'], current['current']), ('applied', False))
+        self.assertEqual(self.board.accept_suggestion(found[0]['id'])['phase'], 'applied')
+        last = self.board.snapshot()['lastFact']
+        self.assertTrue(last['undoable']); self.board.undo(last['id'], 'undo-suggestion')
+        self.assertEqual(next(t for t in self.board.snapshot()['tasks'] if t['id'] == b)['state'], 'todo')
+
+    def test_snoozing_past_the_deadline_is_noted_with_an_earlier_time(self):
+        self.board.bridge = ReviewFixture()
+        uid = self.apply('task_add', {'title': 'File taxes', 'due': stamp(NOW + timedelta(days=3))})['result']['uuid']
+        self.apply('task_snooze', {'uuid': uid, 'until': stamp(NOW + timedelta(days=4))})
+        self.board.review_changes()
+        found = [s for s in self.board.snapshot()['suggestions'] if s['current']]
+        self.assertEqual([(s['code'], s['action']) for s in found], [('after_due', {'action': 'task_snooze', 'payload': {'uuid': uid, 'until': stamp(NOW + timedelta(days=2))}})])
+        self.board.dismiss_suggestion(found[0]['id'])
+        self.apply('task_update', {'uuid': uid, 'title': 'File the taxes'}); self.board.review_changes()
+        self.assertEqual([s['status'] for s in self.board.snapshot()['suggestions']], ['dismissed'])
+
+    def test_assistant_never_repeats_a_note_already_on_the_card(self):
+        fixture = ReviewFixture(); self.board.bridge = fixture
+        uid = self.apply('task_add', {'title': 'File taxes', 'due': stamp(NOW + timedelta(days=3))})['result']['uuid']
+        other = self.add('Call the accountant')
+        fixture.suggestions = [{'taskId': uid, 'message': 'It now comes back after its deadline.', 'action': None},
+                               {'taskId': other, 'message': 'You could call before filing.', 'action': None}]
+        self.apply('task_snooze', {'uuid': uid, 'until': stamp(NOW + timedelta(days=4))})
+        self.apply('task_update', {'uuid': other, 'priority': 'high'})
+        self.board.review_changes()
+        self.assertEqual(sorted((s['taskId'] == uid, s['origin']) for s in self.board.snapshot()['suggestions']), [(False, 'assistant'), (True, 'rules')])
+        self.apply('task_update', {'uuid': other, 'title': 'Call the accountant today'}); self.board.review_changes()
+        self.assertEqual(len([s for s in self.board.snapshot()['suggestions'] if s['taskId'] == other]), 1)
+
+    def test_suggestion_for_a_changed_task_cannot_be_accepted(self):
+        self.board.bridge = ReviewFixture()
+        a, b = self.add('A'), self.add('B')
+        self.apply('dependency_update', {'uuid': b, 'dependsOn': [a]}); self.apply('task_done', {'uuid': a})
+        self.board.review_changes()
+        found = next(s for s in self.board.snapshot()['suggestions'] if s['current'])
+        self.apply('task_snooze', {'uuid': b, 'until': stamp(NOW + timedelta(hours=2))})
+        with self.assertRaises(AssistantError) as error: self.board.accept_suggestion(found['id'])
+        self.assertEqual(error.exception.code, 'suggestion_stale')
+        self.assertEqual(next(t for t in self.board.snapshot()['tasks'] if t['id'] == b)['state'], 'snoozed')
+
+    def test_conversation_changes_undo_together_newest_first(self):
+        a, b = self.add('A'), self.add('B')
+        with self.app.store.connect() as con:
+            con.execute("INSERT INTO messages(key,role,text,status,at) VALUES('several','user','Start A and B','pending',?)", (self.app.now(),))
+        revision = self.app.store.revision()
+        applied = self.board.request_many([('front_activate', {'uuid': a}), ('front_activate', {'uuid': b}), ('front_retire', {'uuid': a})], 'several', 'Start A and B', revision, 0)
+        self.assertEqual([p['phase'] for p in applied], ['applied', 'applied', 'review'])
+        self.assertTrue(self.app.tasks.get(a).get('start') and self.app.tasks.get(b).get('start'))
+        self.assertEqual(self.app.tasks.get(a)['status'], 'pending')
+        undone = self.board.undo_message('several', 'undo-several')
+        self.assertEqual(len(undone), 2)
+        self.assertFalse(self.app.tasks.get(a).get('start') or self.app.tasks.get(b).get('start'))
+        with self.assertRaises(AssistantError) as error: self.board.undo_message('nothing', 'undo-nothing')
+        self.assertEqual(error.exception.code, 'fact_not_found')
+
+
+class InstantHttpTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='day-instant-http-')
+        self.app = Assistant(self.temp.name); Connected(self.app).initialize()
+        self.fixture = ReviewFixture()
+        self.delay = patch.object(web, 'FOLLOWUP_DELAY', 0.4); self.delay.start()
+        self.server = web.LocalServer(self.app, self.fixture)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True); self.thread.start()
+        with self.app.store.connect() as con:
+            self.ids = [json.loads(con.execute('SELECT result FROM operations WHERE key=?', (f'bootstrap-task-{i}',)).fetchone()[0])['uuid'] for i in range(4)]
+
+    def tearDown(self):
+        self.server.shutdown(); self.thread.join(5); self.server.server_close(); self.server.pool.shutdown(wait=True)
+        self.delay.stop(); self.temp.cleanup()
+
+    def post(self, path, body):
+        req = Request(self.server.origin + path, data=json.dumps(body).encode(),
+                      headers={'Content-Type': 'application/json', 'Origin': self.server.origin, 'Authorization': 'Bearer ' + self.server.token})
+        try:
+            with urlopen(req, timeout=10) as response: return response.status, json.load(response)
+        except HTTPError as error: return error.code, json.load(error)
+
+    def state(self):
+        req = Request(self.server.origin + '/api/state', headers={'Authorization': 'Bearer ' + self.server.token})
+        with urlopen(req, timeout=10) as response: return json.load(response)['data']
+
+    def wait(self, predicate):
+        for _ in range(100):
+            data = self.state()
+            if predicate(data): return data
+            time.sleep(.05)
+        self.fail('Timed out waiting for the later review')
+
+    def test_quick_changes_apply_at_once_and_share_one_later_review(self):
+        for index, action in enumerate(('front_activate', 'front_todo', 'front_activate')):
+            started = time.perf_counter()
+            status, body = self.post('/api/proposals', {'action': action, 'payload': {'uuid': self.ids[2]}, 'key': f'quick-{index}'})
+            self.assertEqual((status, body['data']['phase']), (200, 'applied'))
+            self.assertLess(time.perf_counter() - started, 3.0)
+        self.assertEqual(self.fixture.turns, 0)
+        data = self.wait(lambda d: d['review']['pending'] == 0 and d['review']['status'] == 'completed')
+        self.assertEqual(self.fixture.turns, 1)
+        self.assertEqual(data['lastFact']['action'], 'front_activate')
+        time.sleep(.6); self.assertEqual(self.fixture.turns, 1)
+
+    def test_rejection_is_a_409_with_its_code(self):
+        status, body = self.post('/api/proposals', {'action': 'dependency_update', 'payload': {'uuid': self.ids[1], 'dependsOn': [self.ids[1]]}, 'key': 'self-cycle'})
+        self.assertEqual((status, body['error']['code']), (409, 'dependency_cycle'))
+
+    def test_suggestion_and_message_undo_routes(self):
+        self.post('/api/proposals', {'action': 'dependency_update', 'payload': {'uuid': self.ids[2], 'dependsOn': [self.ids[1]]}, 'key': 'link'})
+        self.post('/api/proposals', {'action': 'task_done', 'payload': {'uuid': self.ids[1]}, 'key': 'finish'})
+        data = self.wait(lambda d: any(s['current'] for s in d['suggestions']))
+        suggestion = next(s for s in data['suggestions'] if s['current'])
+        self.assertEqual((suggestion['taskId'], suggestion['code']), (self.ids[2], 'unblocked'))
+        status, body = self.post('/api/suggestions/' + suggestion['id'] + '/accept', {})
+        self.assertEqual((status, body['data']['phase']), (200, 'applied'))
+        status, body = self.post('/api/suggestions/' + suggestion['id'] + '/dismiss', {})
+        self.assertEqual((status, body['data']['status']), (200, 'applied'))
+        self.assertEqual(self.post('/api/suggestions/' + suggestion['id'] + '/accept', {'extra': 1})[0], 400)
+        status, body = self.post('/api/undo', {'message_key': 'unknown', 'key': 'undo-unknown'})
+        self.assertEqual((status, body['error']['code']), (409, 'fact_not_found'))
+
+
+if __name__ == '__main__':
+    unittest.main()

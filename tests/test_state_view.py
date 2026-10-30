@@ -33,10 +33,7 @@ class StateViewTests(unittest.TestCase):
 
     def apply(self, action, payload):
         self.counter += 1
-        proposal = self.board.request(action, payload, f'view-{self.counter}')
-        if proposal['phase'] == 'evaluating':
-            self.board.evaluate(proposal['id'])
-        return self.board.proposal(proposal['id'])
+        return self.board.request(action, payload, f'view-{self.counter}')
 
     def toggle(self, times):
         for i in range(times):
@@ -61,15 +58,17 @@ class StateViewTests(unittest.TestCase):
         summary = self.board.view()['events'][0]
         self.assertEqual(summary['id'], fact['id'])
         self.assertEqual(summary['taskId'], self.ids[1])
-        self.assertEqual(summary['undoable'], bool(plan['steps']) and all(k == 'attachments_link' for k in plan['effect']))
+        self.assertEqual(summary['undoable'], Connected._undoable(plan))
         self.assertTrue(summary['undoable'])
-        self.assertTrue(summary['reviewComplete'])
-        undo = self.board.undo(fact['id'], 'view-undo')
-        self.board.evaluate(undo['id'])
+        # Applied at once; the assistant's later look is still to come.
+        self.assertEqual((summary['reviewStatus'], summary['reviewComplete']), ('deferred', False))
+        self.assertEqual(self.board.view()['lastFact'], summary)
+        self.board.undo(fact['id'], 'view-undo')
         self.assertEqual(self.board.view()['events'][0]['undoOf'], fact['id'])
 
     def test_pending_and_cited_proposals_stay_visible(self):
-        pending = self.board.request('task_update', {'uuid': self.ids[2], 'title': 'Pending title'}, 'view-pending')
+        # Retiring from the conversation is the one change that waits for the person.
+        pending = self.board.request('front_retire', {'uuid': self.ids[2]}, 'view-pending', origin='chat')
         cited = self.apply('task_update', {'uuid': self.ids[3], 'title': 'Cited title'})
         with self.app.store.connect() as con:
             con.execute("INSERT INTO messages(key,role,text,status,data,at) VALUES('chat-1:assistant','assistant','Saved.','completed',?,?)",
@@ -77,20 +76,18 @@ class StateViewTests(unittest.TestCase):
         self.toggle(RECENT_PROPOSALS + 5)
         ids = {p['id']: p for p in self.board.view()['proposals']}
         self.assertIn(ids[pending['id']]['phase'], PENDING)
-        self.assertEqual(ids[pending['id']]['intent']['payload']['title'], 'Pending title')
+        self.assertEqual(ids[pending['id']]['intent']['action'], 'front_retire')
         self.assertEqual(ids[cited['id']]['phase'], 'applied')
 
     def test_internal_history_matches_recorded_plans(self):
         self.toggle(5)
         self.apply('task_update', {'uuid': self.ids[1], 'priority': 'low'})
-        for uid in self.ids[:2]:
-            # A second read reuses the cached fact targets.
-            for _ in range(2):
-                proposal = {'id': 'probe', 'key': 'probe', 'intent': {'action': 'task_done', 'payload': {'uuid': uid}}, 'generation': 0, 'origin': 'ui', 'request_text': ''}
-                history = self.board._input(proposal)['evidence']['history.confirmed']
-                expected = [{'action': f['action'], 'at': f['at']} for f in self.board.snapshot()['events'] if json.loads(f['plan']).get('target_uuid') == uid][-8:]
-                self.assertEqual(history, expected)
-                self.assertTrue(history)
+        recorded = [(f['id'], f['action'], json.loads(f['plan']).get('target_uuid')) for f in self.board.snapshot()['events']]
+        # A second read reuses the cached fact targets.
+        for _ in range(2):
+            internal = [(f['id'], f['action'], f['target_uuid']) for f in self.board._snapshot()['events']]
+            self.assertEqual(internal, recorded)
+        self.assertEqual({target for *_, target in internal}, set(self.ids[:2]))
 
     def test_compact_dates_parse_like_strptime(self):
         def reference(value):
@@ -126,8 +123,7 @@ class StateRouteTests(unittest.TestCase):
             self.uid = json.loads(con.execute("SELECT result FROM operations WHERE key='bootstrap-task-1'").fetchone()[0])['uuid']
         board = self.server.board
         for i in range(6):
-            proposal = board.request('front_activate' if i % 2 == 0 else 'front_todo', {'uuid': self.uid}, f'route-{i}')
-            board.evaluate(proposal['id'])
+            board.request('front_activate' if i % 2 == 0 else 'front_todo', {'uuid': self.uid}, f'route-{i}')
 
     def tearDown(self):
         self.server.shutdown()

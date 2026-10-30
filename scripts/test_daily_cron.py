@@ -34,7 +34,7 @@ def main():
         from datetime import timedelta
         sys.path.insert(0,str(ROOT/'tests'))
         from test_connected import ReviewFixture
-        board=Connected(app,ReviewFixture());p=board.request('task_add',{'title':'[ACCEPTANCE] Private cron reminder','due':(app.clock()-timedelta(minutes=5)).isoformat()},'cron-known-task');board.evaluate(p['id'])
+        board=Connected(app,ReviewFixture());p=board.request('task_add',{'title':'[ACCEPTANCE] Private cron reminder','due':(app.clock()-timedelta(minutes=5)).isoformat()},'cron-known-task')
         installed=False
         try:
             start=time.monotonic()

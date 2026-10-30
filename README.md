@@ -60,8 +60,8 @@ an open UI or LLM session. Open the UI on demand with `service open`.
   widths), draws connecting lines; Escape clears it. Details shows both directions.
   Completing a prerequisite unlocks dependents without starting them. Retiring it
   does not fulfill it. Cycles and missing references are rejected.
-- Add and edit calendar commitments in the same interface. Relevant calendar changes
-  invalidate pending reviews; expired event reminders are not replayed after absence.
+- Add and edit calendar commitments in the same interface. A snooze that resumes during
+  a commitment is noted on its card; expired event reminders are not replayed after absence.
 - Capture several unambiguous items from text or any number of selected PNG/JPEG/WebP
   images. Day Attendant sets no message or image size cap; a provider limit appears
   as that turn's visible error. Each item has its own durable proposal and outcome. Ambiguous dates or
@@ -78,10 +78,14 @@ an open UI or LLM session. Open the UI on demand with `service open`.
   same group. Newest and Suggested accept no drops. A suggestion is computed only when
   you ask for it, and is reused until you ask again.
 
-The model interprets and reviews; the coordinator writes. Concrete consequences are
-shown before applying a risky change. Missing or failed reasoning is visible, never
-an implicit approval. Explicit continuation without a complete review is audited.
-Technical invalidity cannot be bypassed by acknowledging a consequence.
+Every typed change applies at once, after the service checks it (fields, UUIDs, the
+observed revision, cycles and references), and shows Undo. Nothing waits for the model.
+Once you pause for a moment the assistant looks at what changed and, if it notices
+something, leaves a discreet mark on that card with a suggestion you can apply or ignore;
+it never blocks, applies or undoes anything by itself. Retiring is the one change that
+asks for confirmation. The model interprets and suggests; the coordinator writes.
+Missing or failed reasoning is visible and never blocks a change. Technical invalidity
+is rejected at once.
 
 ## Harnesses and portable continuity
 
@@ -93,12 +97,12 @@ selects the harness default once and saves the resolved identifier.
 Codex offers the levels its catalog lists for the model; Claude Code offers low,
 medium, high, xhigh and max. An unset level uses medium on Claude Code; on Codex it
 uses medium when the model offers it, otherwise the model's default level. A model turn
-may take up to 2 minutes at minimal, low or medium, 5 at high, 10 at xhigh and 15 at max,
-and a contextual review stays valid for the same time unless relevant state changes.
-Starting the service or changing these settings sends no model request; tokens are spent
-only by conversation messages, contextual reviews, an order suggestion you request and
-the informational guidance after a context correction. Switching views or rearranging
-cards spends none. There is no silent provider/model/account fallback or automatic
+may take up to 2 minutes at minimal, low or medium, 5 at high, 10 at xhigh and 15 at max;
+a later review that takes longer keeps only the known-data notes. Starting the service or
+changing these settings sends no model request; tokens are spent only by conversation
+messages, the later review of changes you made (one turn after each pause, none without
+changes) and an order suggestion you request. Switching views or rearranging cards spends
+none. There is no silent provider/model/account fallback or automatic
 credit activation. The Claude adapter requires the CLI's restricted safe-mode print
 and structured-output capabilities; the tested installation is 2.1.312.
 

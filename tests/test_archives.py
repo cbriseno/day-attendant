@@ -21,7 +21,7 @@ class ArchiveTests(DailyBase):
         a,b=self.add('Responsabilidad humana'),self.add('Other card')
         self.apply('dependency_update',{'uuid':b,'dependsOn':[a]});self.apply('related_update',{'uuid':a,'relatedTo':[b]})
         self.apply('continuity_update',{'uuid':a,'context':'Seguir aquí','next':'Abrir borrador'})
-        pending=self.request('front_activate',{'uuid':a})
+        pending=self.waiting_retire(a)
         (self.app.store.path/'ui-server.json').write_text('PRIVATE-TOKEN')
         backup=archives.snapshot(self.app,self.folder,key='backup-once');again=archives.snapshot(self.app,self.folder,key='backup-once')
         self.assertEqual(backup,again);self.assertIsNone(self.app.store.state_value('maintenance'))

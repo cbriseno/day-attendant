@@ -74,7 +74,8 @@ class WebTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(json.loads(result.stdout)['data']['id'],identity)
         with self.app.store.connect() as con:
             self.assertEqual(con.execute('SELECT count(*) FROM facts').fetchone()[0],1)
-            self.assertEqual(con.execute('SELECT count(*) FROM evaluations').fetchone()[0],1)
+            # Applied in its request; nothing waited for a model review.
+            self.assertEqual(con.execute('SELECT count(*) FROM evaluations').fetchone()[0],0)
         bypass=subprocess.run([sys.executable,'-B','day-attendant.py','--json','--state',self.temp.name,'task','done',self.uid,'--key','bypass'],cwd=ROOT,capture_output=True,text=True,timeout=15)
         self.assertEqual(bypass.returncode,2);self.assertEqual(json.loads(bypass.stdout)['error']['code'],'proposal_required')
         self.assertEqual(self.app.tasks.get(self.uid)['status'],'pending')

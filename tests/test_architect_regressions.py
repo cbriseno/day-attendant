@@ -24,16 +24,18 @@ class ArchitectRegressions(DailyBase):
         self.output=tempfile.TemporaryDirectory(prefix='day-architect-regression-')
     def tearDown(self):self.output.cleanup();super().tearDown()
     def interrupted(self,action,payload,point='after_admission'):
-        p=self.request(action,payload)
         self.app.fault=lambda at:(_ for _ in ()).throw(RuntimeError('simulated process loss')) if at==point else None
-        self.board.evaluate(p['id']);self.app.fault=lambda at:None
-        self.assertTrue(self.app.store.unresolved());return p
+        with self.assertRaises(RuntimeError):self.request(action,payload)
+        self.app.fault=lambda at:None
+        self.assertTrue(self.app.store.unresolved())
+        with self.app.store.connect() as con:return self.board.proposal(con.execute('SELECT id FROM proposals ORDER BY rowid DESC LIMIT 1').fetchone()[0])
     def test_second_preexisting_proposal_cannot_bypass_partial_operation(self):
-        a,b=self.add('A'),self.add('B');second=self.request('front_activate',{'uuid':b})
-        with self.app.store.connect() as con:con.execute("UPDATE proposals SET phase='ready' WHERE id=?",(second['id'],))
+        a,b=self.add('A'),self.add('B');second=self.waiting_retire(b)
         first=self.interrupted('front_activate',{'uuid':a},'after_task_0');revision=self.app.store.revision()
         with self.assertRaises(AssistantError) as error:self.board.confirm(second['id'],second['generation'])
-        self.assertEqual(error.exception.code,'recovery_required');self.assertEqual(self.app.store.revision(),revision);self.assertFalse(self.app.tasks.get(b).get('start'))
+        self.assertEqual(error.exception.code,'recovery_required');self.assertEqual(self.app.store.revision(),revision);self.assertEqual(self.app.tasks.get(b)['status'],'pending')
+        with self.assertRaises(AssistantError) as error:self.request('front_activate',{'uuid':b})
+        self.assertEqual(error.exception.code,'recovery_required');self.assertFalse(self.app.tasks.get(b).get('start'))
         self.assertEqual(len(self.app.store.unresolved()),1);self.app.recover();self.assertEqual(self.app.store.unresolved(),[])
     def test_recovery_rechecks_native_prerequisite_read_set(self):
         a,b=self.add('Prerequisite'),self.add('Dependent');self.apply('dependency_update',{'uuid':b,'dependsOn':[a]});self.apply('task_done',{'uuid':a})
@@ -65,14 +67,14 @@ class ArchitectRegressions(DailyBase):
         # Invalid ID is irrelevant: maintenance must be checked before evaluation.
         return '00000000-0000-0000-0000-000000000000'
     def test_ready_without_admission_is_visible_and_retriable_after_restart(self):
-        uid=self.add('Pending');p=self.request('front_activate',{'uuid':uid})
-        with self.app.store.connect() as con:con.execute("UPDATE proposals SET phase='ready' WHERE id=?",(p['id'],))
+        uid=self.add('Pending');p=self.legacy_pending('front_activate',{'uuid':uid},'ready')
         self.board.startup();current=self.board.proposal(p['id']);self.assertEqual(current['phase'],'unavailable');self.assertFalse(self.app.tasks.get(uid).get('start'))
-        retried=self.board.retry(p['id']);self.board.evaluate(retried['id']);self.assertTrue(self.app.tasks.get(uid).get('start'))
+        retried=self.board.retry(p['id']);self.assertEqual(retried['phase'],'applied');self.assertTrue(self.app.tasks.get(uid).get('start'))
     def test_reopen_blocks_dependents_without_removing_active_front(self):
         a,b=self.add('A'),self.add('B');self.apply('dependency_update',{'uuid':b,'dependsOn':[a]});self.apply('task_done',{'uuid':a});self.apply('front_activate',{'uuid':b})
-        p=self.request('task_reopen',{'uuid':a});self.board.evaluate(p['id']);p=self.board.proposal(p['id']);self.assertEqual(p['phase'],'review');self.board.confirm(p['id'],p['generation'])
+        self.apply('task_reopen',{'uuid':a})
         dependent=next(t for t in self.board.snapshot()['tasks'] if t['id']==b);self.assertTrue(dependent['blocked']);self.assertEqual(dependent['state'],'active')
+        self.board.review_changes();self.assertEqual(self.current_suggestions(),[(b,'active_blocked',{'action':'front_activate','payload':{'uuid':a}})])
 
     def enable_delivery(self):
         policy=self.app.store.state_value('notification_policy');policy.update(weekdays=list(range(7)),start='00:00',end='23:59',quietStart='00:00',quietEnd='00:00')
@@ -113,15 +115,15 @@ class ArchitectRegressions(DailyBase):
         other=dict(intent,title='Beta');fixture=ChatFixture({'message':'Will check both.','uncertainties':[],'intent':intent,'additionalIntents':[other],'unprocessed':[]})
         entered=threading.Event();release=threading.Event();native_turn=fixture.turn
         def blocked(*args,**kwargs):
-            if 'intent' not in args[2]['properties']:entered.set();release.wait(5)
+            entered.set();release.wait(5)
             return native_turn(*args,**kwargs)
         fixture.turn=blocked;self.board.bridge=fixture;chat=Conversation(self.board);chat.submit(text,'batch-maintenance')
         worker=threading.Thread(target=chat.run,args=('batch-maintenance',));worker.start();self.assertTrue(entered.wait(3))
         with archives.maintenance(self.app,'batch-test'):
-            release.set();worker.join(5);self.assertFalse(worker.is_alive());self.assertEqual(fixture.calls,2)
-            self.assertEqual(self.app.tasks.rows(),[]);self.assertTrue(all(p['phase']=='stale' for p in self.board.snapshot()['proposals']))
-        self.assertEqual(fixture.calls,2)
-    def test_informational_guidance_never_uses_previous_selected_provider(self):
+            release.set();worker.join(5);self.assertFalse(worker.is_alive());self.assertEqual(fixture.calls,1)
+            self.assertEqual(self.app.tasks.rows(),[]);self.assertEqual(self.board.snapshot()['proposals'],[])
+        self.assertEqual(self.app.tasks.rows(),[]);self.assertEqual(fixture.calls,1)
+    def test_later_review_never_uses_previous_selected_provider(self):
         a,b=self.add('A'),self.add('B')
         for uid in (a,b):
             self.apply('task_update',{'uuid':uid,'due':stamp(NOW+timedelta(hours=2))});self.apply('continuity_update',{'uuid':uid,'remainingMinutes':40});self.apply('front_activate',{'uuid':uid})
@@ -129,7 +131,8 @@ class ArchitectRegressions(DailyBase):
         self.board.bridge.provider='codex';configure(self.app,{'harness':'claude'},'provider-change')
         self.apply('continuity_update',{'uuid':a,'remainingMinutes':50})
         with patch.object(self.board.bridge,'turn',side_effect=AssertionError('Wrong harness turn')) as turn:
-            self.board.evaluate_notices();self.assertEqual(turn.call_count,0)
-        self.assertFalse(any(m['status']=='completed' and m['key'].startswith('context-notice:') for m in self.board.snapshot()['messages']))
+            self.board.review_changes();self.assertEqual(turn.call_count,0)
+        self.assertEqual(self.board.snapshot()['review']['code'],'agent_restart_required')
+        self.assertEqual([s['code'] for s in self.board.snapshot()['suggestions'] if s['current']],['capacity'])
 
 if __name__=='__main__':import unittest;unittest.main()

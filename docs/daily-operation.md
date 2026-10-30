@@ -11,9 +11,9 @@ Python/SQLite task backend.
 profile. Start is idempotent and the kernel lifetime lock permits one server/profile.
 Open starts if needed and obtains a private authenticated loopback URL. Session
 credentials rotate on restart; use `service open` again. Supervised logs contain the
-origin, never the authentication fragment. A missing harness leaves the UI available
-for diagnostics and typed declarations. Reasoning-dependent actions show incomplete
-review and require explicit continuation or retry.
+origin, never the authentication fragment. A missing harness leaves every typed change
+working; only the conversation, the model's follow-up suggestions and order suggestions
+wait for it. Known-data notes still appear on the affected cards.
 
 Run `scheduler install` after reviewing Settings. Linux chooses a usable systemd user
 manager, otherwise cron. macOS installs a user LaunchAgent. Jobs execute `tick`, which
@@ -72,19 +72,34 @@ missing from it follow by priority. `board suggest` asks the selected model once
 suggested order (`orderSuggestion`); `stale` means tasks or context changed since.
 Requesting it again with the same key reuses the stored result.
 
-`board list` returns current proposal phases and individual outcomes. A batch is not
-one all-or-nothing business transaction: its interpretations are validated/persisted
-together, then each item is independently reviewed/admitted. Some may save while
-others need clarification. Retrying transport keeps the same request identity and
+`board request` applies a valid change in the same call (phase `applied`) or rejects it
+with a stable code (`dependency_cycle`, `invalid_uuid`, `task_not_found`,
+`stale_revision`…); no model reviews it first. `board list` returns current proposal
+phases and individual outcomes. A batch is not one all-or-nothing business transaction:
+its interpretations are validated/persisted together, then each item applies in order
+against the state the previous one left. Some may save while others no longer apply
+(phase `invalid` with its code). Retrying transport keeps the same request identity and
 does not create a new batch. An incomplete message with durable proposals reuses them.
 
-Use `board confirm ID --generation N` only after the human approves the specific
-current consequence. `--without-review` explicitly acknowledges missing reasoning;
-it cannot override cycles, broken UUIDs, failed preconditions or external conflicts.
-Use `board retry ID` to reevaluate current context, and `board cancel ID` to discard
-a pending intent. Undo is available only for eligible existing-task native changes;
-metadata declarations, creations and calendar changes are not falsely advertised as
-universally undoable.
+Only a retire interpreted from the conversation waits (phase `review`). Use
+`board confirm ID --generation N` only after the human confirms that retire;
+`--without-review` is accepted for compatibility and changes nothing. Use
+`board retry ID` to apply a change an earlier version left waiting, or to ask again
+about a stale retire, and `board cancel ID` to discard it.
+
+`board undo FACT_ID --key KEY` restores exactly what a fact replaced and refuses with
+`undo_conflict` when a later change touched the same data. It covers task changes,
+captures (the new task is retired, never erased), order, available time and rest,
+effort and continuity, related links, and calendar additions and edits; it does not
+cover calendar cancellations, provenance or recorded progress. `board undo-message
+MESSAGE_KEY --key KEY` undoes every change one conversation message applied, newest
+first.
+
+After a pause of a few seconds the service looks at new facts and records suggestions,
+listed under `suggestions` in `board list` (`current` while their facts still hold) with
+the review state under `review`. `board accept ID` applies a suggested change as a typed
+request, with Undo; `board dismiss ID` hides it for good. Neither the review nor a
+suggestion ever changes a task by itself.
 
 ## Settings and notification policy
 

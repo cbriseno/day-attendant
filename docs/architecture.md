@@ -9,9 +9,21 @@ relations, messages, proposals, authorization, facts and delivery receipts.
 Codex app-server and Claude Code CLI implement the same inference interface with a
 selected model and reasoning level. Each turn uses a fresh native session; the model
 receives profile facts, the current conversation since `/clear` and selected images, has no external task-writing
-tools, and returns typed interpretations/reviews. The selected harness/model is
-validated for every conversation, proposal and informational-guidance turn. Epochs,
-generations, fingerprints and native read/write guards prevent stale application.
+tools, and returns typed interpretations and follow-up suggestions. The selected
+harness/model is validated for every turn. Epochs, generations, fingerprints and native
+read/write guards prevent stale application.
+
+A typed change is validated deterministically (schema, UUIDs, `--expect`, cycles,
+references) and admitted and applied in its own request, with no model turn first. Each
+fact keeps the values it replaced, so Undo restores them and refuses when a later change
+touched the same data. After a pause in activity the service looks at the new facts:
+known-data rules note consequences (an unblocked dependent, a resume after the deadline
+or during a commitment, active work that still waits, a capacity overflow) and the
+selected model may add grounded suggestions about the changed responsibilities. That
+review runs outside every request and outside the writer lock, writes only suggestions
+tied to a task and to the facts they relied on, and never blocks, applies or undoes a
+change. Without new facts it spends no model turn. A conversation's interpreted changes
+apply the same way; only a retire from the conversation waits for the person.
 
 Pending interpretations are not executable operations. Admission records a decision,
 operation and admitted transition together. An incomplete executable operation prevents

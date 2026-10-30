@@ -17,7 +17,7 @@ from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .harnesses import create_harness,discover_catalog
-from .connected import Connected
+from .connected import Connected, FOLLOWUP_DELAY
 from .conversation import Conversation
 from .errors import AssistantError
 from .service import Assistant, encoded
@@ -37,15 +37,30 @@ class LocalServer(ThreadingHTTPServer):
         self.token=secrets.token_urlsafe(32)
         self.harness_lock=threading.Lock()
         self.catalogs={}
+        self.review_lock=threading.Lock()
+        self.review_timer=None
         super().__init__(("127.0.0.1",port),Handler)
         self.origin=f"http://127.0.0.1:{self.server_port}"
 
-    def schedule(self, proposal):
-        if proposal['phase']=='evaluating':self.pool.submit(self.board.evaluate,proposal['id'])
-        self.pool.submit(self.board.evaluate_notices)
+    def schedule(self, result=None):
+        """Changes apply in their own request; the assistant looks at them once activity pauses."""
+        def review():
+            try:self.pool.submit(self.board.review_changes)
+            except RuntimeError:pass  # The service is stopping.
+        with self.review_lock:
+            if self.review_timer:self.review_timer.cancel()
+            self.review_timer=threading.Timer(FOLLOWUP_DELAY,review)
+            self.review_timer.daemon=True
+            self.review_timer.start()
+
+    def run_chat(self, key):
+        try:self.chat.run(key)
+        finally:self.schedule()
 
     def server_close(self):
         super().server_close()
+        with self.review_lock:
+            if self.review_timer:self.review_timer.cancel()
         self.pool.shutdown(wait=False,cancel_futures=True)
 
     def models(self):
@@ -183,16 +198,24 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.schedule(result)
             elif match:=re.fullmatch(r'/api/proposals/([a-f0-9-]+)/(?P<action>confirm|cancel|retry)',self.path):
                 identity=match[1];action=match['action']
-                if action=='confirm':result=board.confirm(identity,body['generation'],without_review=body.get('without_review',False) is True)
+                if action=='confirm':result=board.confirm(identity,body['generation'],without_review=body.get('without_review',False) is True);self.server.schedule(result)
                 elif action=='cancel':result=board.cancel(identity)
                 else:
                     result=board.retry(identity);self.server.schedule(result)
             elif self.path=='/api/undo':
-                result=board.undo(int(body['fact_id']),body['key'],body.get('expected_revision'));self.server.schedule(result)
+                if 'message_key' in body:
+                    if set(body)-{'message_key','key','expected_revision'}:raise ValueError('fields')
+                    result=board.undo_message(body['message_key'],body['key'],body.get('expected_revision'))
+                else:result=board.undo(int(body['fact_id']),body['key'],body.get('expected_revision'))
+                self.server.schedule(result)
+            elif match:=re.fullmatch(r'/api/suggestions/([a-f0-9-]+)/(?P<action>accept|dismiss)',self.path):
+                if set(body)-{'key'}:raise ValueError('fields')
+                if match['action']=='accept':result=board.accept_suggestion(match[1]);self.server.schedule(result)
+                else:result=board.dismiss_suggestion(match[1])
             elif self.path=='/api/chat':
                 if set(body)-{'text','key','attachments','capture_only'}:raise ValueError('fields')
                 result=self.server.chat.submit(body['text'],body['key'],body.get('attachments'),body.get('capture_only',False))
-                if result['status']=='pending':self.server.pool.submit(self.server.chat.run,body['key'])
+                if result['status']=='pending':self.server.pool.submit(self.server.run_chat,body['key'])
             elif self.path=='/api/suggestion':
                 if set(body)!={'key'}:raise ValueError('fields')
                 result=board.request_suggestion(body['key'])
@@ -203,7 +226,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path=='/api/chat/retry':
                 if set(body)!={'key'}:raise ValueError('fields')
                 result=self.server.chat.retry(body['key'])
-                if result['status']=='pending':self.server.pool.submit(self.server.chat.run,body['key'])
+                if result['status']=='pending':self.server.pool.submit(self.server.run_chat,body['key'])
             elif self.path=='/api/settings':
                 if set(body)-{'values','key','expected_revision'}:raise ValueError('fields')
                 result=configure(board.app,body['values'],body['key'],body.get('expected_revision'))
@@ -265,6 +288,7 @@ def serve(state,port=0,zone=None,kind=None,supervised=False):
         receipt=app.store.path/'ui-server.json'
         try:
             server.configure_harness()
+            server.schedule()  # Changes left unreviewed by a restart; without any, no model runs.
             fd=os.open(receipt,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
             with os.fdopen(fd,'w') as f:json.dump({'origin':server.origin,'token':server.token,'pid':os.getpid(),'profile_id':app.store.state_value('profile')['id']},f)
             print(server.origin if supervised else server.origin+'/#session='+server.token,flush=True)
