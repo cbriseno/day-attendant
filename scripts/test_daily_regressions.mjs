@@ -783,7 +783,8 @@ try{
   const soon=hours=>new Date(Date.parse(state.now)+hours*3600000).toISOString(),dentist={uuid:randomUUID(),title:'Dentist',start_at:soon(24),end_at:soon(25)};
   state.calendar_events=[dentist];state.revision++;await refresh();
   const agenda="[...document.querySelectorAll('#calendar-area .daily-row .link-button')].map(b=>b.textContent)";
-  assert.deepEqual(await evaluate(agenda),['Dentist']);
+  // A read can be dropped while the previous block's sends settle; the next one shows the commitment.
+  await wait(`${agenda}.length===1`);assert.deepEqual(await evaluate(agenda),['Dentist']);
   let releaseCancel;const cancelGate=new Promise(r=>releaseCancel=r);
   server.removeAllListeners('request');server.on('request',async(req,res)=>{if(req.url==='/api/proposals')await cancelGate;return original(req,res)});
   await click('#calendar-area .daily-row .btn');await wait(`${agenda}.length===0`);assert.equal(state.calendar_events.length,1);
