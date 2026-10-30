@@ -16,7 +16,8 @@ await page.eval(async()=>{
 });
 
 console.log(JSON.stringify(await page.eval(`(async()=>{const [a,b,c,d,e]=u8ids;const {check,task,drag,saved,select,click,wait}=u8test;
- drag(a,b);check('create shown synchronously',task(b).dependsOn.includes(a));await saved();
+ drag(a,b);check('create shown synchronously',task(b).dependsOn.includes(a));check('the linking style waits for the change to show',document.body.classList.contains('linking'));await saved();
+ await new Promise(r=>setTimeout(r,260));check('the linking style leaves after the release',!document.body.classList.contains('linking'));
  drag(a,c);check('preserve existing prerequisite',task(c).dependsOn.includes(a)&&task(c).dependsOn.includes(b));await saved();
  const count=u8.posts;drag(c,a);check('cycle refused before saving',u8.posts===count&&!task(a).dependsOn.length);drag(a,b);check('duplicate refused before saving',u8.posts===count);drag(a,a);check('self link refused before saving',u8.posts===count);
  await new Promise(r=>setTimeout(r,30));select(a,c);click('[data-line="type"]');check('related shown synchronously',task(a).relatedTo.includes(c)&&task(c).relatedTo.includes(a)&&task(c).dependsOn.includes(b)&&!task(c).dependsOn.includes(a));await saved();

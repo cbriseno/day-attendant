@@ -409,7 +409,9 @@ function moveConnect(){const d=connectDrag;if(!d)return;d.frame=0;const box=$('b
  const b={x:d.x-box.left,y:d.y-box.top};d.path=curve(a,b,$('board').classList.contains('is-list')||Math.abs(b.x-a.x)<60);
  const over=rowAt(d.x,d.y);for(const c of $('board').querySelectorAll('.connect-target'))if(c!==over)c.classList.remove('connect-target');if(over&&over.dataset.taskId!==d.from)over.classList.add('connect-target');
  drawDependencies()}
-function finishConnect(e,commit){const d=connectDrag;if(!d)return;connectDrag=null;cancelAnimationFrame(d.frame);document.body.classList.remove('linking');
+function finishConnect(e,commit){const d=connectDrag;if(!d)return;connectDrag=null;cancelAnimationFrame(d.frame);
+ // This class restyles the whole page, so it leaves after the release has shown its change.
+ setTimeout(()=>{if(!connectDrag)document.body.classList.remove('linking')},DURATION);
  for(const c of $('board').querySelectorAll('.connect-target'))c.classList.remove('connect-target');setTimeout(()=>swallowClick=false);
  const to=commit?rowAt(e.clientX,e.clientY)?.dataset.taskId:null;
  if(to&&d.retarget){if(retargetLink(d.retarget,to))selectedLink=null}else if(to)addLink(d.from,to);
@@ -837,14 +839,14 @@ function finishDrag(commit){
  const d=drag;if(!d)return;if(d.frame){cancelAnimationFrame(d.frame);d.frame=0;if(commit&&d.active){moveGhost(d.px,d.py);placeCard(d.px,d.py)}}drag=null;clearTimeout(d.timer);cancelAnimationFrame(scrollFrame);cardOf(d.id)?.classList.remove('pressing');
  if(!d.active){if(d.touch&&d.armed&&commit){swallowClick=true;openMenu(d.id,'more',{x:d.x,y:d.y})}return}
  // The release's own click comes in the same task; nothing after it is swallowed.
- $('board').classList.remove('is-dragging');setTimeout(()=>swallowClick=false);
+ setTimeout(()=>swallowClick=false);
  for(const l of $('board').querySelectorAll('.lane.drop-target'))l.classList.remove('drop-target');
  if(!(commit&&dropCard(d)))render();
  // The lifted copy lands on the card's place, wherever the drop or its refusal left it.
  const card=cardOf(d.id)||d.card;card.getAnimations().forEach(a=>a.finish());
  const hidden=!card.getClientRects().length,rect=(hidden?card.closest('.lane')?.querySelector('.lane-heading')||card:card).getBoundingClientRect(),at=inLayer(rect.left,rect.top),ghost=d.ghost;
- // The cursor class restyles the whole page, so it leaves once the card has landed, not while the drop is saved.
- const landed=()=>{ghost.remove();if(!drag)document.body.classList.remove('dragging-task');for(const c of new Set([card,cardOf(d.id)]))if(c){c.classList.remove('placeholder');c.style.removeProperty('height')}};
+ // The drag classes restyle the whole page, so they leave once the card has landed, not while the drop is saved.
+ const landed=()=>{ghost.remove();if(!drag){$('board').classList.remove('is-dragging');document.body.classList.remove('dragging-task')}for(const c of new Set([card,cardOf(d.id)]))if(c){c.classList.remove('placeholder');c.style.removeProperty('height')}};
  if(!moving()){landed();return}
  ghost.animate([{transform:ghost.style.transform},{transform:'translate('+at.x+'px,'+at.y+'px)',...(hidden?{opacity:0}:{})}],{duration:DURATION,easing:EASE,fill:'forwards'}).onfinish=landed;
 }
