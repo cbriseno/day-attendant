@@ -56,12 +56,14 @@ try {
  record('responsive-localized-layouts',{all24NoPageOverflow:layouts.length===24},{layouts});
  await rpc('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});await control('#locale-choice','en');await control('#theme-choice','dark');await sync();
  if(await evaluate("document.querySelector('#chat-toggle').getAttribute('aria-expanded')==='true'"))await clickSelector('#chat-close');
- await clickSelector(action(ids[1],'detail'));
- const opened=await evaluate("document.querySelector('#estimate-input').value");
+ // The estimate is edited in the expanded row; another client's correction of the same field is never overwritten.
+ await evaluate(`dayUI.expandTask(${JSON.stringify(ids[1])})`);const field=`[data-task-id="${ids[1]}"] [data-field="remainingMinutes"]`;
+ const opened=await evaluate(`document.querySelector(${JSON.stringify(field)}).value`),draft=String(Number(opened||0)+7);
+ await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(field)});e.focus();e.value=${JSON.stringify(draft)};e.dispatchEvent(new Event('input',{bubbles:true}))})()`);
  await api('/api/proposals',{action:'continuity_update',payload:{uuid:ids[1],remainingMinutes:10},key:'stale-editor-correction-'+report.run_id});await sync();
- await clickSelector('#estimate-save');await pause(300);
- const afterConflict=await snap();record('stale-estimate-form-preserves-correction-and-draft',{otherClientEstimatePreserved:afterConflict.tasks.find(t=>t.id===ids[1]).remainingMinutes===10,oldDraftPreserved:await evaluate("document.querySelector('#estimate-input').value")===opened,conflictVisible:await evaluate("!document.querySelector('#estimate-error').hidden && /reopen/i.test(document.querySelector('#estimate-error').textContent)"),dialogRemainsOpen:await evaluate("document.querySelector('#detail-dialog').open")});
- await clickSelector('[data-close="detail-dialog"]');
+ await evaluate(`document.querySelector(${JSON.stringify(field)}).blur()`);await pause(300);
+ const afterConflict=await snap();record('stale-estimate-field-preserves-correction-and-draft',{otherClientEstimatePreserved:afterConflict.tasks.find(t=>t.id===ids[1]).remainingMinutes===10,draftPreserved:await evaluate(`document.querySelector(${JSON.stringify(field)}).value`)===draft,conflictVisible:await evaluate(`document.querySelector('[data-task-id="${ids[1]}"] .field-conflict')!==null`),noDialog:await evaluate("document.querySelectorAll('dialog[open]').length===0")});
+ await clickSelector(`[data-task-id="${ids[1]}"] [data-conflict="theirs"]`);await clickSelector(`[data-task-id="${ids[1]}"] [data-x="close"]`);
  await clickSelector('#context-open');const originalRest=await evaluate("document.querySelector('#context-rest').checked");
  await api('/api/proposals',{action:'context_update',payload:{rest:!originalRest},key:'stale-context-correction-'+report.run_id});await sync();await clickSelector('#context-form button[type="submit"]');await pause(300);
  record('stale-context-form-does-not-overwrite-correction',{otherClientRestPreserved:(await snap()).context.rest===!originalRest,draftPreserved:await evaluate("document.querySelector('#context-rest').checked")===originalRest,conflictVisible:await evaluate("!document.querySelector('#context-error').hidden"),dialogRemainsOpen:await evaluate("document.querySelector('#context-dialog').open")});

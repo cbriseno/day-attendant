@@ -126,7 +126,7 @@ UI scripts to check editor snapshots and stale submissions, persistent capture
 questions and changing receipts, localized review-failure outcomes that never show
 internal error text, every date-field family in a profile zone different
 from the browser, calendar expiry/zone changes and access past twelve commitments,
-and localized completed/retired details without translating card content.
+and localized completed/retired rows without translating card content.
 
 Additional focused cases cover reviews whose proposed prerequisite reopens while
 the model is responding, both sides of a prerequisite replacement, admission after
@@ -138,8 +138,9 @@ unchanged stored values. Dependency indicators are checked as view-only: blocked
 blocking chips, highlighted direct links across re-renders and locales, lines in
 board and list layouts, none at phone widths without horizontal overflow, and clearing.
 
-Browser and native-store cases also cover every Details action against an externally
-changed opening revision, with no replacement action or native effect. Unrelated
+Browser and native-store cases also cover row actions against an externally changed
+revision, with no replacement action or native effect, and in-row edits whose field
+changed elsewhere, which keep the draft and send nothing until the person chooses. Unrelated
 edits preserve stored date seconds and resolved repeated-hour instants across task,
 calendar, reminder-pause and availability fields; changed ambiguous inputs retain
 their drafts and fail before sending a request. These coverage additions do not
