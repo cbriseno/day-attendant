@@ -410,11 +410,11 @@ function moveConnect(){const d=connectDrag;if(!d)return;d.frame=0;const box=$('b
  const over=rowAt(d.x,d.y);for(const c of $('board').querySelectorAll('.connect-target'))if(c!==over)c.classList.remove('connect-target');if(over&&over.dataset.taskId!==d.from)over.classList.add('connect-target');
  drawDependencies()}
 function finishConnect(e,commit){const d=connectDrag;if(!d)return;connectDrag=null;cancelAnimationFrame(d.frame);
- // This class restyles the whole page, so it leaves after the release has shown its change.
- setTimeout(()=>{if(!connectDrag)document.body.classList.remove('linking')},DURATION);
  for(const c of $('board').querySelectorAll('.connect-target'))c.classList.remove('connect-target');setTimeout(()=>swallowClick=false);
  const to=commit?rowAt(e.clientX,e.clientY)?.dataset.taskId:null;
  if(to&&d.retarget){if(retargetLink(d.retarget,to))selectedLink=null}else if(to)addLink(d.from,to);
+ // This class restyles the whole page, so it leaves once the link is saved and its confirmation is on screen.
+ flow.queue.finally(()=>requestAnimationFrame(()=>{if(!connectDrag)document.body.classList.remove('linking')}));
  showDependencies()}
 $('board').addEventListener('pointerdown',e=>{const port=e.target.closest('.port');if(port&&e.isPrimary&&e.button===0)startConnect(e,port.dataset.id)},true);
 dependencyLines.addEventListener('pointerdown',e=>{if(e.target.closest('.link-knob')&&selectedLink&&e.button===0)startConnect(e,selectedLink.from,selectedLink)});
