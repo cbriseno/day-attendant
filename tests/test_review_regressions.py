@@ -32,10 +32,10 @@ class ReviewRegressions(DailyBase):
 
     def interrupted(self):
         self.app.fault = lambda point: (_ for _ in ()).throw(RuntimeError('interrupted')) if point == 'after_admission' else None
-        p = self.request('task_add', {'title': 'Admitted responsibility'})
-        self.board.evaluate(p['id'])
+        with self.assertRaises(RuntimeError): self.request('task_add', {'title': 'Admitted responsibility'})
         self.app.fault = lambda point: None
-        key = 'proposal:' + p['id']
+        with self.app.store.connect() as con:
+            key = 'proposal:' + con.execute('SELECT id FROM proposals ORDER BY rowid DESC LIMIT 1').fetchone()[0]
         self.assertTrue(self.app.store.unresolved())
         return key, recovery.inspect(self.app, key)
 
@@ -187,14 +187,10 @@ class ReviewRegressions(DailyBase):
     def test_dependency_undo_uses_resulting_dependencies_in_both_directions(self):
         prerequisite, uid = self.add('Prerequisite'), self.add('Active front')
         self.apply('front_activate', {'uuid': uid})
-        p = self.request('dependency_update', {'uuid': uid, 'dependsOn': [prerequisite]})
-        self.board.evaluate(p['id']); p = self.board.proposal(p['id'])
-        self.assertEqual(p['phase'], 'review')
-        self.board.confirm(p['id'], p['generation'])
+        self.apply('dependency_update', {'uuid': uid, 'dependsOn': [prerequisite]})
         fact = self.board.snapshot()['events'][-1]['id']
         undo = self.board.undo(fact, 'remove-blocker-undo')
-        self.board.evaluate(undo['id'])
-        self.assertEqual(self.board.proposal(undo['id'])['phase'], 'applied')
+        self.assertEqual(undo['phase'], 'applied')
         row = self.app.tasks.get(uid)
         self.assertTrue(row['start']); self.assertNotIn('depends', row)
         fact = self.board.snapshot()['events'][-1]['id']
@@ -203,91 +199,74 @@ class ReviewRegressions(DailyBase):
         self.assertEqual(error.exception.code, 'not_actionable')
         self.apply('task_done', {'uuid': prerequisite})
         undo = self.board.undo(fact, 'restore-completed-blocker')
-        self.board.evaluate(undo['id'])
-        self.assertEqual(self.board.proposal(undo['id'])['phase'], 'applied')
+        self.assertEqual(undo['phase'], 'applied')
         self.assertEqual(self.app.tasks.get(uid)['depends'], [prerequisite])
 
-    def test_proposed_prerequisite_reopening_cancels_late_allow_and_requires_new_review(self):
+    def test_review_in_progress_never_blocks_and_drops_outdated_suggestions(self):
         prerequisite, uid = self.add('Prerequisite'), self.add('Active front')
         self.apply('task_done', {'uuid': prerequisite})
         self.apply('front_activate', {'uuid': uid})
-        p = self.request('dependency_update', {'uuid': uid, 'dependsOn': [prerequisite]})
+        self.apply('dependency_update', {'uuid': uid, 'dependsOn': [prerequisite]})
         entered, release = threading.Event(), threading.Event()
-        inputs, cancellations, errors = [], [], []
+        inputs, errors = [], []
         original = self.board.bridge.turn
         def blocked(thread, prompt, schema, **kwargs):
-            supplied = json.loads(prompt[prompt.index('{'):])
-            if supplied['proposal_id'] == p['id']:
-                inputs.append(supplied); cancellations.append(kwargs['canceled']); entered.set()
-                if not release.wait(10): raise RuntimeError('Review fixture was not released')
-            return original(thread, prompt, schema, **kwargs)
-        def evaluate():
-            try: self.board.evaluate(p['id'])
+            inputs.append(json.loads(prompt[prompt.index('{'):])); entered.set()
+            if not release.wait(10): raise RuntimeError('Review fixture was not released')
+            result = original(thread, prompt, schema, **kwargs)
+            result['output'] = {'suggestions': [{'taskId': uid, 'message': 'Written before the prerequisite reopened.', 'action': None}]}
+            return result
+        def review():
+            try: self.board.review_changes()
             except BaseException as error: errors.append(error)
         self.board.bridge.turn = blocked
-        worker = threading.Thread(target=evaluate); worker.start()
+        worker = threading.Thread(target=review); worker.start()
         try:
             self.assertTrue(entered.wait(5))
-            self.assertEqual(inputs[0]['evidence']['relationships.prerequisites'],
-                             [{'id': prerequisite, 'title': 'Prerequisite', 'state': 'done'}])
-            self.assertIn(prerequisite, {t['id'] for t in inputs[0]['tasks']})
+            self.assertEqual({t['id'] for t in inputs[0]['closed']}, {prerequisite})
+            self.assertIn(uid, {t['id'] for t in inputs[0]['tasks']})
+            started = time.monotonic()
             self.apply('task_reopen', {'uuid': prerequisite})
-            self.assertEqual(self.board.proposal(p['id'])['phase'], 'stale')
-            self.assertTrue(cancellations[0].is_set())
+            self.assertLess(time.monotonic() - started, 2)
         finally:
             release.set(); worker.join(10); self.board.bridge.turn = original
         self.assertFalse(worker.is_alive()); self.assertEqual(errors, [])
-        self.assertNotIn('depends', self.app.tasks.get(uid))
-        retried = self.board.retry(p['id']); self.board.evaluate(retried['id'])
-        current = self.board.proposal(p['id'])
-        self.assertEqual(current['phase'], 'review')
-        self.assertIn('risk_active_blocked', {c.get('message_key') for c in current['facts']})
-        self.assertNotIn('depends', self.app.tasks.get(uid))
-        self.board.confirm(current['id'], current['generation'])
+        # The front changed during the turn, so the note written for its old state is not stored.
+        self.assertNotIn('Written before the prerequisite reopened.', [s['message'] for s in self.board.snapshot()['suggestions']])
         task = next(t for t in self.board.snapshot()['tasks'] if t['id'] == uid)
         self.assertEqual(task['state'], 'active'); self.assertEqual(task['blockedBy'], [prerequisite])
+        self.board.review_changes()
+        self.assertIn((uid, 'active_blocked'), {(s['taskId'], s['code']) for s in self.board.snapshot()['suggestions'] if s['current']})
 
-    def test_replacement_review_tracks_current_and_proposed_prerequisites_only(self):
+    def test_later_review_sees_the_changed_task_and_both_prerequisites_only(self):
         old, new, uid, unrelated = (self.add(title) for title in ('Old prerequisite', 'New prerequisite', 'Front', 'Unrelated'))
-        for prerequisite in (old, new): self.apply('task_done', {'uuid': prerequisite})
+        self.apply('task_done', {'uuid': old})
         self.apply('dependency_update', {'uuid': uid, 'dependsOn': [old]})
         self.apply('front_activate', {'uuid': uid})
-        p = self.request('dependency_update', {'uuid': uid, 'dependsOn': [new]})
+        self.board.review_changes()
         supplied = []
         original = self.board.bridge.turn
-        def insufficient(thread, prompt, schema, **kwargs):
+        def record(thread, prompt, schema, **kwargs):
             supplied.append(json.loads(prompt[prompt.index('{'):]))
-            result = original(thread, prompt, schema, **kwargs)
-            result['output']['verdict'] = 'insufficient'
-            return result
-        with patch.object(self.board.bridge, 'turn', side_effect=insufficient): self.board.evaluate(p['id'])
-        evidence = supplied[0]['evidence']
-        self.assertEqual({t['id'] for t in evidence['relationships.prerequisites']}, {old, new})
-        self.assertTrue({old, new} <= {t['id'] for t in supplied[0]['tasks']})
-        self.assertEqual(supplied[0]['proposed_task']['dependsOn'], [new])
-        self.assertEqual(self.board.proposal(p['id'])['fingerprint'], supplied[0]['fingerprint'])
-        self.apply('task_update', {'uuid': unrelated, 'title': 'Unrelated correction'})
-        self.assertEqual(self.board.proposal(p['id'])['phase'], 'unavailable')
-        for prerequisite in (new, old):
-            self.apply('task_update', {'uuid': prerequisite, 'title': 'Corrected ' + prerequisite})
-            self.assertEqual(self.board.proposal(p['id'])['phase'], 'stale')
-            self.board.retry(p['id'])
-        self.assertEqual(self.app.tasks.get(uid)['depends'], [old])
+            return original(thread, prompt, schema, **kwargs)
+        self.apply('dependency_update', {'uuid': uid, 'dependsOn': [new]})
+        with patch.object(self.board.bridge, 'turn', side_effect=record): self.board.review_changes()
+        self.assertEqual(supplied[0]['changes'][-1]['fields']['dependsOn'], [[old], [new]])
+        self.assertEqual({t['id'] for t in supplied[0]['tasks']}, {uid, new})
+        self.assertEqual({t['id'] for t in supplied[0]['closed']}, {old})
+        self.assertEqual(supplied[0]['noted'], [{'taskId': uid, 'code': 'active_blocked'}])
+        self.assertNotIn(unrelated, json.dumps(supplied[0]))
+        self.assertEqual(self.app.tasks.get(uid)['depends'], [new])
 
-    def test_admission_rechecks_new_prerequisite_after_external_native_change(self):
+    def test_admission_rechecks_native_state_after_external_change(self):
         prerequisite, uid = self.add('Prerequisite'), self.add('Front')
-        self.apply('task_done', {'uuid': prerequisite}); self.apply('front_activate', {'uuid': uid})
-        p = self.request('dependency_update', {'uuid': uid, 'dependsOn': [prerequisite]})
-        original = self.board.bridge.turn
-        def insufficient(*args, **kwargs):
-            result = original(*args, **kwargs); result['output']['verdict'] = 'insufficient'; return result
-        with patch.object(self.board.bridge, 'turn', side_effect=insufficient): self.board.evaluate(p['id'])
+        self.apply('task_done', {'uuid': prerequisite}); self.apply('dependency_update', {'uuid': uid, 'dependsOn': [prerequisite]})
+        p = self.legacy_pending('front_activate', {'uuid': uid})
         self.app.tasks.patch(prerequisite, {'status': 'pending', 'end': None})
-        with self.assertRaises(AssistantError) as error:
-            self.board.confirm(p['id'], p['generation'], without_review=True)
-        self.assertEqual(error.exception.code, 'stale_proposal')
-        self.assertEqual(self.board.proposal(p['id'])['phase'], 'stale')
-        self.assertNotIn('depends', self.app.tasks.get(uid))
+        with self.assertRaises(AssistantError) as error: self.board.retry(p['id'])
+        self.assertEqual(error.exception.code, 'not_actionable')
+        self.assertEqual(self.board.proposal(p['id'])['phase'], 'invalid')
+        self.assertFalse(self.app.tasks.get(uid).get('start'))
 
     def test_explicit_folds_reach_snooze_event_bounds_observations_and_horizon(self):
         # Keep snoozes future to the test clock at a historical DST transition.
@@ -297,15 +276,10 @@ class ReviewRegressions(DailyBase):
                                        'end': '2025-11-02T09:00:00Z'})['result']['uuid']
         for fold, hour in ((0, '07'), (1, '08')):
             with self.subTest(fold=fold):
-                p = self.request('task_snooze', {'uuid': uid, 'until': '2025-11-02T01:30',
-                                               'zone': 'America/Edmonton', 'fold': fold})
-                self.board.evaluate(p['id']); p = self.board.proposal(p['id'])
-                with self.app.store.connect() as con:
-                    inputs = json.loads(con.execute('SELECT input FROM evaluations WHERE proposal_id=? ORDER BY id DESC', (p['id'],)).fetchone()[0])
-                self.assertEqual(clash in {e['uuid'] for e in inputs['calendar_events']}, fold == 1)
-                if fold == 1:
-                    self.assertEqual(p['phase'], 'review'); self.board.confirm(p['id'], p['generation'])
-                else: self.assertEqual(p['phase'], 'applied')
+                self.apply('task_snooze', {'uuid': uid, 'until': '2025-11-02T01:30', 'zone': 'America/Edmonton', 'fold': fold})
+                self.board.review_changes()
+                noted = [s for s in self.board.snapshot()['suggestions'] if s['current'] and s['code'] == 'calendar']
+                self.assertEqual([s['action']['payload']['until'] for s in noted], ['2025-11-02T09:00:00Z'] if fold == 1 else [])
                 task = next(t for t in self.board.snapshot()['tasks'] if t['id'] == uid)
                 self.assertEqual(task['until'], '2025-11-02T' + hour + ':30:00Z')
                 event = self.apply('event_add', {'title': 'Repeated event', 'start': '2025-11-02T01:10',

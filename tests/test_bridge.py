@@ -39,7 +39,8 @@ with patch('day_attendant.web.create_harness',side_effect=AssistantError('agent_
             try:
                 receipt=Path(state,'ui-server.json')
                 for _ in range(150):
-                    if receipt.exists():break
+                    # The receipt exists a moment before its contents are written.
+                    if receipt.exists() and receipt.read_text().strip():break
                     if process.poll() is not None:self.fail(process.stderr.read())
                     time.sleep(.1)
                 data=json.loads(receipt.read_text())

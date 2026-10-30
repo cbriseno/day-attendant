@@ -63,29 +63,37 @@ class ConversationTests(unittest.TestCase):
             raise AssistantError('controlled_failure','Reply failed after proposal persistence.')
         self.board.request_many=fail_after_proposal
         chat.submit(text,'retry-safe');chat.run('retry-safe');self.board.request_many=original
-        self.assertEqual(fixture.calls,1);self.assertEqual(len(self.app.tasks.rows()),4)
+        # The interpreted change applied before the reply failed; retrying never repeats it.
+        self.assertEqual(fixture.calls,1);self.assertEqual(len(self.app.tasks.rows()),5)
         result=chat.retry('retry-safe');self.assertEqual(result['status'],'completed');self.assertEqual(fixture.calls,1)
         with self.app.store.connect() as con:
             proposals=con.execute('SELECT id FROM proposals').fetchall()
             self.assertEqual(len(proposals),1)
-        self.assertEqual(self.board.proposal(proposals[0][0])['phase'],'unavailable')
-        self.board.retry(proposals[0][0]);self.board.evaluate(proposals[0][0])
+        self.assertEqual(self.board.proposal(proposals[0][0])['phase'],'applied')
         self.assertEqual(sum(t['description']=='Check the report' for t in self.app.tasks.rows()),1)
 
-    def test_chat_declaration_expansion_requires_scope_review(self):
-        text='Only set the remaining effort to 15; do not change waiting.'
-        fixture,chat=self.fixture(text,'continuity_update',taskId=self.uid,remainingMinutes=15,awaiting=False)
-        original=fixture.turn
-        def reject_scope(thread,prompt,schema,**kwargs):
-            if 'intent' in schema['properties']:return original(thread,prompt,schema,**kwargs)
-            fixture.calls+=1
-            return {'output':{'verdict':'insufficient','message':'The waiting change is not authorized.','concerns':[],'uncertainties':['Scope expansion'],'alternatives':[]},'model':fixture.model,'thread_id':thread,'turn_id':'review','seconds':0}
-        fixture.turn=reject_scope
-        chat.submit(text,'expanded');chat.run('expanded')
-        self.assertEqual(fixture.calls,2)
-        p=self.board.snapshot()['proposals'][-1]
-        self.assertEqual(p['phase'],'unavailable')
-        self.assertEqual(next(t for t in self.board.snapshot()['tasks'] if t['id']==self.uid)['remainingMinutes'],10)
+    def test_interpreted_change_applies_without_a_second_review_and_can_be_undone(self):
+        text='Set the remaining effort to 15 and the next step to Call Ana.'
+        fixture,chat=self.fixture(text,'continuity_update',taskId=self.uid,remainingMinutes=15,next='Call Ana')
+        chat.submit(text,'interpreted');chat.run('interpreted')
+        self.assertEqual(fixture.calls,1)
+        task=lambda:next(t for t in self.board.snapshot()['tasks'] if t['id']==self.uid)
+        self.assertEqual((task()['remainingMinutes'],task()['next']),(15,'Call Ana'))
+        with self.app.store.connect() as con:self.assertEqual(con.execute('SELECT count(*) FROM evaluations').fetchone()[0],0)
+        undone=self.board.undo_message('interpreted','undo-interpreted')
+        self.assertEqual([p['phase'] for p in undone],['applied'])
+        self.assertEqual((task()['remainingMinutes'],task()['next']),(10,'Choose two points.'))
+        self.assertEqual(self.board.undo_message('interpreted','undo-interpreted'),undone)
+
+    def test_retire_from_the_conversation_waits_for_confirmation(self):
+        text='Retire the meeting points task.'
+        fixture,chat=self.fixture(text,'front_retire',taskId=self.uid)
+        chat.submit(text,'retire');chat.run('retire')
+        proposal=self.board.snapshot()['proposals'][-1]
+        self.assertEqual((proposal['phase'],proposal['facts'][0]['message_key']),('review','confirm_retire_chat'))
+        self.assertEqual(self.app.tasks.get(self.uid)['status'],'pending')
+        self.board.confirm(proposal['id'],proposal['generation'])
+        self.assertEqual(self.app.tasks.get(self.uid)['status'],'deleted')
 
     def test_interrupted_chat_result_cannot_create_an_operation(self):
         text='Add a task titled Must not appear.';fixture,chat=self.fixture(text,'task_add',title='Must not appear',priority='medium')

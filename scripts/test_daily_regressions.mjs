@@ -9,12 +9,12 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation','dependencies','ordering'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies','ordering','instant'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
 const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2025-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
-const requests=[],settings=[],chats=[],clears=[],suggestions=[];let catalogs=null;
+const requests=[],settings=[],chats=[],clears=[],suggestions=[],undos=[],suggestionCalls=[],undoable=new Map();let catalogs=null,facts=0;
 const server=createServer(async(req,res)=>{
  try{
   if(req.url.startsWith('/api/')){
@@ -23,7 +23,7 @@ const server=createServer(async(req,res)=>{
    if(req.url==='/api/proposals'){
     requests.push(body);
     if(body.expected_revision!==state.revision){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{code:'stale_revision',message:'State changed; reopen this editor.'}}));return}
-    const p=body.payload,t=state.tasks.find(t=>t.id===p.uuid);
+    const p=body.payload,t=state.tasks.find(t=>t.id===p.uuid),beforeTask=t&&{...t};
     if(body.action==='dependency_update')t.dependsOn=p.dependsOn;
     if(body.action==='related_update')t.relatedTo=p.relatedTo;
     if(body.action==='task_update')for(const key of ['title','priority','due','context','next','awaiting','group'])if(key in p)t[key]=p[key];
@@ -33,8 +33,21 @@ const server=createServer(async(req,res)=>{
     if(body.action==='context_update')Object.assign(state.context,p);
     if(body.action==='event_update')Object.assign(state.calendar_events.find(e=>e.uuid===p.uuid),{title:p.title,start_at:p.start,end_at:p.end});
     if(body.action==='event_cancel')state.calendar_events=state.calendar_events.filter(e=>e.uuid!==p.uuid);
+    // The instant group records each change as an undoable fact, as the service does.
+    const proposalId=randomUUID();
+    if(state.instant&&t){const fact=++facts;undoable.set(fact,{id:t.id,before:beforeTask});state.lastFact={id:fact,proposalId,action:body.action,taskId:t.id,undoable:true,undoOf:null,reviewStatus:'deferred'}}
     state.revision++;
-    data={id:randomUUID(),key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[]};
+    data={id:proposalId,key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[],result:{revision:state.revision}};
+   }else if(req.url==='/api/undo'){
+    undos.push(body);const last=undoable.get(Number(body.fact_id));
+    const proposalId=randomUUID();
+    if(last){Object.assign(state.tasks.find(t=>t.id===last.id),last.before);state.revision++;state.lastFact={id:++facts,proposalId,action:'task_restore',taskId:last.id,undoable:true,undoOf:Number(body.fact_id),reviewStatus:'deferred'}}
+    data={id:proposalId,phase:'applied',result:{revision:state.revision}};
+   }else if(req.url.startsWith('/api/suggestions/')){
+    const [,,,id,act]=req.url.split('/'),item=state.suggestions.find(s=>s.id===id);suggestionCalls.push([id,act,body]);
+    const proposalId=randomUUID();
+    if(act==='accept'){const t=state.tasks.find(t=>t.id===item.action.payload.uuid),fact=++facts;undoable.set(fact,{id:t.id,before:{...t}});t.state='active';state.revision++;state.lastFact={id:fact,proposalId,action:'front_activate',taskId:t.id,undoable:true,undoOf:null,reviewStatus:'deferred'}}
+    Object.assign(item,{status:act==='accept'?'applied':'dismissed',current:false});data=act==='accept'?{id:proposalId,phase:'applied',result:{revision:state.revision}}:{id,status:item.status};
    }else if(req.url==='/api/settings'){
     settings.push(body);
     if(body.expected_revision!==undefined&&body.expected_revision!==state.revision){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{message:'State changed'}}));return}
@@ -294,42 +307,45 @@ try{
 
  state.proposals=Array.from({length:8},(_,i)=>({id:randomUUID(),intent:{action:'task_add',payload:{title:'Item '+(i+1)}},generation:0,facts:[],phase:'evaluating'}));
  state.messages=[{id:1,key:'capture',role:'user',text:'Capture nine items',status:'completed'}, {id:2,key:'capture:assistant',role:'assistant',text:'Checking the items.',status:'completed',data:JSON.stringify({proposal_ids:state.proposals.map(p=>p.id),unprocessed:['Ninth item remains'],uncertainties:['Which date for the ninth item?']})}];await refresh();
- let receipt=await evaluate("document.querySelector('.receipt-list').textContent");assert.match(receipt,/Ninth item remains/);assert.match(receipt,/Which date/);assert.match(receipt,/Reviewing/);
+ let receipt=await evaluate("document.querySelector('.receipt-list').textContent");assert.match(receipt,/Ninth item remains/);assert.match(receipt,/Which date/);assert.match(receipt,/Saving/);
  const phases=['applied','unavailable','stale','invalid','review','canceled','superseded','unchanged'];state.proposals.forEach((p,i)=>p.phase=phases[i]);await refresh();
- receipt=await evaluate("document.querySelector('.receipt-list').textContent");for(const label of ['Saved','Item 2 · not created yet: the automatic review could not be completed. Decide in Before applying.','Item 3 · not created yet: the context changed.','Item 4 · not created yet: adjust it','Item 5 · not created yet: a consequence needs your decision','Canceled','Replaced','Unchanged','2 of 8 saved · 4 waiting for you in Before applying.'])assert.ok(receipt.includes(label),receipt);
- assert.equal(await evaluate("document.querySelectorAll('.receipt-list .link-button').length"),4);
+ receipt=await evaluate("document.querySelector('.receipt-list').textContent");for(const label of ['Saved','Item 2 · not created yet: an earlier version left it waiting. Decide in Needs your decision.','Item 3 · not created yet: the responsibility changed. Decide again in Needs your decision.','Item 4 · not created: it could not be applied as asked. See Needs your decision.','Item 5 · not created yet: it waits for your confirmation in Needs your decision.','Canceled','Replaced','Unchanged','2 of 8 saved · 4 waiting for your decision.','Undo this change'])assert.ok(receipt.includes(label),receipt);
+ assert.equal(await evaluate("document.querySelectorAll('.receipt-list .link-button').length"),5);
  for(const [phase,label] of [['ready','Ready to save'],['admitted','Admitted; check recovery']]){state.proposals[0].phase=phase;await refresh();assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes(label))}
+ state.proposals[0].phase='applied';
  state.messages.push({id:3,key:'question',role:'assistant',text:'Please clarify.',status:'completed',data:JSON.stringify({proposal_ids:[],unprocessed:['Unscheduled request'],uncertainties:['Who is the person?']})});await refresh();
  assert.match(await evaluate("document.getElementById('messages').textContent"),/Unscheduled request.*Who is the person/s);
- // A failed review never shows internal error text; it says nothing was created yet and what each choice does.
+ // A change an older version left waiting never shows internal error text; it says nothing was created yet and offers to apply it now.
  const raw='The concern is not grounded in the supplied evidence.';
  const failedReview=state.proposals[1];Object.assign(failedReview,{error:raw,error_code:'agent_invalid_evidence',review:null});
  const panel=()=>evaluate(`(()=>{const d=[...document.querySelectorAll('#reviews details')].find(d=>d.dataset.proposal===${JSON.stringify(failedReview.id)});return d&&{text:d.textContent,open:d.open,buttons:[...d.querySelectorAll('.decision-actions button')].map(b=>[b.textContent,b.dataset.reviewAction,b.classList.contains('primary')])}})()`);
  await refresh();
+ assert.equal(await evaluate("document.getElementById('review-title').textContent"),'Needs your decision');
  await evaluate(`document.querySelector('#reviews details[open]')?.removeAttribute('open')`);
- await evaluate(`[...document.querySelectorAll('.receipt-list .link-button')][0].click()`);
+ await evaluate(`[...document.querySelectorAll('.receipt-list .link-button')].find(b=>b.textContent==='Show').click()`);
  let shownPanel=await panel();assert.equal(shownPanel.open,true);
  assert.equal(await evaluate(`document.activeElement===[...document.querySelectorAll('#reviews details')].find(d=>d.dataset.proposal===${JSON.stringify(failedReview.id)}).querySelector('summary')`),true);
  assert.ok(!shownPanel.text.includes(raw),shownPanel.text);
- for(const copy of ['Automatic review could not be completed','This task has not been created yet.',"The assistant's review cited information it had not been given",'not a problem found in what you asked for','This is a low-risk change','Create without review: saves the task as you asked','Retry review: asks the assistant to review it again','Cancel change: discards it'])assert.ok(shownPanel.text.includes(copy),copy+' in '+shownPanel.text);
- assert.deepEqual(shownPanel.buttons,[['Cancel change','cancel',false],['Retry review','retry',false],['Create without review','without',true]]);
+ for(const copy of ['Left waiting','This task has not been created yet.','An earlier version left this change waiting for a review that no longer runs.'])assert.ok(shownPanel.text.includes(copy),copy+' in '+shownPanel.text);
+ assert.deepEqual(shownPanel.buttons,[['Cancel change','cancel',false],['Create now','retry',true]]);
  await fill('locale-choice','es');await refresh();shownPanel=await panel();
  assert.ok(!shownPanel.text.includes(raw),shownPanel.text);
- for(const copy of ['No se pudo completar la revisión automática','Esta tarea aún no se ha creado.','citó información que no se le había dado','no un problema encontrado en lo que pediste','Crear sin revisión: guarda la tarea'])assert.ok(shownPanel.text.includes(copy),copy+' in '+shownPanel.text);
- assert.deepEqual(shownPanel.buttons,[['Cancelar cambio','cancel',false],['Reintentar revisión','retry',false],['Crear sin revisión','without',true]]);
- assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes('Item 2 · aún no se creó: no se pudo completar la revisión automática. Decide en «Antes de aplicar».'));
+ for(const copy of ['Quedó en espera','Esta tarea aún no se ha creado.','Una versión anterior dejó este cambio esperando'])assert.ok(shownPanel.text.includes(copy),copy+' in '+shownPanel.text);
+ assert.deepEqual(shownPanel.buttons,[['Cancelar cambio','cancel',false],['Crear ahora','retry',true]]);
+ assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes('Item 2 · aún no se creó: una versión anterior lo dejó en espera. Decide en «Necesita tu decisión».'));
+ assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes('Deshacer este cambio'));
  await fill('locale-choice','en');
- // A dated change keeps retrying the review as the primary step.
- failedReview.intent.payload.due='2025-10-30T12:00:00Z';await refresh();shownPanel=await panel();
- assert.deepEqual(shownPanel.buttons,[['Cancel change','cancel',false],['Create without review','without',false],['Retry review','retry',true]]);assert.ok(!shownPanel.text.includes('low-risk'));
- delete failedReview.intent.payload.due;
- // An insufficient verdict is the assistant's own question, not a failure.
+ // An insufficient verdict from an older review is the assistant's own question, not a failure.
  Object.assign(failedReview,{error:null,error_code:'review_insufficient',review:{output:{verdict:'insufficient',message:'Which project is this feedback for?',alternatives:[]}}});await refresh();shownPanel=await panel();
- for(const copy of ['The assistant needs a clarification','This task has not been created yet.','Which project is this feedback for?'])assert.ok(shownPanel.text.includes(copy),copy);
- assert.ok(!shownPanel.text.includes('failure of the review'));assert.equal(shownPanel.buttons.some(b=>b[2]),false);
- assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes('Item 2 · not created yet: the assistant needs a clarification.'));
+ assert.ok(shownPanel.text.includes('This task has not been created yet.'));assert.ok(!shownPanel.text.includes('failure of the review'));
+ assert.ok((await evaluate("document.querySelector('.receipt-list').textContent")).includes('Item 2 · not created yet: the assistant needed a clarification.'));
  Object.assign(failedReview,{error:'Changed by admitted proposal:'+randomUUID(),error_code:'context_changed',phase:'stale',review:null});await refresh();shownPanel=await panel();
- assert.ok(!shownPanel.text.includes('Changed by admitted proposal'));assert.ok(shownPanel.text.includes('Something relevant changed after the review started'));
+ assert.ok(!shownPanel.text.includes('Changed by admitted proposal'));assert.ok(shownPanel.text.includes('Something relevant changed since this was proposed'));
+ // A retire from the conversation waits for confirmation; nothing else does.
+ Object.assign(state.proposals[4],{intent:{action:'front_retire',payload:{uuid:target.id}},facts:[{code:'confirmation',message:'x',message_key:'confirm_retire_chat',message_params:{},refs:[]}]});await refresh();
+ const retire=await evaluate(`(()=>{const d=[...document.querySelectorAll('#reviews details')].find(d=>d.dataset.proposal===${JSON.stringify(state.proposals[4].id)});return {text:d.textContent,buttons:[...d.querySelectorAll('.decision-actions button')].map(b=>[b.textContent,b.dataset.reviewAction])}})()`);
+ assert.ok(retire.text.includes('Retiring needs your confirmation.'),retire.text);assert.ok(retire.text.includes('Waits for your confirmation'),retire.text);
+ assert.deepEqual(retire.buttons,[['Cancel change','cancel'],['Yes, retire','continue']]);
  Object.assign(failedReview,{phase:'unavailable',error:raw,error_code:'agent_invalid_evidence'});
  // Chat failures are localized by code too.
  state.messages.push({id:4,key:'broken',role:'user',text:'Add three tasks',status:'incomplete'},{id:5,key:'broken:assistant',role:'assistant',text:'The response is incomplete. The intent is not grounded in the current human message.',status:'incomplete',data:JSON.stringify({code:'agent_invalid_intent',proposal_ids:[]})});await refresh();
@@ -486,6 +502,83 @@ try{
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
   await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);await fill('order-choice','priority');
   console.log('Ordering regressions passed: views, keyboard and pointer order, priority sections, suggestion reuse, groups and localization');
+ }
+
+ if(group==='all'||group==='instant'){
+  // Direct actions show at once with their time and Undo; the assistant's later look leaves a mark.
+  await fill('locale-choice','en');await close();Object.assign(state,{instant:true,proposals:[],messages:[],review:{pending:0,running:false,status:'completed',finishedAt:state.now}});
+  for(const t of [a,b,c])Object.assign(t,{state:'todo',dependsOn:[],blockedBy:[],blocked:false});state.revision++;await refresh();
+  const toast=()=>evaluate("({show:document.getElementById('toast').classList.contains('show'),text:document.getElementById('status').textContent,detail:document.getElementById('toast-detail').textContent,undo:!document.getElementById('undo').hidden})");
+  const lane=id=>evaluate(`document.querySelector('#board [data-task-id="${id}"]')?.closest('.lane')?.dataset.state`);
+  await click(`[data-id="${a.id}"][data-action="activate"]`);await wait(`document.querySelector('#board [data-task-id="${a.id}"]').closest('.lane').dataset.state==='active'`);
+  await wait("document.getElementById('status').textContent==='Start · A'");
+  let shown=await toast();assert.equal(shown.show,true);assert.equal(shown.text,'Start · A');assert.match(shown.detail,/^\d+ ms · the assistant looks at it in the background$/);assert.equal(shown.undo,true);
+  assert.equal(requests.at(-1).action,'front_activate');
+  await click('#undo');await wait(`document.querySelector('#board [data-task-id="${a.id}"]').closest('.lane').dataset.state==='todo'`);
+  await wait("document.getElementById('status').textContent==='Change undone'");
+  assert.equal(undos.at(-1).fact_id,String(facts-1));shown=await toast();assert.equal(shown.undo,false);
+  assert.match(await evaluate("document.getElementById('review-strip').textContent"),/^Everything is saved · reviewed .+\d\d:\d\d$/);
+  assert.equal(await evaluate("document.getElementById('agent-state').textContent"),'Up to date');
+  state.review={pending:2,running:false};await refresh();
+  assert.equal(await evaluate("document.getElementById('review-strip').textContent"),'Saved. I look at it when you pause (2).');
+  assert.equal(await evaluate("document.getElementById('agent-state').textContent"),'2 changes to review');
+  state.review={pending:2,running:true};await refresh();assert.equal(await evaluate("document.getElementById('agent-state').textContent"),'Reviewing your changes…');
+  state.review={pending:0,running:false,status:'completed',finishedAt:state.now};
+  // A suggestion marks its card without moving it; the bubble opens only on request.
+  const box=()=>evaluate(`(()=>{const card=document.querySelector('#board [data-task-id="${b.id}"]'),r=card.getBoundingClientRect(),t=card.querySelector('.task-title').getBoundingClientRect();return [r.top,r.height,t.left,t.top]})()`);
+  await refresh();const before=await box();
+  const rule={id:randomUUID(),taskId:b.id,code:'unblocked',origin:'rules',message:null,messageKey:'suggest_unblocked',messageParams:{title:'A'},action:{action:'front_activate',payload:{uuid:b.id}},status:'open',current:true,createdAt:state.now};
+  state.suggestions=[rule];await refresh();
+  assert.deepEqual(await box(),before);
+  assert.equal(await evaluate(`document.querySelectorAll('#board [data-task-id="${b.id}"] .assistant-mark').length`),1);
+  assert.equal(await evaluate(`document.querySelectorAll('#board .assistant-bubble').length`),0);
+  assert.match(await evaluate("document.getElementById('messages').textContent"),/Marked «B»: Finishing «A» unblocked this one\./);
+  await click(`[data-id="${b.id}"][data-action="suggestion"]`);
+  assert.equal(await evaluate(`document.querySelector('#board [data-task-id="${b.id}"] .assistant-bubble').textContent`),'Suggestion: Finishing «A» unblocked this one.Start nowIgnore');
+  assert.equal(await evaluate(`document.querySelector('[data-id="${b.id}"][data-action="suggestion"]').getAttribute('aria-expanded')`),'true');
+  await fill('locale-choice','es');await refresh();
+  assert.equal(await evaluate(`document.querySelector('#board [data-task-id="${b.id}"] .assistant-bubble').textContent`),'Sugerencia: Al terminar «A» se desbloqueó esta tarea.Iniciar ahoraIgnorar');
+  await fill('locale-choice','en');await refresh();
+  await click(`[data-suggestion="${rule.id}"][data-suggestion-action="accept"]`);await wait(`document.querySelector('#board [data-task-id="${b.id}"]').closest('.lane').dataset.state==='active'`);
+  assert.deepEqual(suggestionCalls.at(-1).slice(0,2),[rule.id,'accept']);
+  assert.equal(await evaluate('document.querySelectorAll("#board .assistant-mark").length'),0);
+  assert.match(await evaluate("document.getElementById('messages').textContent"),/Marked «B»: Finishing «A» unblocked this one\. · handled/);
+  await wait("document.getElementById('status').textContent==='Start · B'");shown=await toast();assert.equal(shown.undo,true);
+  const note={id:randomUUID(),taskId:c.id,code:'assistant',origin:'assistant',message:'Consider doing this before the meeting.',messageKey:null,messageParams:{},action:null,status:'open',current:true,createdAt:state.now};
+  state.suggestions.push(note);await refresh();await click(`[data-id="${c.id}"][data-action="suggestion"]`);
+  assert.equal(await evaluate('document.querySelector("#board .assistant-bubble").textContent'),'Suggestion: Consider doing this before the meeting.Ignore');
+  await click(`[data-suggestion="${note.id}"][data-suggestion-action="dismiss"]`);await wait('!document.querySelector("#board .assistant-mark")');
+  assert.deepEqual(suggestionCalls.at(-1).slice(0,2),[note.id,'dismiss']);
+  // Phone widths keep the mark a full touch target and never overflow.
+  note.current=true;note.status='open';await refresh();
+  await rpc('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);await new Promise(r=>setTimeout(r,100));
+  assert.ok(await evaluate('document.querySelector("#board .assistant-mark").getBoundingClientRect().width>=40'));
+  assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
+  await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
+  state.agent={...state.agent,connected:false};await refresh();assert.equal(await evaluate("document.getElementById('agent-state').textContent"),'Disconnected');
+  state.agent={...state.agent,connected:true};Object.assign(state,{suggestions:[],review:{}});await refresh();
+  let release;const gate=new Promise(r=>release=r);const original=server.listeners('request')[0];
+  server.removeAllListeners('request');server.on('request',async(req,res)=>{if(req.url==='/api/proposals')await gate;return original(req,res)});
+  await click(`[data-id="${c.id}"][data-action="activate"]`);
+  assert.equal(await lane(c.id),'active');assert.equal(c.state,'todo');
+  release();await wait(`daySnapshot().tasks.find(t=>t.id===${JSON.stringify(c.id)}).state==='active'`);assert.equal(c.state,'active');
+  await wait("document.getElementById('status').textContent==='Start · C'&&!document.getElementById('undo').hidden");
+  let releaseUndo;const undoGate=new Promise(r=>releaseUndo=r);
+  server.removeAllListeners('request');server.on('request',async(req,res)=>{if(req.url==='/api/undo')await undoGate;return original(req,res)});
+  await click('#undo');assert.equal(await lane(c.id),'todo');assert.equal(c.state,'active');
+  releaseUndo();await wait("document.getElementById('status').textContent==='Change undone'");assert.equal(c.state,'todo');
+  server.removeAllListeners('request');server.on('request',original);
+  await click(`[data-id="${c.id}"][data-action="activate"]`);await wait(`document.getElementById('status').textContent==='Start · C'`);
+  const stale=state.revision;c.state='todo';state.revision++;
+  await evaluate(`dayUI.flow.request('front_retire',{taskId:${JSON.stringify(c.id)}},undefined,${stale}).catch(()=>{})`);
+  await wait(`document.querySelector('#board [data-task-id="${c.id}"]')?.closest('.lane')?.dataset.state==='todo'`);
+  // Quick consecutive clicks each carry the revision the previous answer produced.
+  const sentBefore=requests.length,opening=state.revision;await click(`[data-id="${a.id}"][data-action="activate"]`);await click(`[data-id="${b.id}"][data-action="todo"]`);
+  for(let i=0;i<200&&b.state!=='todo';i++)await new Promise(r=>setTimeout(r,15));
+  assert.equal(b.state,'todo');assert.equal(a.state,'active');
+  assert.deepEqual(requests.slice(sentBefore).map(r=>[r.action,r.expected_revision]),[['front_activate',opening],['front_todo',opening+1]]);
+  state.instant=false;
+  console.log('Instant action regressions passed: change and Undo shown before the answer, sequential revisions, toast timing, review state, suggestion mark, bubble, accept, dismiss and log');
  }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');await new Promise(resolve=>chrome.exitCode!==null?resolve():chrome.once('exit',resolve));

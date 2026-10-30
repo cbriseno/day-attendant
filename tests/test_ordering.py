@@ -59,10 +59,7 @@ class OrderingTests(unittest.TestCase):
         return self.board.request(action, payload, f'ordering-{self.counter}', **kwargs)
 
     def apply(self, action, payload):
-        proposal = self.request(action, payload)
-        if proposal['phase'] == 'evaluating':
-            self.board.evaluate(proposal['id'])
-        final = self.board.proposal(proposal['id'])
+        final = self.request(action, payload)
         self.assertIn(final['phase'], ('applied', 'unchanged'))
         return final
 
@@ -79,8 +76,7 @@ class OrderingTests(unittest.TestCase):
         with self.app.store.connect() as con:
             fact = con.execute('SELECT id FROM facts ORDER BY id DESC LIMIT 1').fetchone()[0]
         undo = self.board.undo(fact, 'ordering-undo')
-        self.board.evaluate(undo['id'])
-        self.assertEqual(self.board.proposal(undo['id'])['phase'], 'applied')
+        self.assertEqual(undo['phase'], 'applied')
         self.assertEqual(self.task(uid)['group'], 'Move house')
         self.apply('task_update', {'uuid': uid, 'group': ''})
         self.assertIsNone(self.task(uid)['group'])
@@ -95,9 +91,9 @@ class OrderingTests(unittest.TestCase):
     def test_manual_order_is_a_reviewless_declaration_that_changes_no_task(self):
         before = task_digest(self.app.tasks.rows())
         priorities = {t['id']: t['priority'] for t in self.board.snapshot()['tasks']}
-        # A pending review on another task must survive rearranging.
-        pending = self.request('front_activate', {'uuid': self.ids[1]})
-        self.assertEqual(pending['phase'], 'evaluating')
+        # A change waiting for the person on another task must survive rearranging.
+        pending = self.board.request('front_retire', {'uuid': self.ids[1]}, 'chat-retire', origin='chat')
+        self.assertEqual(pending['phase'], 'review')
         revision = self.app.store.revision()
         order = list(reversed(self.ids))
         proposal = self.board.request('order_update', {'order': order}, 'drag-1', expected_revision=revision)
@@ -108,9 +104,11 @@ class OrderingTests(unittest.TestCase):
         self.assertEqual(snapshot['revision'], revision + 1)
         self.assertEqual(task_digest(self.app.tasks.rows()), before)
         self.assertEqual({t['id']: t['priority'] for t in snapshot['tasks']}, priorities)
-        self.assertEqual(self.board.proposal(pending['id'])['phase'], 'evaluating')
-        with self.app.store.connect() as con:
-            self.assertEqual(con.execute("SELECT count(*) FROM messages WHERE key LIKE 'context-notice:%'").fetchone()[0], 0)
+        self.assertEqual(self.board.proposal(pending['id'])['phase'], 'review')
+        # Rearranging is presentation only: the later review never looks at it.
+        self.assertIsNone(self.board.review_changes())
+        self.assertEqual(self.fixture.calls, [])
+        self.assertEqual(self.board.snapshot()['review']['pending'], 0)
         # Same key is the same intent; the same order under a new key changes nothing.
         self.assertEqual(self.board.request('order_update', {'order': order}, 'drag-1')['id'], proposal['id'])
         self.assertEqual(self.board.request('order_update', {'order': order}, 'drag-2')['phase'], 'unchanged')
@@ -131,21 +129,24 @@ class OrderingTests(unittest.TestCase):
         self.assertEqual(restarted.snapshot()['taskOrder'], order)
         self.assertEqual(self.app.store.state_value('task_order'), order)
 
-    def test_rearranging_never_queues_capacity_guidance(self):
+    def test_rearranging_is_never_reviewed(self):
         clock = [NOW]
         self.app.clock = lambda: clock[0]
-        def notices():
-            with self.app.store.connect() as con:
-                return con.execute("SELECT count(*) FROM messages WHERE key LIKE 'context-notice:%'").fetchone()[0]
+        capacity = lambda: [s['status'] for s in self.board.snapshot()['suggestions'] if s['code'] == 'capacity']
         self.apply('task_update', {'uuid': self.ids[0], 'due': (NOW + timedelta(minutes=45)).isoformat()})
         self.apply('context_update', {'availableMinutes': 30, 'availableUntil': (NOW + timedelta(minutes=45)).isoformat(), 'rest': False})
-        self.assertEqual(notices(), 1)
-        # A shorter remaining window gives the capacity concern a new signature.
+        self.board.review_changes()
+        self.assertEqual(capacity(), ['open'])
+        turns = len(self.fixture.calls)
+        # A shorter remaining window gives the capacity finding a new signature.
         clock[0] = NOW + timedelta(minutes=20)
         self.board.request('order_update', {'order': list(reversed(self.ids))}, 'drag-under-pressure')
-        self.assertEqual(notices(), 1)
+        self.assertIsNone(self.board.review_changes())
+        self.assertEqual((capacity(), len(self.fixture.calls)), (['open'], turns))
         self.apply('provenance_update', {'uuid': self.ids[0], 'person': 'Ana'})
-        self.assertEqual(notices(), 2)
+        self.board.review_changes()
+        # The newer window replaces the older note instead of stacking a second one on the card.
+        self.assertEqual((capacity(), len(self.fixture.calls)), (['resolved', 'open'], turns + 1))
 
     def test_conversation_cannot_propose_a_manual_order(self):
         self.assertNotIn('order_update', FIELDS['action']['enum'])

@@ -35,7 +35,8 @@ def exclusive(path, timeout=15, shared=False):
             except OSError as error:
                 if time.monotonic() >= deadline:
                     raise AssistantError("busy", "Another writer holds the state lock.") from error
-                time.sleep(0.05)
+                # A click waiting behind a state read takes the lock as soon as it is free.
+                time.sleep(0.005)
         try:
             yield
         finally:

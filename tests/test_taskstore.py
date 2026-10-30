@@ -155,9 +155,6 @@ class LegacyImport(unittest.TestCase):
     def apply(self, action, payload):
         self.counter += 1
         p = self.board.request(action, payload, 'legacy-' + str(self.counter))
-        if p['phase'] == 'evaluating':
-            self.board.evaluate(p['id'])
-        p = self.board.proposal(p['id'])
         self.assertIn(p['phase'], ('applied', 'unchanged'), p)
         return p
 
@@ -235,8 +232,8 @@ class LegacyImport(unittest.TestCase):
     def test_partial_operation_is_preserved_and_recovered_by_the_new_store(self):
         uid = self.add('Interrupted task')
         self.app.fault = lambda point: (_ for _ in ()).throw(RuntimeError('crash')) if point == 'after_task_0' else None
-        p = self.board.request('front_activate', {'uuid': uid}, 'partial-before-migration')
-        self.board.evaluate(p['id'])
+        with self.assertRaises(RuntimeError):
+            self.board.request('front_activate', {'uuid': uid}, 'partial-before-migration')
         pending = self.app.store.unresolved()
         self.assertTrue(pending)
         migrate_profile(self.temp.name, LEGACY)

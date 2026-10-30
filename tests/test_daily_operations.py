@@ -57,7 +57,8 @@ class DailyOperations(DailyBase):
     def test_keep_observed_does_not_execute_a_prepared_original_action(self):
         uid=self.add('Before admission')
         self.app.fault=lambda point:(_ for _ in ()).throw(RuntimeError('interrupted after admission')) if point=='after_admission' else None
-        p=self.request('front_activate',{'uuid':uid});self.board.evaluate(p['id']);self.app.fault=lambda point:None
+        with self.assertRaises(RuntimeError):self.request('front_activate',{'uuid':uid})
+        self.app.fault=lambda point:None
         self.assertFalse(self.app.tasks.get(uid).get('start'));key=self.app.store.unresolved()[0]['key'];observed=recovery.inspect(self.app,key)
         self.assertTrue(observed['can_complete']);resolved=recovery.resolve(self.app,key,'keep_observed',observed['precondition'],self.backups.name)
         self.assertTrue(resolved['closed']);self.assertFalse(self.app.tasks.get(uid).get('start'))
@@ -72,9 +73,8 @@ class DailyOperations(DailyBase):
             self.assertEqual(con.execute('SELECT count(*) FROM attempts').fetchone()[0],0);self.assertEqual(con.execute("SELECT count(*) FROM notices WHERE status='sending'").fetchone()[0],0)
     def test_conflict_requires_current_observation_and_keeps_external_data(self):
         uid=self.add('Original');self.app.fault=lambda point:(_ for _ in ()).throw(RuntimeError('process died')) if point=='after_task_0' else None
-        p=self.request('front_activate',{'uuid':uid})
-        # Admission may throw a simulated process death after native modification.
-        self.board.evaluate(p['id'])
+        # Admission throws a simulated process death after the native modification.
+        with self.assertRaises(RuntimeError):self.request('front_activate',{'uuid':uid})
         self.assertTrue(self.app.store.unresolved())
         self.app.fault=lambda point:None;self.app.tasks.patch(uid,{'description':'External title'})
         self.app.recover();key=self.app.store.unresolved()[0]['key'];observed=recovery.inspect(self.app,key)
