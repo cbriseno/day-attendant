@@ -761,7 +761,7 @@ function openContext(origin){const revision=flow.snapshot().revision,c=flow.snap
  $('context-form').onsubmit=async e=>{e.preventDefault();const raw=$('context-minutes').value,until=$('context-until').value;try{await zoneReady($('context-form'));let availableUntil=c.availableUntil;if(raw.trim()){if(until!==openingUntil){const date=parseLocal(until);if(!Number.isFinite(date.getTime())||ambiguous(date)||localValue(date)!==until)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"));availableUntil=date.toISOString()}if(!availableUntil)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"))}await flow.setContext({availableMinutes:raw.trim()?Number(raw):null,availableUntil:raw.trim()?availableUntil:null,rest:$('context-rest').checked},revision);$('context-dialog').close('declared')}catch(error){$('context-error').hidden=false;$('context-error').textContent=error.message}};
  openDialog($('context-dialog'),origin,null,null)}
 $('context-open').onclick=e=>openContext(e.currentTarget);$('context-cancel').onclick=()=>$('context-dialog').close('cancel');
-function setTaskView(view){closeMenu();taskView=view;dependencyFocus=null;selectedLink=null;hoverTask=hoverKeep=null;expanded=null;
+function setTaskView(view){closeMenu();taskView=view;if(view==='focus')dependencyFocus=null;selectedLink=null;hoverTask=hoverKeep=null;expanded=null;
  document.body.classList.toggle('focus-mode',view==='focus');$('board').classList.toggle('is-list',view==='list');$('board').classList.toggle('is-focus',view==='focus');
  for(const key of ['list','board','focus'])$(key+'-view').setAttribute('aria-pressed',String(view===key));
  placeChat();render();}
