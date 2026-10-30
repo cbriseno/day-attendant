@@ -403,18 +403,23 @@ function unlinkFrom(id,kind,other){removeLink(kind==='dep'?{from:other,to:id,typ
 // Dragging from a port, or a selected line's tip, draws a line that follows the pointer; letting go
 // on another task links them (or moves the line there).
 const rowAt=(x,y)=>document.elementsFromPoint(x,y).map(n=>n.closest?.('.task[data-task-id]')).find(n=>n&&$('board').contains(n))||null;
+// The link mode's cursor is inherited from the body; the element under the pointer takes it itself when it
+// has a cursor of its own. No rule under the body restyles the whole page when the mode starts or ends.
+let linkCursor=null;
+function linkCursorAt(x,y){const hit=document.elementFromPoint(x,y);if(hit===linkCursor)return;linkCursor?.style.removeProperty('cursor');linkCursor=null;if(hit&&document.body.contains(hit)&&getComputedStyle(hit).cursor!=='crosshair'){hit.style.setProperty('cursor','crosshair','important');linkCursor=hit}}
+function linkingStyle(on){document.body.classList.toggle('linking',on);document.body.style.cursor=on?'crosshair':'';if(!on){linkCursor?.style.removeProperty('cursor');linkCursor=null}}
 function startConnect(e,from,retarget=null){if(connectDrag||drag||flow.snapshot().readOnly||task(from)?.pending)return;e.preventDefault();e.stopPropagation();closeMenu(false);endConnectMode();
- connectDrag={from,retarget,pointer:e.pointerId,path:'',x:e.clientX,y:e.clientY};document.body.classList.add('linking');swallowClick=true;showDependencies()}
+ connectDrag={from,retarget,pointer:e.pointerId,path:'',x:e.clientX,y:e.clientY};linkingStyle(true);swallowClick=true;showDependencies()}
 function moveConnect(){const d=connectDrag;if(!d)return;d.frame=0;const box=$('board').getBoundingClientRect(),a=portAt(d.from,'right',box);if(!a)return;
  const b={x:d.x-box.left,y:d.y-box.top};d.path=curve(a,b,$('board').classList.contains('is-list')||Math.abs(b.x-a.x)<60);
  const over=rowAt(d.x,d.y);for(const c of $('board').querySelectorAll('.connect-target'))if(c!==over)c.classList.remove('connect-target');if(over&&over.dataset.taskId!==d.from)over.classList.add('connect-target');
- drawDependencies()}
+ drawDependencies();linkCursorAt(d.x,d.y)}
 function finishConnect(e,commit){const d=connectDrag;if(!d)return;connectDrag=null;cancelAnimationFrame(d.frame);
  for(const c of $('board').querySelectorAll('.connect-target'))c.classList.remove('connect-target');setTimeout(()=>swallowClick=false);
  const to=commit?rowAt(e.clientX,e.clientY)?.dataset.taskId:null;
  if(to&&d.retarget){if(retargetLink(d.retarget,to))selectedLink=null}else if(to)addLink(d.from,to);
- // This class restyles the whole page, so it leaves once the link is saved and its confirmation is on screen.
- flow.queue.finally(()=>requestAnimationFrame(()=>{if(!connectDrag)document.body.classList.remove('linking')}));
+ // The mode leaves once the link is saved and its confirmation is on screen.
+ flow.queue.finally(()=>requestAnimationFrame(()=>{if(!connectDrag)linkingStyle(false)}));
  showDependencies()}
 $('board').addEventListener('pointerdown',e=>{const port=e.target.closest('.port');if(port&&e.isPrimary&&e.button===0)startConnect(e,port.dataset.id)},true);
 dependencyLines.addEventListener('pointerdown',e=>{if(e.target.closest('.link-knob')&&selectedLink&&e.button===0)startConnect(e,selectedLink.from,selectedLink)});
