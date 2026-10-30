@@ -189,6 +189,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(401,{'error':{'code':'session_required','message':'Invalid session link.'}});return
             self.reply(200,{'data':{'authenticated':True}},cookie='day_session='+self.server.token+'; HttpOnly; SameSite=Strict; Path=/');return
         board=self.server.board
+        review=False  # The later review is scheduled after the reply, never before it.
         try:
             if self.path=='/api/attachments':
                 if set(body)!={'name','mime','base64','key'}:raise ValueError('fields')
@@ -197,13 +198,13 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path=='/api/proposals':
                 if set(body)-{'action','payload','key','expected_revision'}:raise ValueError('fields')
                 result=board.request(body['action'],body['payload'],body['key'],origin='cli' if self.headers.get('Authorization','').startswith('Bearer ') else 'ui',expected_revision=body.get('expected_revision'))
-                self.server.schedule(result)
+                review=True
             elif match:=re.fullmatch(r'/api/proposals/([a-f0-9-]+)/(?P<action>confirm|cancel|retry)',self.path):
                 identity=match[1];action=match['action']
-                if action=='confirm':result=board.confirm(identity,body['generation'],without_review=body.get('without_review',False) is True);self.server.schedule(result)
+                if action=='confirm':result=board.confirm(identity,body['generation'],without_review=body.get('without_review',False) is True);review=True
                 elif action=='cancel':result=board.cancel(identity)
                 else:
-                    result=board.retry(identity);self.server.schedule(result)
+                    result=board.retry(identity);review=True
             elif self.path=='/api/undo':
                 if 'message_key' in body:
                     if set(body)-{'message_key','key','expected_revision'}:raise ValueError('fields')
@@ -212,10 +213,10 @@ class Handler(BaseHTTPRequestHandler):
                     if set(body)-{'proposal_ids','key','expected_revision'}:raise ValueError('fields')
                     result=board.undo_proposals(body['proposal_ids'],body['key'],body.get('expected_revision'))
                 else:result=board.undo(int(body['fact_id']),body['key'],body.get('expected_revision'))
-                self.server.schedule(result)
+                review=True
             elif match:=re.fullmatch(r'/api/suggestions/([a-f0-9-]+)/(?P<action>accept|dismiss)',self.path):
                 if set(body)-{'key'}:raise ValueError('fields')
-                if match['action']=='accept':result=board.accept_suggestion(match[1]);self.server.schedule(result)
+                if match['action']=='accept':result=board.accept_suggestion(match[1]);review=True
                 else:result=board.dismiss_suggestion(match[1])
             elif self.path=='/api/chat':
                 if set(body)-{'text','key','attachments','capture_only'}:raise ValueError('fields')
@@ -255,6 +256,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.reply(404,{'error':{'code':'not_found','message':'Route unavailable.'}});return
             self.reply(200,{'data':result})
+            if review:self.server.schedule(result)
         except AssistantError as error:self.reply(409,{'error':{'code':error.code,'message':str(error),'details':error.details}})
         except (KeyError,ValueError,TypeError,AttributeError):self.reply(400,{'error':{'code':'invalid_request','message':'Invalid action or fields.'}})
 

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import threading
 
 from .errors import AssistantError
 from .platforms import exclusive
@@ -11,6 +12,24 @@ from .platforms import exclusive
 DEFAULTS = {"repeat_minutes": 30, "stale_days": 3, "due_soon_minutes": 60,
             "event_soon_minutes": 15, "chat_wait_minutes": 60,
             "notification_budget": 3}
+
+
+IDLE_CONNECTIONS = 4
+
+
+def reuse(owner):
+    with owner.idle_lock:
+        return owner.idle.pop() if owner.idle else None
+
+
+def release(owner, con, settled):
+    """Keep a committed, idle connection for one thread at a time; close any other."""
+    if settled:
+        with owner.idle_lock:
+            if len(owner.idle) < IDLE_CONNECTIONS:
+                owner.idle.append(con)
+                return
+    con.close()
 
 
 class Store:
@@ -23,6 +42,7 @@ class Store:
         os.chmod(self.path, 0o700)
         self.database = self.path / "assistant.sqlite3"
         self.lock_path = self.path / "writer.lock"
+        self.idle, self.idle_lock = [], threading.Lock()
         with exclusive(self.lock_path), self.connect() as con:
             version = con.execute("PRAGMA user_version").fetchone()[0]
             if version > 4:
@@ -62,19 +82,28 @@ class Store:
                     PRAGMA user_version=2;
                     COMMIT;
                 ''')
+            # Every state read checks for unfinished operations; without this index it scans each plan ever recorded.
+            con.execute("CREATE INDEX IF NOT EXISTS operations_unresolved ON operations(status) WHERE status NOT IN ('confirmed','abandoned')")
         os.chmod(self.database, 0o600)
 
     @contextmanager
     def connect(self):
-        con = sqlite3.connect(self.database, timeout=10)
-        con.row_factory = sqlite3.Row
-        con.execute("PRAGMA foreign_keys=ON")
-        con.execute("PRAGMA busy_timeout=10000")
+        # Each context still has its own connection and transaction. A connection whose context
+        # committed is kept for the next one: opening one per read parsed the schema again and
+        # took most of a click's server time.
+        con = reuse(self)
+        if con is None:
+            con = sqlite3.connect(self.database, timeout=10, check_same_thread=False)
+            con.row_factory = sqlite3.Row
+            con.execute("PRAGMA foreign_keys=ON")
+            con.execute("PRAGMA busy_timeout=10000")
+        settled = False
         try:
             with con:
                 yield con
+            settled = not con.in_transaction
         finally:
-            con.close()
+            release(self, con, settled)
 
     def lock(self):
         return exclusive(self.lock_path)

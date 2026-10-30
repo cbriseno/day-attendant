@@ -8,8 +8,11 @@ const errorText=(code,message)=>known(code)?tr('error_'+code):tr('the_request_co
 const formatLocale=()=>locale==='es'?'es-MX':'en-US';
 function translateChrome(){root.lang=locale;document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=tr(e.dataset.i18n));for(const attr of ['aria-label','placeholder','title'])document.querySelectorAll('[data-i18n-'+attr+']').forEach(e=>e.setAttribute(attr,tr(e.getAttribute('data-i18n-'+attr))));}
 let NOW=new Date();let zone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
+// One formatter per kind, locale and options: building one for each date of every row took most of a render.
+const formatters=new Map();
+function intl(kind,locale,options={}){const key=kind+'|'+locale+'|'+JSON.stringify(options);let f=formatters.get(key);if(!f){f=new Intl[kind](locale,options);formatters.set(key,f)}return f}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const full=value=>new Intl.DateTimeFormat(formatLocale(),{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone,timeZoneName:'shortOffset'}).format(new Date(value));
+const full=value=>intl('DateTimeFormat',formatLocale(),{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone,timeZoneName:'shortOffset'}).format(new Date(value));
 // Creation is the native entry instant, never a modification or optimistic capture time.
 function creationAge(value,now=NOW){
  const at=value?Date.parse(value):NaN,elapsed=now-at;
@@ -17,7 +20,7 @@ function creationAge(value,now=NOW){
  if(elapsed<0)return full(value);
  if(elapsed<60000)return tr('creation_now');
  const [unit,size]=elapsed<3600000?['minute',60000]:elapsed<86400000?['hour',3600000]:['day',86400000];
- return new Intl.NumberFormat(formatLocale(),{style:'unit',unit,unitDisplay:'short'}).format(Math.floor(elapsed/size));
+ return intl('NumberFormat',formatLocale(),{style:'unit',unit,unitDisplay:'short'}).format(Math.floor(elapsed/size));
 }
 function creationTime(t){
  if(t.pending)return '';
@@ -27,8 +30,8 @@ function creationTime(t){
 function refreshCreationAges(){
  for(const node of document.querySelectorAll('time.task-created')){const text=creationAge(node.dateTime);if(node.textContent!==text)node.textContent=text}
 }
-const short=value=>{const d=new Date(value);return (localValue(d).slice(0,10)===localValue(NOW).slice(0,10)?tr("today"):new Intl.DateTimeFormat(formatLocale(),{day:'numeric',month:'short',timeZone:zone}).format(d))+', '+new Intl.DateTimeFormat(formatLocale(),{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(d)};
-const localValue=d=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));return p.year+'-'+p.month+'-'+p.day+'T'+p.hour+':'+p.minute;};
+const short=value=>{const d=new Date(value);return (localValue(d).slice(0,10)===localValue(NOW).slice(0,10)?tr("today"):intl('DateTimeFormat',formatLocale(),{day:'numeric',month:'short',timeZone:zone}).format(d))+', '+intl('DateTimeFormat',formatLocale(),{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(d)};
+const localValue=d=>{const p=Object.fromEntries(intl('DateTimeFormat','en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));return p.year+'-'+p.month+'-'+p.day+'T'+p.hour+':'+p.minute;};
 function parseLocal(raw){const base=Date.parse(raw+'Z');if(!Number.isFinite(base))return new Date(NaN);let guess=base;for(let i=0;i<4;i++){const wall=Date.parse(localValue(new Date(guess))+'Z');const delta=base-wall;if(!delta)break;guess+=delta;}return new Date(guess)}
 function localizedDates(container=document){
  for(const input of container.querySelectorAll('input[type="datetime-local"]')){
@@ -47,7 +50,7 @@ const editIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 
 const calendarIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>';
 const copyIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>';
 const moreIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>';
-const formatted=(key,values)=>tr(key).replace(/\{(\w+)\}/g,(_,name)=>new Intl.NumberFormat(formatLocale()).format(values[name]));
+const formatted=(key,values)=>tr(key).replace(/\{(\w+)\}/g,(_,name)=>intl('NumberFormat',formatLocale()).format(values[name]));
 const concernMessage=c=>c.message_key?formatted(c.message_key,c.message_params):c.message;
 // Stable failure codes map to plain copy; internal error text is diagnostic and never shown.
 const failureReasons={agent_invalid_evidence:'reason_invalid_evidence',agent_invalid_output:'reason_invalid_output',agent_invalid_intent:'reason_invalid_intent',
@@ -91,7 +94,7 @@ refreshLabels();
 // those views, the same priority or group) and saves the profile's manual order.
 let orderView='priority';try{orderView=localStorage.getItem('day-attendant-order')||'priority'}catch{}if(!globalThis.dayOrdering.VIEWS.includes(orderView))orderView='priority';
 let taskView='list';
-let localOrder=null,orderBase=null,orderTimer=null,orderSaving=false,drag=null;
+let localOrder=null,orderBase=null,orderSaving=false,drag=null;
 // Motion: a card that changes place glides there from where it was (FLIP), a new one fades in and
 // a finished or retired one fades out over its old place. Reduced motion shows every change at once.
 const DURATION=200,EASE='cubic-bezier(.2,.8,.2,1)',reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
@@ -258,7 +261,7 @@ function rowMeta(t,data,proposal){const time=(key,value,cls)=>'<span class="'+cl
   +(proposal?'<button class="pending-badge" type="button"'+(data.readOnly?' disabled':'')+' data-id="'+t.id+'" data-action="pending">'+esc(tr('pending_change_badge'))+'</button>':'')}
 // The assistant's later look leaves a discreet mark on the affected card; it never moves the card.
 const currentSuggestion=(id,data)=>(data.suggestions||[]).find(s=>s.current&&s.taskId===id);
-function suggestionText(s){if(s.message)return s.message;const p=s.messageParams||{};return tr(s.messageKey).replace(/\{(\w+)\}/g,(_,k)=>['due','until'].includes(k)?short(p[k]):typeof p[k]==='number'?new Intl.NumberFormat(formatLocale()).format(p[k]):String(p[k]??''))}
+function suggestionText(s){if(s.message)return s.message;const p=s.messageParams||{};return tr(s.messageKey).replace(/\{(\w+)\}/g,(_,k)=>['due','until'].includes(k)?short(p[k]):typeof p[k]==='number'?intl('NumberFormat',formatLocale()).format(p[k]):String(p[k]??''))}
 function suggestionLabel(s,data){const a=s.action,other=a.payload.uuid!==s.taskId&&data.tasks.find(t=>t.id===a.payload.uuid);
  if(a.action==='front_activate')return other?tr('suggest_do_start_other').replace('{title}',other.title):tr('suggest_do_start');
  if(a.action==='front_todo')return tr('suggest_do_todo');if(a.action==='task_snooze')return tr('suggest_do_snooze').replace('{time}',short(a.payload.until));
@@ -281,8 +284,9 @@ const sectionIds=section=>[...$('board').querySelectorAll('.task')].filter(c=>c.
 // The visible order applies at once; saving waits for a pause and keeps the revision the person saw.
 const currentOrder=(data=flow.snapshot())=>globalThis.dayOrdering.manualIds(data.tasks.filter(t=>!['done','retired'].includes(t.state)),localOrder||data.taskOrder||[]);
 function placeOrder(id,ids,to){return setOrder(globalThis.dayOrdering.move(currentOrder(),ids,id,to))}
-function setOrder(next){const data=flow.snapshot(),order=currentOrder(data);if(next.join()===order.join())return false;if(localOrder===null)orderBase=data.revision;localOrder=next;render();clearTimeout(orderTimer);orderTimer=setTimeout(saveOrder,350);return true}
-async function saveOrder(){if(orderSaving){orderTimer=setTimeout(saveOrder,150);return}const order=localOrder;if(!order)return;orderSaving=true;try{const p=await flow.request('order_update',{order},undefined,orderBase);orderBase=p?.result?.revision??flow.snapshot().revision}catch(error){localOrder=null;orderBase=null;notice(error.message);render();return}finally{orderSaving=false}if(localOrder===order){localOrder=null;orderBase=null;render()}}
+// A new order leaves at once, before it is drawn; moves made while one is on its way follow it as one change.
+function setOrder(next){const data=flow.snapshot(),order=currentOrder(data);if(next.join()===order.join())return false;if(localOrder===null)orderBase=data.revision;localOrder=next;saveOrder();render();return true}
+async function saveOrder(){if(orderSaving)return;const order=localOrder;if(!order)return;orderSaving=true;try{const p=await flow.request('order_update',{order},undefined,orderBase);orderBase=p?.result?.revision??flow.snapshot().revision}catch(error){localOrder=null;orderBase=null;notice(error.message);render();return}finally{orderSaving=false}if(localOrder===order){localOrder=null;orderBase=null;render()}else saveOrder()}
 // Blocked and blocking cards name their counterparts. On a wide board the chip highlights those
 // direct links; on a phone, where lines do not fit, it opens the task's links as a sheet.
 const titles=(ids,data)=>ids.map(id=>data.tasks.find(r=>r.id===id)?.title||id).join(', ');
@@ -474,8 +478,8 @@ function renderClosed(data=flow.snapshot()){
  $('closed-count').textContent=rows.length;let day=null,html='';
  for(const t of rows.slice(0,closedLimit)){
   const valid=t.closedAt&&Number.isFinite(Date.parse(t.closedAt)),key=valid?localValue(new Date(t.closedAt)).slice(0,10):'';
-  if(key!==day){day=key;html+='<div class="closed-day">'+esc(valid?new Intl.DateTimeFormat(formatLocale(),{weekday:'short',day:'numeric',month:'long',year:'numeric',timeZone:zone}).format(new Date(t.closedAt)):tr('closed_date_unknown'))+'</div>'}
-  html+='<div class="closed-row"><div><s class="closed-title">'+esc(t.title)+'</s><div class="small">'+esc(tr(t.state==='done'?'completed':'retired'))+(valid?' · '+esc(new Intl.DateTimeFormat(formatLocale(),{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(new Date(t.closedAt))):'')+' · '+creationTime(t)+'</div></div><button type="button" class="link-button" data-reopen-id="'+esc(t.id)+'"'+(data.readOnly?' disabled':'')+' aria-label="'+esc(tr('reopen')+': '+t.title)+'">'+esc(tr('reopen'))+'</button></div>';
+  if(key!==day){day=key;html+='<div class="closed-day">'+esc(valid?intl('DateTimeFormat',formatLocale(),{weekday:'short',day:'numeric',month:'long',year:'numeric',timeZone:zone}).format(new Date(t.closedAt)):tr('closed_date_unknown'))+'</div>'}
+  html+='<div class="closed-row"><div><s class="closed-title">'+esc(t.title)+'</s><div class="small">'+esc(tr(t.state==='done'?'completed':'retired'))+(valid?' · '+esc(intl('DateTimeFormat',formatLocale(),{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(new Date(t.closedAt))):'')+' · '+creationTime(t)+'</div></div><button type="button" class="link-button" data-reopen-id="'+esc(t.id)+'"'+(data.readOnly?' disabled':'')+' aria-label="'+esc(tr('reopen')+': '+t.title)+'">'+esc(tr('reopen'))+'</button></div>';
  }
  const left=Math.max(0,rows.length-closedLimit);
  html+=rows.length?'<div class="closed-more">'+(left?'<button type="button" class="btn" data-closed-more>'+esc(tr('closed_more'))+'</button><span>'+esc(formatted('closed_remaining',{n:left}))+'</span>':'')+'</div><p class="closed-note">'+esc(tr('closed_preserved'))+'</p>':'<p class="empty">'+esc(tr('closed_empty'))+'</p>';
@@ -545,8 +549,8 @@ function titleCell(t,data){
  return '<span class="title-wrap">'+suggestionMark(t,data)+'<button type="button" class="task-title" data-id="'+t.id+'" data-action="title" aria-label="'+esc(tr('edit_title')+': '+t.title)+'" title="'+esc(tr('edit_title_hint'))+'">'+esc(t.title)+'</button></span>'}
 function startTitleEdit(id){const t=task(id),data=flow.snapshot();if(!t||t.pending||data.readOnly||['done','retired'].includes(t.state))return;closeMenu(false);titleEdit={id};render();const input=$('board').querySelector('.title-edit[data-id="'+id+'"]');if(input){input.focus({preventScroll:true});input.select()}}
 function commitTitle(id){const d=drafts.get(draftKey(id,'title'));if(d?.conflict||d?.saving)return;titleEdit=null;
- // An emptied title keeps the saved one, as Esc does.
- if(d&&!String(d.value).trim())drafts.delete(draftKey(id,'title'));render();restoreTitleFocus(id);if(drafts.has(draftKey(id,'title')))saveDraft(id,'title')}
+ // An emptied title keeps the saved one, as Esc does. A new one leaves before the row is redrawn.
+ if(d&&!String(d.value).trim())drafts.delete(draftKey(id,'title'));if(drafts.has(draftKey(id,'title')))saveDraft(id,'title');render();restoreTitleFocus(id)}
 function cancelTitle(id){drafts.delete(draftKey(id,'title'));titleEdit=null;render();restoreTitleFocus(id)}
 const restoreTitleFocus=id=>$('board').querySelector('[data-id="'+id+'"][data-action="title"]')?.focus({preventScroll:true});
 // Expanded details: continuity, links and source, saved field by field.
@@ -634,7 +638,7 @@ function snoozeTime({hours,days}){if(hours)return new Date(Math.ceil((NOW.getTim
  const day=new Date(localValue(NOW).slice(0,10)+'T00:00Z');day.setUTCDate(day.getUTCDate()+days);const wall=day.toISOString().slice(0,10)+'T09:00',d=parseLocal(wall);
  return localValue(d)===wall&&!ambiguous(d)?d:null}
 function snoozeMenu(t,data){const off=data.readOnly||t.pending,today=localValue(NOW).slice(0,10),browserZone=Intl.DateTimeFormat().resolvedOptions().timeZone;
- const clock=(d,withDay)=>new Intl.DateTimeFormat(formatLocale(),{...(withDay?{weekday:'short',day:'numeric',month:'short'}:{}),hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(d);
+ const clock=(d,withDay)=>intl('DateTimeFormat',formatLocale(),{...(withDay?{weekday:'short',day:'numeric',month:'short'}:{}),hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(d);
  const items=SNOOZE_PRESETS.map(([key,span])=>{const d=snoozeTime(span);if(!d)return '';const late=t.due&&d>new Date(t.due);
   return menuItem('snooze',esc(tr(key))+(late?'<span class="menu-warn">'+esc(tr('snooze_after_deadline'))+'</span>':''),{value:d.toISOString(),hint:clock(d,key!=='snooze_tomorrow'&&localValue(d).slice(0,10)!==today),title:full(d),disabled:off})}).join('');
  return '<p class="menu-title">'+esc(tr('snooze_until'))+'</p>'+items+(browserZone!==zone?'<p class="menu-note">'+esc(tr('snooze_zone_note').replace('{zone}',zone))+'</p>':'')
@@ -655,7 +659,7 @@ function groupMenu(t,data){const off=data.readOnly||t.pending,groups=[...new Set
   +(t.group?'<div class="menu-sep" role="separator"></div><p class="menu-title">'+esc(tr('group_color_of').replace('{group}',t.group))+'</p><div class="swatches">'+Object.keys(GROUP_COLORS).map(c=>'<button type="button" class="swatch" role="menuitemradio" aria-checked="'+(groupColor(t.group)===c)+'" data-menu-act="group-color" data-value="'+c+'" style="--c:'+GROUP_COLORS[c]+'" aria-label="'+esc(tr('color_'+c))+'" title="'+esc(tr('color_'+c))+'"'+(data.readOnly?' disabled':'')+'></button>').join('')+'</div>':'')}
 // Deadlines at 18:00 in the profile's zone, or an exact local date and time.
 function localAt(days,hour){const wall=new Date(localValue(NOW).slice(0,10)+'T00:00Z');wall.setUTCDate(wall.getUTCDate()+days);const raw=wall.toISOString().slice(0,10)+'T'+String(hour).padStart(2,'0')+':00',d=parseLocal(raw);return Number.isFinite(d.getTime())&&localValue(d)===raw&&!ambiguous(d)?d:null}
-const dayHint=d=>new Intl.DateTimeFormat(formatLocale(),{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(d);
+const dayHint=d=>intl('DateTimeFormat',formatLocale(),{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:zone}).format(d);
 function duePresets(){const weekday=new Date(localValue(NOW).slice(0,10)+'T00:00Z').getUTCDay(),seen=new Set();
  return [['due_today',0],['due_tomorrow',1],['due_friday',(5-weekday+7)%7||7],['due_next_week',7]].map(([key,days])=>[key,localAt(days,18)]).filter(([,d])=>d&&d>NOW&&!seen.has(d.getTime())&&seen.add(d.getTime()))}
 function dueMenu(t,data){const off=data.readOnly||t.pending,opening=t.due?localValue(new Date(t.due)):(localAt(1,18)?localValue(localAt(1,18)):'');
@@ -842,7 +846,7 @@ function dropCard(d){
  // The new place is set before the changes show, so the card stays exactly where it was let go.
  const gesture={id:'gesture:'+(++gestureSerial),taskId:t.id,notes,proposals:[],before:{tasks:data.tasks,taskOrder:data.taskOrder},started:performance.now()};
  gestures.set(gesture.id,gesture);if(gestures.size>20)gestures.delete(gestures.keys().next().value);
- if(reordered){clearTimeout(orderTimer);localOrder=next}
+ if(reordered)localOrder=next;
  for(const [action,payload] of changes)request(action,payload,undefined,undefined,gesture);
  if(reordered)request('order_update',{order:next},undefined,undefined,gesture).then(()=>{if(localOrder===next){localOrder=null;orderBase=null;render()}});
  gesture.shown=performance.now();return true;
@@ -883,7 +887,7 @@ class RemoteFlow{
  async load(){const seq=++this.started,settled=!this.sending;this.loading++;try{const raw=await api('/api/state'+(this.tag?'?since='+encodeURIComponent(this.tag):''));if(seq<this.applied||!settled||seq<=this.barrier)return;this.applied=seq;if(this.offline){this.offline=false;notice(tr("connection_restored"))}if(raw.unchanged){if(raw.tag===this.tag)this.tick(raw.now);else this.tag='';return}this.apply(raw)}catch(error){this.offline=true;this.data.agent={...(this.data.agent||{}),connected:false};$('agent-state').textContent=tr("disconnected");delete $('agent-state').dataset.label;throw error}finally{this.loading--}}
  // An unchanged poll only advances the clock; calendar rows are redrawn when one of them ends.
  tick(now){const before=new Date(this.data.now),after=new Date(now);NOW=after;this.data.now=now;refreshCreationAges();if(taskView==='focus'&&Math.floor(before/60000)!==Math.floor(after/60000))render(this.data);if((this.data.calendar_events||[]).some(e=>{const end=new Date(e.end_at);return end>before&&end<=after}))globalThis.dayDaily?.update(this.data)}
- apply(raw){if(!this.localeLoaded&&raw.profile){this.localeLoaded=true;locale=raw.profile.locale||'en';$('locale-choice').value=locale;translateChrome();refreshLabels()}NOW=new Date(raw.now);zone=raw.timezone||zone;const state={...raw,revision:Math.max(raw.revision,this.seen),mode:'connected',rawProposals:raw.proposals,proposals:raw.proposals.filter(p=>['evaluating','review','unavailable','stale','invalid'].includes(p.phase)).map(p=>({...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]})),suggestions:raw.suggestions||[],review:raw.review||{}};this.tag=raw.tag||'';this.data=state;reconcileDeliveries(raw);globalThis.dayDaily?.update(state);const digest=JSON.stringify([state.tasks,state.taskOrder,state.groupColors,state.orderSuggestion,state.agent.connected,state.context,state.proposals,state.lastFact,state.suggestions,state.revision,state.readOnly]);if(digest!==this.digest){this.digest=digest;render(state)}const md=JSON.stringify([state.messages,state.suggestions,state.conversation]);if(md!==this.messageDigest){this.messageDigest=md;renderMessages(state.messages,state)}const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};const agentError=state.agent.error&&errorText(state.agent.errorCode,state.agent.error);renderReview(state);$('bridge-state').hidden=state.agent.connected;if(!state.agent.connected)setText($('bridge-state'),agentError||tr('agent_temporarily_unavailable'));renderContextStatus(state);setText($('agent-details'),(state.agent.model||(state.profile?.harness==='claude'?'Claude Code':'Codex')));const stateTitle=agentError||$('agent-state').dataset.label||'';if($('agent-state').title!==stateTitle)$('agent-state').title=stateTitle;setText(document.querySelector('.date'),new Intl.DateTimeFormat(formatLocale(),{weekday:'long',day:'numeric',month:'long',timeZone:zone}).format(NOW));}
+ apply(raw){if(!this.localeLoaded&&raw.profile){this.localeLoaded=true;locale=raw.profile.locale||'en';$('locale-choice').value=locale;translateChrome();refreshLabels()}NOW=new Date(raw.now);zone=raw.timezone||zone;const state={...raw,revision:Math.max(raw.revision,this.seen),mode:'connected',rawProposals:raw.proposals,proposals:raw.proposals.filter(p=>['evaluating','review','unavailable','stale','invalid'].includes(p.phase)).map(p=>({...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]})),suggestions:raw.suggestions||[],review:raw.review||{}};this.tag=raw.tag||'';this.data=state;reconcileDeliveries(raw);globalThis.dayDaily?.update(state);const digest=JSON.stringify([state.tasks,state.taskOrder,state.groupColors,state.orderSuggestion,state.agent.connected,state.context,state.proposals,state.lastFact,state.suggestions,state.revision,state.readOnly]);if(digest!==this.digest){this.digest=digest;render(state)}const md=JSON.stringify([state.messages,state.suggestions,state.conversation]);if(md!==this.messageDigest){this.messageDigest=md;renderMessages(state.messages,state)}const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value};const agentError=state.agent.error&&errorText(state.agent.errorCode,state.agent.error);renderReview(state);$('bridge-state').hidden=state.agent.connected;if(!state.agent.connected)setText($('bridge-state'),agentError||tr('agent_temporarily_unavailable'));renderContextStatus(state);setText($('agent-details'),(state.agent.model||(state.profile?.harness==='claude'?'Claude Code':'Codex')));const stateTitle=agentError||$('agent-state').dataset.label||'';if($('agent-state').title!==stateTitle)$('agent-state').title=stateTitle;setText(document.querySelector('.date'),intl('DateTimeFormat',formatLocale(),{weekday:'long',day:'numeric',month:'long',timeZone:zone}).format(NOW));}
  // A revision this page produced itself: the next change it sends already includes its own last one.
  observe(result){const revision=result?.result?.revision??result?.revision;if(Number.isInteger(revision)&&revision>this.seen){this.seen=revision;this.data.revision=Math.max(this.data.revision||0,revision)}return result}
  // Shows a direct change on screen at once; the service's answer and the next read reconcile it.
@@ -893,6 +897,8 @@ class RemoteFlow{
    const fields=moves[body.action]||(body.action==='task_snooze'?{state:'snoozed',until:p.until}:Object.fromEntries(['title','priority','due','group'].filter(k=>k in p).map(k=>[k,k==='group'?p.group||null:p[k]])));
    if(!tasks.some(t=>t.id===p.uuid))return false;tasks=tasks.map(t=>t.id===p.uuid?{...t,...fields}:t)}
   else if(body.action==='task_add')tasks=[...tasks,{id:'draft:'+(++this.drafts),title:p.title,state:'todo',priority:p.priority||'medium',group:p.group||null,due:p.due||null,until:null,blocked:false,dependsOn:[],blockedBy:[],relatedTo:[],attachmentIds:[],context:'',next:'',awaiting:false,remainingMinutes:null,createdAt:null,pending:true}];
+  else if(body.action==='event_add'||body.action==='event_update'){const events=data.calendar_events||[],shown={title:p.title,...(p.start?{start_at:p.start}:{}),...(p.end?{end_at:p.end}:{})};if(body.action==='event_update'&&!events.some(e=>e.uuid===p.uuid))return false;
+   this.data={...data,calendar_events:(body.action==='event_add'?[...events,{uuid:'draft:'+(++this.drafts),...shown,pending:true}]:events.map(e=>e.uuid===p.uuid?{...e,...shown}:e)).sort((a,b)=>Date.parse(a.start_at)-Date.parse(b.start_at))};globalThis.dayDaily?.update(this.data);return {tasks:data.tasks,context:data.context,calendar_events:events}}
   else if(body.action==='continuity_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const fields=Object.fromEntries(['context','next','awaiting','remainingMinutes'].filter(k=>k in p).map(k=>[k,p[k]]));tasks=tasks.map(t=>t.id===p.uuid?{...t,...fields}:t)}
   else if(body.action==='dependency_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const done=new Set(tasks.filter(t=>t.state==='done').map(t=>t.id)),blockedBy=p.dependsOn.filter(id=>!done.has(id));tasks=tasks.map(t=>t.id===p.uuid?{...t,dependsOn:[...p.dependsOn],blockedBy,blocked:blockedBy.length>0}:t)}
   else if(body.action==='related_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const wanted=new Set(p.relatedTo);tasks=tasks.map(t=>t.id===p.uuid?{...t,relatedTo:[...p.relatedTo]}:wanted.has(t.id)&&!t.relatedTo.includes(p.uuid)?{...t,relatedTo:[...t.relatedTo,p.uuid]}:!wanted.has(t.id)&&t.relatedTo.includes(p.uuid)?{...t,relatedTo:t.relatedTo.filter(x=>x!==p.uuid)}:t)}
@@ -903,9 +909,12 @@ class RemoteFlow{
   this.data={...data,tasks,context,groupColors:colors};render(this.data);return {tasks:data.tasks,context:data.context}}
  // Direct changes go out one at a time, each with the newest revision, so quick consecutive
  // clicks never collide with each other; none of them waits for a state read to be sent.
+ // When nothing else is on its way, a change leaves before the page redraws it, so the service
+ // saves it while the page shows it.
+ dispatch(task){const sent=this.sending>1?this.queue.then(task):task();this.queue=sent.catch(()=>{});return sent}
  async send(body,key,expectedRevision){const revision=expectedRevision??this.data.revision;return this.observe(key?await api('/api/proposals',{...body,key,expected_revision:revision}):await deliver('/api/proposals',body,revision,{refresh:false}))}
  async request(action,payload,key,expectedRevision,gesture){const started=performance.now();const body={action:domain[action]||action,payload:{...(payload.taskId?{uuid:payload.taskId}:{}),...(payload.until?{until:payload.until}:{}),...(!payload.taskId?payload:{})}};
-  this.sending++;this.barrier=this.started;const previewed=this.preview(body),shown=previewed?performance.now():undefined,sent=this.queue.then(()=>this.send(body,key,expectedRevision));this.queue=sent.catch(()=>{});
+  this.sending++;this.barrier=this.started;const sent=this.dispatch(()=>this.send(body,key,expectedRevision)),previewed=this.preview(body),shown=previewed?performance.now():undefined;
   let p;try{p=timed(await sent,started,shown,previewed||undefined);if(gesture&&p?.id){gesture.proposals.push(p.id);gestureOf.set(p.id,gesture);if(gestureOf.size>60)gestureOf.delete(gestureOf.keys().next().value)}}catch(error){this.settle();if(previewed){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();
   await this.refresh();return {...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]};}
  settle(){this.sending--;this.barrier=this.started}
@@ -974,8 +983,8 @@ function renderMessages(messages,state=flow.snapshot()){const box=$('messages'),
 function showProposal(id){collapsedProposals.delete(id);expandedProposal=id;render();const reveal=()=>{const d=[...$('reviews').querySelectorAll('details')].find(d=>d.dataset.proposal===id);if(!d)return;d.open=true;d.scrollIntoView({block:'nearest'});d.querySelector('summary').focus({preventScroll:true})};if(!$('chat-dialog').open)return reveal();$('chat-dialog').addEventListener('close',()=>requestAnimationFrame(reveal),{once:true});chatOpen=false;placeChat()}
 // Only what the harness reported on the latest reply of the selected model; nothing is estimated.
 function contextUsage(state){for(const message of [...(state.messages||[])].reverse()){if(message.role!=='assistant')continue;let data;try{data=JSON.parse(message.data||'null')}catch{continue}const usage=data?.usage;if(!usage||!Number.isInteger(usage.contextTokens))continue;return data.provider===state.profile?.harness&&data.model===state.agent?.model?usage:null}return null}
-function renderContextStatus(state){const node=$('context-status'),usage=contextUsage(state),count=n=>new Intl.NumberFormat(formatLocale(),{notation:'compact',maximumFractionDigits:1}).format(n);let text='',tight=false;node.hidden=!usage;
- if(usage&&Number.isInteger(usage.contextWindow)&&usage.contextWindow>0){const free=Math.max(0,Math.floor(100*(usage.contextWindow-usage.contextTokens)/usage.contextWindow));tight=free<20;text=tr('context_window_status').replace('{used}',count(usage.contextTokens)).replace('{window}',count(usage.contextWindow)).replace('{free}',new Intl.NumberFormat(formatLocale(),{style:'percent'}).format(free/100))}
+function renderContextStatus(state){const node=$('context-status'),usage=contextUsage(state),count=n=>intl('NumberFormat',formatLocale(),{notation:'compact',maximumFractionDigits:1}).format(n);let text='',tight=false;node.hidden=!usage;
+ if(usage&&Number.isInteger(usage.contextWindow)&&usage.contextWindow>0){const free=Math.max(0,Math.floor(100*(usage.contextWindow-usage.contextTokens)/usage.contextWindow));tight=free<20;text=tr('context_window_status').replace('{used}',count(usage.contextTokens)).replace('{window}',count(usage.contextWindow)).replace('{free}',intl('NumberFormat',formatLocale(),{style:'percent'}).format(free/100))}
  else if(usage)text=tr('context_used_no_window').replace('{used}',count(usage.contextTokens));
  if(node.textContent!==text)node.textContent=text;node.classList.toggle('tight',tight);const title=usage?tr('context_status_hint'):'';if(node.title!==title)node.title=title}
 async function clearConversation(){await api('/api/chat/clear',{key:crypto.randomUUID()});await flow.refresh()}

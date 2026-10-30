@@ -588,7 +588,8 @@ try{
   // Keyboard: arrows move a task inside its priority and save only the display order.
   const handle=id=>`.drag-handle[data-id="${id}"]`;
   let revision=state.revision;await evaluate(`document.querySelector(${JSON.stringify(handle(c.id))}).focus()`);
-  await evaluate(`document.querySelector(${JSON.stringify(handle(c.id))}).dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}))`);
+  // The new order leaves within the same event: nothing waits for a pause before saving it.
+  assert.equal(await evaluate(`(()=>{const real=window.fetch;let sent=0;window.fetch=(...a)=>{sent++;return real(...a)};document.querySelector(${JSON.stringify(handle(c.id))}).dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true}));window.fetch=real;return sent})()`),1);
   assert.deepEqual(await evaluate(lane),[c.id,a.id,target.id,b.id]);
   assert.match(await evaluate("document.getElementById('status').textContent"),/position 1 of 2/);
   await settle(()=>requests.length===quiet+1,'keyboard order request');
@@ -712,13 +713,21 @@ try{
   for(const t of [a,b,c])Object.assign(t,{state:'todo',dependsOn:[],blockedBy:[],blocked:false});state.revision++;await refresh();
   const toast=()=>evaluate("({show:document.getElementById('toast').classList.contains('show'),text:document.getElementById('status').textContent,detail:document.getElementById('toast-detail').textContent,undo:!document.getElementById('undo').hidden})");
   const lane=id=>evaluate(`document.querySelector('#board [data-task-id="${id}"]')?.closest('.lane')?.dataset.state`);
+  // The change leaves before the page redraws it: the request starts with the card still in its old lane.
+  await evaluate(`(()=>{const real=window.fetch;window.fetch=(url,init)=>{if(String(url).endsWith('/api/proposals')){globalThis.laneWhenSent=document.querySelector('#board [data-task-id="${a.id}"]').closest('.lane').dataset.state;window.fetch=real}return real(url,init)}})()`);
   await click(`[data-id="${a.id}"][data-action="activate"]`);await wait(`document.querySelector('#board [data-task-id="${a.id}"]').closest('.lane').dataset.state==='active'`);
+  assert.equal(await evaluate('globalThis.laneWhenSent'),'todo');
   await wait("document.getElementById('status').textContent==='Start · A'");
   let shown=await toast();assert.equal(shown.show,true);assert.equal(shown.text,'Start · A');assert.match(shown.detail,/^\d+ ms · the assistant looks at it in the background$/);assert.equal(shown.undo,true);
   assert.equal(requests.at(-1).action,'front_activate');
   await click('#undo');await wait(`document.querySelector('#board [data-task-id="${a.id}"]').closest('.lane').dataset.state==='todo'`);
   await wait("document.getElementById('status').textContent==='Change undone'");
   assert.equal(undos.at(-1).fact_id,String(facts-1));shown=await toast();assert.equal(shown.undo,false);
+  // A calendar addition shows before the answer; the next read holds what the service saved.
+  await evaluate("(()=>{dayUI.flow.preview({action:'event_add',payload:{title:'New commitment',start:'2099-01-01T10:00:00Z',end:'2099-01-01T11:00:00Z'}});return true})()");
+  assert.match(await evaluate("document.getElementById('calendar-area').textContent"),/New commitment/);
+  await evaluate("(()=>{dayUI.flow.tag='';return dayUI.flow.refresh().then(()=>true)})()");
+  assert.doesNotMatch(await evaluate("document.getElementById('calendar-area').textContent"),/New commitment/);
   assert.match(await evaluate("document.getElementById('review-strip').textContent"),/^Everything is saved · reviewed .+\d\d:\d\d$/);
   assert.equal(await evaluate("document.getElementById('agent-state').textContent"),'Up to date');
   state.review={pending:2,running:false};await refresh();

@@ -151,6 +151,8 @@ class Connected:
                     CREATE TABLE IF NOT EXISTS acknowledgments(signature TEXT PRIMARY KEY, code TEXT NOT NULL, at TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS facts(id INTEGER PRIMARY KEY AUTOINCREMENT, operation_key TEXT UNIQUE NOT NULL,
                       proposal_id TEXT NOT NULL, action TEXT NOT NULL, plan TEXT NOT NULL, at TEXT NOT NULL);
+                    -- Reading each fact's time no longer reads every recorded plan stored before it.
+                    CREATE INDEX IF NOT EXISTS facts_targets ON facts(id, operation_key, action, at);
                     CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT,
                       key TEXT UNIQUE NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL,
                       data TEXT, at TEXT NOT NULL);

@@ -65,6 +65,47 @@ class SQLiteTasks(unittest.TestCase):
         saved = self.app.tasks.get(row['uuid'])
         self.assertTrue(all(saved[field] == field for field in fields))
 
+    def test_committed_connections_are_reused_without_locks_or_failed_work(self):
+        store, tasks, row = self.app.store, self.app.tasks, self.row()
+        tasks.create(row)
+        real, opened = sqlite3.connect, []
+        with patch('sqlite3.connect', side_effect=lambda *a, **k: opened.append(a[0]) or real(*a, **k)):
+            for _ in range(40):
+                store.revision();store.unresolved();tasks.get(row['uuid']);tasks.rows()
+        self.assertLessEqual(len(opened), 2)
+        # A nested context has its own connection; a context that fails rolls back and is not kept.
+        with self.assertRaises(RuntimeError), store.connect() as outer:
+            outer.execute("INSERT INTO state VALUES('pool_probe','1')")
+            with store.connect() as inner:
+                self.assertIsNot(inner, outer)
+                self.assertIsNone(inner.execute("SELECT 1 FROM state WHERE key='pool_probe'").fetchone())
+            raise RuntimeError('rollback')
+        self.assertIsNone(store.state_value('pool_probe'))
+        self.assertNotIn(outer, store.idle)
+        with self.assertRaises(AssistantError):
+            tasks.patch(row['uuid'], {'status': 'invalid'})
+        self.assertEqual(tasks.get(row['uuid']), row)
+        # Kept connections hold no lock: another writer gets both stores at once.
+        for database in (store.database, tasks.database):
+            other = sqlite3.connect(database, timeout=0)
+            other.execute('BEGIN IMMEDIATE');other.rollback();other.close()
+        with store.connect() as con:
+            plan = con.execute("EXPLAIN QUERY PLAN SELECT key,action,status,error FROM operations WHERE status NOT IN ('confirmed','abandoned')").fetchall()
+        self.assertIn('operations_unresolved', str([tuple(r) for r in plan]))
+
+    def test_a_stored_row_is_validated_again_whenever_its_text_changes(self):
+        tasks, row = self.app.tasks, self.row()
+        other = self.row();tasks.create(other)
+        tasks.create(dict(row, depends=[other['uuid']]))
+        read = tasks.get(row['uuid']);read['depends'].append('changed');read['description'] = 'changed'
+        self.assertEqual(tasks.get(row['uuid'])['depends'], [other['uuid']])
+        self.assertEqual(tasks.get(row['uuid'])['description'], row['description'])
+        with sqlite3.connect(tasks.database) as con:
+            con.execute('UPDATE tasks SET data=? WHERE uuid=?', (json.dumps(dict(row, status='invalid')), row['uuid']))
+        with self.assertRaises(AssistantError) as error:
+            tasks.rows()
+        self.assertEqual(error.exception.code, 'invalid_task_record')
+
     def test_actual_process_death_does_not_publish_half_a_row(self):
         row = self.row()
         self.app.tasks.create(row)

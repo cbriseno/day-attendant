@@ -8,9 +8,11 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import threading
 import uuid
 
 from .errors import AssistantError
+from .store import release, reuse
 from .timeutil import parse, stamp, wire, utcnow
 
 # Public priority names, most pressing first, and their stored codes. Schema 2 adds
@@ -41,6 +43,8 @@ class TaskStore:
 
     def __init__(self, store):
         self.database = store.path / 'tasks.sqlite3'
+        self.idle, self.idle_lock = [], threading.Lock()
+        self.decoded = {}
         with store.lock():
             if not self.database.exists() and (store.path / 'taskwarrior').exists():
                 raise AssistantError('task_migration_required',
@@ -60,15 +64,20 @@ class TaskStore:
     @contextmanager
     def connect(self, write=False):
         try:
-            con = sqlite3.connect(self.database, timeout=10)
+            # As in the auxiliary store, a committed connection is reused by the next context.
+            con = reuse(self)
+            if con is None:
+                con = sqlite3.connect(self.database, timeout=10, check_same_thread=False)
+            settled = False
             try:
                 con.execute('PRAGMA busy_timeout=10000')
                 if write:
                     con.execute('BEGIN IMMEDIATE')
                 with con:
                     yield con
+                settled = not con.in_transaction
             finally:
-                con.close()
+                release(self, con, settled)
         except sqlite3.Error as error:
             raise AssistantError('task_storage_error', 'The SQLite task operation failed; inspect recovery before retrying.') from error
 
@@ -125,13 +134,20 @@ class TaskStore:
         return [self._decode(uid, data) for uid, data in records]
 
     def _decode(self, uid, data):
-        try:
-            row = self.validate(json.loads(data))
-            if row['uuid'] != uid:
-                raise ValueError('identity mismatch')
-            return row
-        except (ValueError, AssistantError) as error:
-            raise AssistantError('invalid_task_record', 'The SQLite task record failed validation.') from error
+        # The same stored text always validates the same, so each version of a row is checked once.
+        known = self.decoded.get(uid)
+        if known is None or known[0] != data:
+            try:
+                row = self.validate(json.loads(data))
+                if row['uuid'] != uid:
+                    raise ValueError('identity mismatch')
+            except (ValueError, AssistantError) as error:
+                raise AssistantError('invalid_task_record', 'The SQLite task record failed validation.') from error
+            known = self.decoded[uid] = (data, row)
+        row = dict(known[1])
+        if 'depends' in row:
+            row['depends'] = list(row['depends'])
+        return row
 
     def get(self, uid):
         with self.connect() as con:
