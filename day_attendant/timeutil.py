@@ -46,6 +46,9 @@ def parse(value):
     if not value:
         return None
     if len(value) == 16 and value.endswith("Z") and "-" not in value:
+        # Every stored task date is read on each state view; strptime dominated that cost.
+        if value.isascii() and value[8] == "T" and value[:8].isdigit() and value[9:15].isdigit():
+            return datetime(int(value[:4]), int(value[4:6]), int(value[6:8]), int(value[9:11]), int(value[11:13]), int(value[13:15]), tzinfo=UTC)
         return datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
