@@ -467,3 +467,8 @@ Object.assign(globalThis.dayTranslations.es,{edit_title:'Editar título',edit_ti
  saved_field:'{field} guardado',field_title:'Título',field_context:'Dónde me quedé',field_next:'Siguiente paso',field_remainingMinutes:'Tiempo restante',field_awaiting:'En espera',details_saved:'Detalles guardados',
  value_yes:'sí',value_no:'no',value_empty:'(vacío)',
  conflict_changed:'Esto cambió en otro lugar mientras escribías. Ahora dice: {value}. Lo que escribiste sigue aquí.',conflict_keep_mine:'Guardar lo mío',conflict_use_current:'Usar lo actual'});
+// What a drop changed, in one confirmation.
+Object.assign(globalThis.dayTranslations.en,{drop_moved:'Moved to {lane}',drop_snoozed:'Snoozed until {time}',drop_priority:'Priority: {priority}',
+ drop_group:'Group: {group}',drop_no_group:'No group',drop_blocked:'It waits for its prerequisites, so it stays where it was.'});
+Object.assign(globalThis.dayTranslations.es,{drop_moved:'Movida a {lane}',drop_snoozed:'Pospuesta hasta {time}',drop_priority:'Prioridad: {priority}',
+ drop_group:'Grupo: {group}',drop_no_group:'Sin grupo',drop_blocked:'Espera a sus requisitos, así que se quedó donde estaba.'});

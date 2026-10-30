@@ -24,5 +24,11 @@ function arrange(tasks,view,{order=[],suggestion=null}={}){
 }
 // Reinsert next to the new neighbour within the whole order, so every other relative position persists.
 function move(order,section,id,to){const rest=section.filter(x=>x!==id),index=Math.max(0,Math.min(to,rest.length));if(!rest.length||!order.includes(id)||section.indexOf(id)===index)return order.slice();const result=order.filter(x=>x!==id);result.splice(index<rest.length?result.indexOf(rest[index]):result.indexOf(rest.at(-1))+1,0,id);return result}
-globalThis.dayOrdering={VIEWS,PRIORITIES,manualIds,arrange,move,hue};
+// A drop lands between two visible neighbours: the task goes right before the next one, or right
+// after the previous one; with neither (an empty column) the whole order stays as it was.
+function place(order,id,before,after){if(!order.includes(id)||id===before||id===after)return order.slice();const result=order.filter(x=>x!==id),at=after&&result.includes(after)?result.indexOf(after):before&&result.includes(before)?result.indexOf(before)+1:-1;if(at<0)return order.slice();result.splice(at,0,id);return result}
+// Dropped among other priorities, a task takes the priority of where it lands: it keeps its own
+// when that fits between its new neighbours, and otherwise takes the nearer neighbour's.
+function adopt(own,before,after){const rank=p=>RANK[p]??RANK.medium;if(before&&rank(own)<rank(before))return before;if(after&&rank(own)>rank(after))return after;return own}
+globalThis.dayOrdering={VIEWS,PRIORITIES,manualIds,arrange,move,place,adopt,hue};
 })();

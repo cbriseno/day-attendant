@@ -224,6 +224,31 @@ class InstantActionTests(DailyBase):
         with self.assertRaises(AssistantError) as error: self.board.undo_message('nothing', 'undo-nothing')
         self.assertEqual(error.exception.code, 'fact_not_found')
 
+    def test_a_drop_undoes_its_move_priority_and_order_together(self):
+        a, b, c = self.add('A'), self.add('B'), self.add('C')
+        self.apply('order_update', {'order': [a, b, c]})
+        before = self.state()
+        # One drop: C goes to Active, takes High and lands first; each change applies on its own.
+        drop = [self.request(action, payload) for action, payload in (
+            ('front_activate', {'uuid': c}), ('task_update', {'uuid': c, 'priority': 'high'}), ('order_update', {'order': [c, a, b]}))]
+        self.assertEqual([p['phase'] for p in drop], ['applied'] * 3)
+        later = self.request('task_update', {'uuid': a, 'title': 'A renamed'})
+        undone = self.board.undo_proposals([p['id'] for p in drop], 'undo-drop', self.app.store.revision())
+        self.assertEqual([p['intent']['action'] for p in undone], ['order_update', 'task_restore', 'task_restore'])
+        after = self.state()
+        self.assertEqual(after['tasks'][a]['description'], 'A renamed')  # A later change to another task stays.
+        after['tasks'][a] = before['tasks'][a]
+        self.assertEqual(after, before)
+        # A retry with the same key replays; a stale view, an empty or unknown list is refused.
+        self.assertEqual(self.board.undo_proposals([p['id'] for p in drop], 'undo-drop', 0), undone)
+        self.assertEqual(later['phase'], 'applied')
+        for ids, code in (([], 'invalid_request'), (['x'] * 11, 'invalid_request'), (['00000000-0000-4000-8000-000000000000'], 'fact_not_found')):
+            with self.subTest(ids=ids), self.assertRaises(AssistantError) as error: self.board.undo_proposals(ids, 'undo-' + str(len(ids)))
+            self.assertEqual(error.exception.code, code)
+        again = [self.request('front_activate', {'uuid': b})]
+        with self.assertRaises(AssistantError) as error: self.board.undo_proposals([again[0]['id']], 'undo-stale', self.app.store.revision() - 1)
+        self.assertEqual(error.exception.code, 'stale_revision')
+
 
 class InstantHttpTests(unittest.TestCase):
     def setUp(self):
@@ -287,6 +312,15 @@ class InstantHttpTests(unittest.TestCase):
         self.assertEqual(self.post('/api/suggestions/' + suggestion['id'] + '/accept', {'extra': 1})[0], 400)
         status, body = self.post('/api/undo', {'message_key': 'unknown', 'key': 'undo-unknown'})
         self.assertEqual((status, body['error']['code']), (409, 'fact_not_found'))
+
+    def test_drop_undo_route_reverts_every_change_of_the_gesture(self):
+        drop = [self.post('/api/proposals', {'action': action, 'payload': payload, 'key': 'drop-' + str(i)})[1]['data']['id']
+                for i, (action, payload) in enumerate((('front_activate', {'uuid': self.ids[3]}), ('task_update', {'uuid': self.ids[3], 'priority': 'high'})))]
+        status, body = self.post('/api/undo', {'proposal_ids': drop, 'key': 'undo-drop', 'expected_revision': self.state()['revision']})
+        self.assertEqual((status, [p['phase'] for p in body['data']]), (200, ['applied', 'applied']))
+        task = next(t for t in self.state()['tasks'] if t['id'] == self.ids[3])
+        self.assertEqual((task['state'], task['priority']), ('todo', 'low'))
+        self.assertEqual(self.post('/api/undo', {'proposal_ids': drop, 'key': 'undo-drop-2', 'fact_id': 1})[0], 400)
 
 
 if __name__ == '__main__':

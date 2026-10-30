@@ -9,12 +9,12 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact','snooze'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact','snooze','drag'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
 const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2025-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
-const requests=[],settings=[],chats=[],clears=[],suggestions=[],undos=[],suggestionCalls=[],undoable=new Map();let catalogs=null,facts=0;
+const proposalsBefore=new Map(),requests=[],settings=[],chats=[],clears=[],suggestions=[],undos=[],suggestionCalls=[],undoable=new Map();let catalogs=null,facts=0;
 // State reads can be slowed to reproduce a service that answers after the poll interval.
 const stateReads=[];let stateDelay=0,slowRevision=null,proposalReplied=0;
 const server=createServer(async(req,res)=>{
@@ -30,7 +30,7 @@ const server=createServer(async(req,res)=>{
    }else if(req.url==='/api/proposals'){
     requests.push(body);
     if(body.expected_revision!==state.revision){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{code:'stale_revision',message:'State changed; reopen this editor.'}}));return}
-    const p=body.payload,t=state.tasks.find(t=>t.id===p.uuid),beforeTask=t&&{...t};
+    const p=body.payload,t=state.tasks.find(t=>t.id===p.uuid),beforeTask=t&&{...t},beforeOrder=state.taskOrder;
     if(body.action==='dependency_update')t.dependsOn=p.dependsOn;
     if(body.action==='related_update')t.relatedTo=p.relatedTo;
     if(body.action==='task_update')for(const key of ['title','priority','due','context','next','awaiting','group'])if(key in p)t[key]=p[key];
@@ -43,10 +43,16 @@ const server=createServer(async(req,res)=>{
     if(body.action==='event_update')Object.assign(state.calendar_events.find(e=>e.uuid===p.uuid),{title:p.title,start_at:p.start,end_at:p.end});
     if(body.action==='event_cancel')state.calendar_events=state.calendar_events.filter(e=>e.uuid!==p.uuid);
     // The instant group records each change as an undoable fact, as the service does.
-    const proposalId=randomUUID();
+    const proposalId=randomUUID();proposalsBefore.set(proposalId,{id:t?.id,before:beforeTask,order:beforeOrder});
     if(state.instant&&t){const fact=++facts;undoable.set(fact,{id:t.id,before:beforeTask});state.lastFact={id:fact,proposalId,action:body.action,taskId:t.id,undoable:true,undoOf:null,reviewStatus:'deferred'}}
     state.revision++;
     data={id:proposalId,key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[],result:{revision:state.revision}};proposalReplied=Date.now();
+   }else if(req.url==='/api/undo'&&body.proposal_ids){
+    // A drop's changes undo together, newest first.
+    undos.push(body);const undone=[];
+    for(const id of [...body.proposal_ids].reverse()){const was=proposalsBefore.get(id);if(!was)continue;if(was.id)Object.assign(state.tasks.find(t=>t.id===was.id),was.before);else state.taskOrder=was.order;state.revision++;
+     const proposalId=randomUUID();undone.push({id:proposalId,phase:'applied',result:{revision:state.revision}});state.lastFact={id:++facts,proposalId,action:was.id?'task_restore':'order_update',taskId:was.id||null,undoable:true,undoOf:id,reviewStatus:'deferred'}}
+    data=undone;
    }else if(req.url==='/api/undo'){
     undos.push(body);const last=undoable.get(Number(body.fact_id));
     const proposalId=randomUUID();
@@ -100,6 +106,8 @@ try{
  const evaluate=async expression=>{const value=await rpc('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true},sessionId);if(value.exceptionDetails)throw Error(JSON.stringify(value.exceptionDetails));return value.result.value};
  const wait=async expression=>{const deadline=Date.now()+5000;while(Date.now()<deadline){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,15))}throw Error('Timed out: '+expression)};
  const click=selector=>evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+ // Cards glide to new places; positions are read once the board is still.
+ const still="for(let moving;(moving=document.getAnimations().filter(a=>a.playState!=='finished'&&a.effect?.getComputedTiming().endTime!==Infinity&&a.effect?.target?.closest?.('#board,#motion-layer'))).length;)await Promise.all(moving.map(a=>a.finished.catch(()=>{})));";
  const fill=(id,value)=>evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))})()`);
  const close=()=>evaluate(`document.querySelectorAll('dialog[open]').forEach(d=>d.close())`);
  const refresh=()=>evaluate('(async()=>{while(dayUI.flow.busy)await new Promise(resolve=>setTimeout(resolve,5));await dayUI.flow.refresh()})()');
@@ -457,7 +465,8 @@ try{
   assert.deepEqual(await cardState(),expected);
   await evaluate(`globalThis.previousCard=document.querySelector(${JSON.stringify(cardSelector)})`);
   await click(cardSelector+' [data-action=pending]');
-  assert.equal(await evaluate(`previousCard===document.querySelector(${JSON.stringify(cardSelector)})`),false);
+  // The board re-renders in place: an unchanged card keeps its element and its state.
+  assert.equal(await evaluate(`previousCard===document.querySelector(${JSON.stringify(cardSelector)})`),true);
   assert.deepEqual(await cardState(),expected);
   await fill('locale-choice','es');await refresh();assert.deepEqual(await cardState(),{...expected,reason:'Bloqueada · '+a.title});
   await fill('locale-choice','en');await refresh();assert.deepEqual(await cardState(),expected);
@@ -546,7 +555,7 @@ try{
   Object.assign(a,{state:'todo',priority:'high',group:'Home',createdAt:'2025-10-21T00:00:00Z'});
   Object.assign(b,{state:'todo',priority:'low',group:null,createdAt:'2025-10-22T00:00:00Z'});
   Object.assign(c,{state:'todo',priority:'high',group:'office move',createdAt:'2025-10-23T00:00:00Z'});
-  state.taskOrder=[];state.orderSuggestion=null;state.readOnly=false;state.agent={connected:true,model:'controlled'};state.revision++;
+  state.taskOrder=[];state.orderSuggestion=null;state.readOnly=false;state.agent={connected:true,model:'controlled'};state.instant=true;state.revision++;
   await close();await fill('locale-choice','en');await fill('order-choice','priority');await refresh();
   const lane="[...document.querySelectorAll('.lane[data-state=\"todo\"] .task')].map(e=>e.dataset.taskId)";
   const texts=selector=>evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].map(e=>e.textContent)`);
@@ -579,20 +588,27 @@ try{
   assert.equal(requests.length,quiet+1);assert.equal(priorities(),storedPriorities);
   // Pointer: a real mouse drag in My order places the task first.
   const mouse=(type,point,buttons)=>rpc('Input.dispatchMouseEvent',{type,x:point.x,y:point.y,button:'left',buttons,clickCount:type==='mouseMoved'?0:1},sessionId);
-  const point=(selector,edge)=>evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:${edge==='top'?'r.top+3':edge==='bottom'?'r.bottom+40':'r.y+r.height/2'}}})()`);
+  const point=(selector,edge)=>evaluate(`(async()=>{${still}const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:${edge==='top'?'r.top+3':edge==='bottom'?'r.bottom+40':edge==='below'?'r.bottom-3':'r.y+r.height/2'}}})()`);
   async function dragTo(from,to){await mouse('mouseMoved',from,0);await mouse('mousePressed',from,1);for(let i=1;i<=8;i++)await mouse('mouseMoved',{x:from.x,y:from.y+(to.y-from.y)*i/8},1);await mouse('mouseReleased',to,0)}
   await fill('order-choice','manual');assert.deepEqual(await evaluate(lane),[c.id,a.id,target.id,b.id]);
   revision=state.revision;await dragTo(await point(handle(b.id)),await point(`.task[data-task-id="${c.id}"]`,'top'));
   assert.deepEqual(await evaluate(lane),[b.id,c.id,a.id,target.id]);
   await settle(()=>requests.length===quiet+2,'pointer order request');
   assert.deepEqual(requests.at(-1).payload,{order:[b.id,c.id,a.id,target.id]});assert.equal(requests.at(-1).expected_revision,revision);
-  // In Priority a drag cannot leave its priority: dropping a high task below a low one keeps it high.
+  // In Priority a drop among other priorities takes that priority at once: a high task let go
+  // below the low one becomes low (Bri: «Toma esa prioridad y aparece Deshacer»).
   await fill('order-choice','priority');assert.deepEqual(await evaluate(lane),[c.id,a.id,target.id,b.id]);
-  await dragTo(await point(handle(c.id)),await point(`.task[data-task-id="${b.id}"]`,'bottom'));
-  assert.deepEqual(await evaluate(lane),[a.id,c.id,target.id,b.id]);
-  await settle(()=>requests.length===quiet+3,'clamped order request');
-  assert.deepEqual(requests.at(-1).payload,{order:[b.id,a.id,c.id,target.id]});
-  assert.ok(requests.slice(quiet).every(r=>r.action==='order_update'));assert.equal(priorities(),storedPriorities);
+  await dragTo(await point(handle(c.id)),await point(`.task[data-task-id="${b.id}"]`,'below'));
+  assert.deepEqual(await evaluate(lane),[a.id,target.id,b.id,c.id]);
+  assert.equal(await evaluate(`document.querySelector('[data-id="${c.id}"][data-action="priority"]').dataset.priority`),'low');
+  await settle(()=>requests.length===quiet+3,'adopted priority request');
+  assert.deepEqual([requests.at(-1).action,requests.at(-1).payload],['task_update',{uuid:c.id,priority:'low'}]);
+  await wait("document.getElementById('status').textContent==='Priority: Low'&&!document.getElementById('undo').hidden");
+  // One Undo reverts everything the drop changed and puts the card back at once.
+  const dropped=requests.at(-1);await click('#undo');assert.deepEqual(await evaluate(lane),[c.id,a.id,target.id,b.id]);
+  await settle(()=>undos.at(-1)?.proposal_ids?.length===1,'drop undo');assert.equal(c.priority,'high');await wait(`daySnapshot().revision>=${state.revision}`);
+  assert.ok(dropped.key);
+  assert.ok(requests.slice(quiet,quiet+2).every(r=>r.action==='order_update'));
   // The suggestion is fetched once on request and reused across view switches.
   await fill('order-choice','suggested');assert.match(await evaluate("document.getElementById('order-note').textContent"),/No suggestion yet/);
   await click('#suggest-order');await settle(()=>suggestions.length===1,'suggestion request');await refresh();
@@ -623,7 +639,7 @@ try{
   await rpc('Emulation.setDeviceMetricsOverride',{width:320,height:900,deviceScaleFactor:1,mobile:true},sessionId);await new Promise(r=>setTimeout(r,100));
   for(const view of ['priority','group','suggested'])await fill('order-choice',view);
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
-  await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);await fill('order-choice','priority');
+  await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);await fill('order-choice','priority');state.instant=false;
   console.log('Ordering regressions passed: views, keyboard and pointer order, priority sections, suggestion reuse, groups and localization');
  }
 
@@ -648,7 +664,7 @@ try{
   state.review={pending:2,running:true};await refresh();assert.equal(await evaluate("document.getElementById('agent-state').textContent"),'Reviewing your changes…');
   state.review={pending:0,running:false,status:'completed',finishedAt:state.now};
   // A suggestion marks its card without moving it; the bubble opens only on request.
-  const box=()=>evaluate(`(()=>{const card=document.querySelector('#board [data-task-id="${b.id}"]'),r=card.getBoundingClientRect(),t=card.querySelector('.task-title').getBoundingClientRect();return [r.top,r.height,t.left,t.top]})()`);
+  const box=()=>evaluate(`(async()=>{${still}const card=document.querySelector('#board [data-task-id="${b.id}"]'),r=card.getBoundingClientRect(),t=card.querySelector('.task-title').getBoundingClientRect();return [r.top,r.height,t.left,t.top]})()`);
   await refresh();const before=await box();
   const rule={id:randomUUID(),taskId:b.id,code:'unblocked',origin:'rules',message:null,messageKey:'suggest_unblocked',messageParams:{title:'A'},action:{action:'front_activate',payload:{uuid:b.id}},status:'open',current:true,createdAt:state.now};
   state.suggestions=[rule];await refresh();
@@ -875,6 +891,132 @@ try{
   await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
   Object.assign(state,{tasks:kept.tasks,timezone:kept.timezone,now:kept.now,instant:false});state.profile.timezone=kept.timezone;state.revision++;await refresh();
   console.log('Snooze regressions passed: one-click presets with the saved time in the profile zone, DST, deadline warning, instant apply, Resume now, Spanish copy and phone sheet');
+ }
+
+ if(group==='all'||group==='drag'){
+  // Drag and transitions: the card lifts, the others make room, it lands without a jump, and the
+  // drop's meaning (column, priority, group, place) applies at once with one Undo.
+  const size=(width,height,mobile=false)=>rpc('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile},sessionId);
+  const kept=state.tasks;await close();await fill('locale-choice','en');
+  const rows=Array.from({length:6},(_,i)=>({...task('Drag '+(i+1)),priority:'medium',group:i<3?'Home':null,createdAt:'2025-10-2'+i+'T00:00:00Z'}));
+  const [r1,r2,r3,r4,r5,r6]=rows;const blocker=task('Prerequisite');r6.blocked=true;r6.blockedBy=[blocker.id];r6.dependsOn=[blocker.id];
+  Object.assign(state,{tasks:[...rows,blocker],instant:true,readOnly:false,proposals:[],suggestions:[],messages:[],calendar_events:[],orderSuggestion:null,taskOrder:[...rows.map(r=>r.id),blocker.id]});state.revision++;
+  await size(1440,1000);await fill('order-choice','manual');await refresh();await click('#board-view');
+  const laneOf=id=>evaluate(`document.querySelector('#board [data-task-id="${id}"]')?.closest('.lane')?.dataset.state??null`);
+  const ids=lane=>evaluate(`[...document.querySelectorAll('#board .lane[data-state="${lane}"] .task')].map(e=>e.dataset.taskId)`);
+  const center=selector=>evaluate(`(async()=>{${still}const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`);
+  const mouse=(type,p,buttons)=>rpc('Input.dispatchMouseEvent',{type,x:p.x,y:p.y,button:'left',buttons,clickCount:type==='mouseMoved'?0:1},sessionId);
+  async function drag(from,to,{release=true,steps=10}={}){await mouse('mouseMoved',from,0);await mouse('mousePressed',from,1);for(let i=1;i<=steps;i++){await mouse('mouseMoved',{x:from.x+(to.x-from.x)*i/steps,y:from.y+(to.y-from.y)*i/steps},1);await new Promise(r=>setTimeout(r,16))}if(release)await mouse('mouseReleased',to,0)}
+  const grab=id=>evaluate(`(async()=>{${still}const r=document.querySelector('#board [data-task-id="${id}"] .row-meta, #board [data-task-id="${id}"] .row-text').getBoundingClientRect();return {x:Math.round(r.right-6),y:Math.round(r.top+r.height/2)}})()`);
+  const columns=await evaluate("new Set([...document.querySelectorAll('#board .lane')].map(l=>Math.round(l.getBoundingClientRect().top))).size");assert.equal(columns,1,'the Board shows three columns');
+  // The board is updated in place: an unchanged card keeps its element when another one changes.
+  await evaluate(`document.querySelector('#board [data-task-id="${r2.id}"]').dataset.probe='kept'`);
+  r1.title='Drag 1 renamed';state.revision++;await refresh();
+  assert.equal(await evaluate(`document.querySelector('#board [data-task-id="${r2.id}"]').dataset.probe`),'kept');
+  assert.match(await evaluate(`document.querySelector('#board [data-task-id="${r1.id}"] .task-title').textContent`),/renamed/);
+  // A mouse drags from an empty part of the row into another column: it lifts, the column shows
+  // where it lands, and it lands exactly on its place.
+  let sent=requests.length;const into=await center('#board .lane[data-state="active"] .lane-cards');
+  await drag(await grab(r3.id),into,{release:false});
+  assert.equal(await evaluate("document.querySelector('#motion-layer .drag-ghost')!==null&&document.querySelector('#board .task.placeholder')!==null"),true,'a lifted copy follows the pointer over a slot');
+  assert.equal(await evaluate("document.querySelector('#board .lane[data-state=active]').classList.contains('drop-target')"),true);
+  assert.equal(await laneOf(r3.id),'active','the slot moved into the column under the pointer');
+  assert.match(await evaluate("document.querySelector('#motion-layer .drag-ghost').style.transform"),/scale\(1\.02\)/);
+  await mouse('mouseReleased',into,0);
+  const landing=await evaluate(`(()=>{const g=document.querySelector('#motion-layer .drag-ghost'),end=g.getAnimations()[0].effect.getKeyframes().at(-1).transform.match(/-?[\d.]+/g).map(Number),layer=document.getElementById('motion-layer').getBoundingClientRect(),card=document.querySelector('#board [data-task-id="${r3.id}"]');card.getAnimations().forEach(a=>a.finish());const r=card.getBoundingClientRect();return [Math.abs(end[0]-(r.left-layer.left)),Math.abs(end[1]-(r.top-layer.top))]})()`);
+  assert.ok(landing.every(d=>d<1.5),'the copy lands exactly on the card: '+landing);
+  await wait("document.querySelector('#motion-layer .drag-ghost')===null&&document.querySelector('#board .placeholder')===null");
+  // An empty column has no neighbours to keep a place next to, so only the state changes.
+  for(let i=0;i<100&&requests.length<sent+1;i++)await new Promise(r=>setTimeout(r,15));await new Promise(r=>setTimeout(r,400));
+  assert.deepEqual(requests.slice(sent).map(r=>[r.action,r.payload.uuid??null]),[['front_activate',r3.id]]);
+  assert.equal(r3.state,'active');await wait("document.getElementById('status').textContent==='Moved to Active'&&!document.getElementById('undo').hidden");
+  // One Undo puts it back in its column and its place.
+  await click('#undo');assert.equal(await laneOf(r3.id),'todo');
+  for(let i=0;i<100&&r3.state!=='todo';i++)await new Promise(r=>setTimeout(r,15));assert.equal(r3.state,'todo');assert.equal(undos.at(-1).proposal_ids.length,1);
+  await wait(`daySnapshot().revision>=${state.revision}`);
+  // The Snoozed column snoozes until tomorrow at 9:00 in the profile's zone.
+  sent=requests.length;await drag(await grab(r4.id),await center('#board .lane[data-state="snoozed"] .lane-cards'));
+  for(let i=0;i<100&&requests.length<sent+2;i++)await new Promise(r=>setTimeout(r,15));
+  assert.deepEqual([requests[sent]?.action,requests[sent]?.payload],['task_snooze',{uuid:r4.id,until:'2025-10-29T15:00:00.000Z'}],JSON.stringify(requests.slice(sent-2)));
+  await wait("document.getElementById('status').textContent.startsWith('Snoozed until ')");
+  // A task waiting for prerequisites cannot be started by a drop: it returns and nothing is sent.
+  sent=requests.length;await drag(await grab(r6.id),await center('#board .lane[data-state="active"] .lane-cards'));
+  assert.equal(await laneOf(r6.id),'todo');await new Promise(r=>setTimeout(r,450));assert.equal(requests.length,sent);
+  assert.equal(await evaluate("document.getElementById('status').textContent"),'It waits for its prerequisites, so it stays where it was.');
+  // Escape cancels a drag: the card returns and nothing is sent.
+  await drag(await grab(r5.id),await center('#board .lane[data-state="active"] .lane-cards'),{release:false});
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  assert.equal(await laneOf(r5.id),'todo');await mouse('mouseReleased',{x:5,y:5},0);await new Promise(r=>setTimeout(r,450));assert.equal(requests.length,sent);
+  assert.equal(await evaluate("document.querySelector('#motion-layer .drag-ghost')"),null);
+  // In Group order a drop under another group's heading takes that group; under No group it has none.
+  await click('#list-view');await fill('order-choice','group');await wait(`daySnapshot().revision>=${state.revision}`);
+  sent=requests.length;const noGroup=await center('#board .lane[data-state="todo"] .group-heading[data-group=""]');
+  await drag(await grab(r1.id),{x:noGroup.x,y:noGroup.y+30});
+  for(let i=0;i<100&&requests.length<sent+1;i++)await new Promise(r=>setTimeout(r,15));
+  assert.deepEqual([requests[sent].action,requests[sent].payload],['task_update',{uuid:r1.id,group:''}]);assert.equal(r1.group,'');
+  await wait("document.getElementById('status').textContent.startsWith('No group')");
+  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
+  sent=requests.length;const home=await center('#board .lane[data-state="todo"] .group-heading[data-group="Home"]');
+  await drag(await grab(r5.id),{x:home.x,y:home.y+30});
+  for(let i=0;i<100&&requests.length<sent+1;i++)await new Promise(r=>setTimeout(r,15));
+  assert.deepEqual([requests[sent].action,requests[sent].payload],['task_update',{uuid:r5.id,group:'Home'}]);
+  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);await fill('order-choice','manual');
+  // Transitions: starting a task glides it into its column; finishing one fades a copy out over its
+  // old place while the others close the gap; nothing is left behind.
+  await click('#board-view');
+  await click(`[data-id="${r2.id}"][data-action="activate"]`);
+  assert.ok(await evaluate(`document.querySelector('#board [data-task-id="${r2.id}"]').getAnimations().length>0`),'the started card glides');
+  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
+  await click(`[data-id="${r2.id}"][data-action="done"]`);assert.equal(await laneOf(r2.id),null);
+  assert.equal(await evaluate("document.querySelectorAll('#motion-layer .task-leaving.completing').length"),1,'a finished card fades out');
+  assert.equal(await evaluate("document.querySelector('#motion-layer [data-id],#motion-layer [data-action],#motion-layer [id]')"),null,'copies carry no live controls');
+  await wait("document.querySelector('#motion-layer .task')===null");
+  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
+  // Reduced motion: the same changes show at once, with no animation at all.
+  await rpc('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]},sessionId);
+  sent=requests.length;await drag(await grab(r5.id),await center('#board .lane[data-state="active"] .lane-cards'),{release:false});
+  assert.equal(await evaluate("document.getAnimations().filter(a=>a.effect?.target?.closest?.('#board,#motion-layer')).length"),0);
+  await mouse('mouseReleased',await center('#board .lane[data-state="active"] .lane-cards'),0);
+  assert.equal(await evaluate("document.querySelector('#motion-layer .task')"),null,'nothing floats with reduced motion');
+  assert.equal(await laneOf(r5.id),'active');assert.equal(await evaluate("document.getAnimations().filter(a=>a.effect?.target?.closest?.('#board,#motion-layer')).length"),0);
+  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
+  await rpc('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]},sessionId);
+  // Thirty tasks: each pointer move during a drag costs a few milliseconds, well inside a 60 fps frame.
+  const many=Array.from({length:30},(_,i)=>({...task('Load '+(i+1)),priority:['high','medium','low'][i%3]}));
+  Object.assign(state,{tasks:many,taskOrder:many.map(t=>t.id)});state.revision++;await refresh();await click('#list-view');
+  const cost=await evaluate(`(async()=>{${still}const card=document.querySelector('#board .lane[data-state="todo"] .task'),handle=card.querySelector('.drag-handle'),r=handle.getBoundingClientRect(),x=r.left+r.width/2;let y=r.top+r.height/2;
+   const send=(type,y)=>document.dispatchEvent(new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:7,isPrimary:true,pointerType:'mouse',button:0,buttons:1,clientX:x,clientY:y}));
+   handle.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:7,isPrimary:true,pointerType:'mouse',button:0,buttons:1,clientX:x,clientY:y}));
+   const frames=[];for(let i=0;i<60;i++){y+=9;send('pointermove',y);const t=performance.now();await new Promise(requestAnimationFrame);frames.push(performance.now()-t)}
+   // The work one move costs: handling it and the frame callback that moves the slot.
+   // Frame callbacks run in order: one before the move's own callback and one after it time it.
+   const work=[];for(let i=0;i<40;i++){y-=9;await new Promise(requestAnimationFrame);let t;requestAnimationFrame(()=>t=performance.now());send('pointermove',y);await new Promise(r=>requestAnimationFrame(()=>{work.push(performance.now()-t);r()}))}
+   document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));send('pointerup',y);
+   const idle=[];for(let i=0;i<60;i++){const t=performance.now();await new Promise(requestAnimationFrame);idle.push(performance.now()-t)}
+   const q=(list,f)=>{const v=[...list].sort((a,b)=>a-b);return Math.round(v[Math.floor(f*(v.length-1))]*10)/10};
+   return {frameP50:q(frames,.5),frameP95:q(frames,.95),idleP50:q(idle,.5),idleP95:q(idle,.95),workP50:q(work,.5),workP95:q(work,.95),workMax:q(work,1)}})()`);
+  console.log('Drag timing with 30 tasks (ms):',JSON.stringify(cost));
+  // Frame intervals depend on the machine's load; the work each move adds must fit a 60 fps frame.
+  // The tail is logged, not asserted: a busy test machine stretches single frames.
+  assert.ok(cost.workP50<8,'each drag move fits a 60 fps frame: '+JSON.stringify(cost));
+  // Phone: hold a row, then drag it into another section; a hold without moving still opens the menu.
+  Object.assign(state,{tasks:rows.slice(0,4).map(r=>({...r,state:'todo',blocked:false,blockedBy:[],dependsOn:[]}))});state.tasks.forEach(t=>Object.assign(rows.find(r=>r.id===t.id),t));state.tasks=rows.slice(0,4);state.revision++;
+  await size(390,844,true);await rpc('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1},sessionId);await refresh();
+  if(await evaluate("document.getElementById('chat-dialog').open"))await click('#chat-close');
+  const touch=(type,points)=>rpc('Input.dispatchTouchEvent',{type,touchPoints:points},sessionId);
+  const from=await evaluate(`(async()=>{${still}const r=document.querySelector('#board [data-task-id="${r4.id}"] .task-title').getBoundingClientRect();return {x:Math.round(r.left+10),y:Math.round(r.top+r.height/2)}})()`);
+  const to=await center('#board .lane[data-state="active"] .lane-cards');
+  sent=requests.length;await touch('touchStart',[from]);await new Promise(r=>setTimeout(r,600));
+  assert.ok(await evaluate(`document.querySelector('#board [data-task-id="${r4.id}"]').classList.contains('pressing')`),'a held row shows it is ready to move');
+  for(let i=1;i<=10;i++){await touch('touchMove',[{x:from.x+(to.x-from.x)*i/10,y:from.y+(to.y-from.y)*i/10}]);await new Promise(r=>setTimeout(r,16))}
+  await touch('touchEnd',[]);for(let i=0;i<100&&requests.length<sent+1;i++)await new Promise(r=>setTimeout(r,15));
+  assert.deepEqual([requests[sent].action,requests[sent].payload],['front_activate',{uuid:r4.id}]);assert.equal(await laneOf(r4.id),'active');
+  assert.equal(await evaluate("document.querySelector('.row-menu')"),null,'a drag opens no menu');
+  await rpc('Emulation.setTouchEmulationEnabled',{enabled:false},sessionId);await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
+  // Spanish copy for the drop's confirmation.
+  await fill('locale-choice','es');assert.equal(await evaluate("dayUI.tr('drop_moved').replace('{lane}',dayUI.tr('active'))"),'Movida a En curso');await fill('locale-choice','en');
+  Object.assign(state,{tasks:kept,instant:false,taskOrder:[]});state.revision++;await refresh();
+  console.log('Drag regressions passed: lift, slot, exact landing, columns, snooze column, blocked refusal, Escape, groups, one Undo, in-place render, transitions, reduced motion, frame timing and touch');
  }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');await new Promise(resolve=>chrome.exitCode!==null?resolve():chrome.once('exit',resolve));

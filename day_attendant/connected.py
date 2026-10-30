@@ -727,10 +727,25 @@ class Connected:
                 facts=[r[0] for r in con.execute("SELECT f.id FROM facts f JOIN proposals p ON p.id=f.proposal_id WHERE p.message_key=? AND p.origin='chat' ORDER BY f.id DESC",(message_key,))]
                 undone={json.loads(r[0])['payload'].get('undo_of') for r in con.execute("SELECT intent FROM proposals WHERE phase IN ('applied','unchanged') AND key NOT LIKE ?",(key+':%',))}
             if not facts:raise AssistantError('fact_not_found','This message applied no change.')
-            replay=any(self._undo_replay(key+':'+str(f)) for f in facts)
-            if expected_revision is not None and expected_revision!=self.store.revision() and not replay:
-                raise AssistantError('stale_revision','The state changed. Reopen the current action before undoing it.')
-            return [self._undo_locked(fact,key+':'+str(fact)) for fact in facts if fact not in undone]
+            return self._undo_together(facts,undone,key,expected_revision)
+
+    def undo_proposals(self, proposal_ids, key, expected_revision=None):
+        """Undo every change one direct gesture applied, such as a drop that moved, reprioritized and
+        reordered a task, newest first and never over a later edit."""
+        if not isinstance(proposal_ids,list) or not 1<=len(proposal_ids)<=10 or not all(isinstance(p,str) and 1<=len(p)<=64 for p in proposal_ids) or not isinstance(key,str) or not 1<=len(key)<=150:
+            raise AssistantError('invalid_request','Undo requires the changes and a stable key.')
+        with self.store.lock():
+            with self.store.connect() as con:
+                facts=[r[0] for r in con.execute("SELECT id FROM facts WHERE proposal_id IN ("+",".join("?"*len(proposal_ids))+") ORDER BY id DESC",proposal_ids)]
+                undone={json.loads(r[0])['payload'].get('undo_of') for r in con.execute("SELECT intent FROM proposals WHERE phase IN ('applied','unchanged') AND key NOT LIKE ?",(key+':%',))}
+            if not facts:raise AssistantError('fact_not_found','These changes applied nothing.')
+            return self._undo_together(facts,undone,key,expected_revision)
+
+    def _undo_together(self, facts, undone, key, expected_revision):
+        replay=any(self._undo_replay(key+':'+str(f)) for f in facts)
+        if expected_revision is not None and expected_revision!=self.store.revision() and not replay:
+            raise AssistantError('stale_revision','The state changed. Reopen the current action before undoing it.')
+        return [self._undo_locked(fact,key+':'+str(fact)) for fact in facts if fact not in undone]
 
     @staticmethod
     def _basis(task, context, code):
