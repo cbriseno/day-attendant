@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {execFileSync,spawn} from 'node:child_process';
 import {createHash,randomUUID} from 'node:crypto';
 import {readFile,mkdtemp,rm} from 'node:fs/promises';
 import {createServer} from 'node:http';
@@ -16,6 +16,8 @@ const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C'
 const state={profile:{id:randomUUID(),name:'Controlled profile',timezone:'America/Edmonton',locale:'en',harness:'codex',model:'controlled'},timezone:'America/Edmonton',now:'2025-10-28T12:00:00Z',revision:1,epoch:0,synthetic:true,readOnly:false,tasks:[target,a,b,c],events:[],proposals:[],messages:[],calendar_events:[],context:{availableMinutes:null,availableUntil:null,rest:false},agent:{connected:true,model:'controlled'},diagnostics:{operations:[],reminders:[]},operations_status:{},notification_policy:{enabled:false,weekdays:[0,1,2,3,4],start:'09:00',end:'18:00',quietStart:'22:00',quietEnd:'08:00',intervalMinutes:10,unchangedRepeatMinutes:1440,dailyBudget:12,pausedUntil:null}};
 const proposalsBefore=new Map(),requests=[],settings=[],chats=[],clears=[],suggestions=[],undos=[],suggestionCalls=[],undoable=new Map();let catalogs=null,facts=0;
 // State reads can be slowed to reproduce a service that answers after the poll interval.
+// The service's own zone rules, as its state view sends them.
+const zoneRules=new Map(),rulesFor=zone=>{if(!zoneRules.has(zone))zoneRules.set(zone,JSON.parse(execFileSync('python3',['-B','-c','import datetime,json,sys;from day_attendant.timeutil import zone_rules;print(json.dumps(zone_rules(sys.argv[1],datetime.date(2025,10,28))))',zone],{cwd:root,encoding:'utf8'})));return zoneRules.get(zone)};
 const stateReads=[];let stateDelay=0,slowRevision=null,proposalReplied=0;
 const server=createServer(async(req,res)=>{
  try{
@@ -23,7 +25,7 @@ const server=createServer(async(req,res)=>{
    let body='';for await(const chunk of req)body+=chunk;body=body?JSON.parse(body):{};
    let data=state;
    if(req.url.startsWith('/api/state')){
-    stateReads.push({url:req.url,at:Date.now()});const read=structuredClone(state),{now,...content}=read;
+    stateReads.push({url:req.url,at:Date.now()});const read={...structuredClone(state),zoneRules:rulesFor(state.timezone)},{now,...content}=read;
     const tag=createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0,32);
     if(stateDelay||read.revision===slowRevision)await new Promise(r=>setTimeout(r,read.revision===slowRevision?800:stateDelay));
     data=new URL(req.url,'http://local').searchParams.get('since')===tag?{unchanged:true,tag,now}:{...read,tag};

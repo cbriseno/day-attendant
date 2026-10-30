@@ -86,7 +86,7 @@ with tempfile.TemporaryDirectory(prefix='day-polish-ui-') as state:
         assert len(board.snapshot()['tasks']) == 27
         report['dateChecks'] = json.loads(axi('run', script="""
 await page.click('#capture-open');
-console.log(JSON.stringify(await page.eval(()=>{const el=document.querySelector('#capture-due');el.value='2026-11-09T14:30';el.dispatchEvent(new Event('input',{bubbles:true}));const note=el.nextElementSibling.textContent;if(!note.includes('Nov')||!note.includes('14:30'))throw Error('Readable date missing: '+note);el.value='2026-11-01T01:30';el.dispatchEvent(new Event('input',{bubbles:true}));if(!el.nextElementSibling.textContent.includes('unambiguous'))throw Error('Ambiguous date must not invent an instant');document.querySelector('#capture-dialog').close();return {readableDate:note,contextStatusHidden:document.querySelector('#context-status').hidden}})));
+console.log(JSON.stringify(await page.eval(()=>{const el=document.querySelector('#capture-due');el.value='2026-11-09T14:30';el.dispatchEvent(new Event('input',{bubbles:true}));const note=el.nextElementSibling.textContent;if(!note.includes('Nov')||!note.includes('14:30'))throw Error('Readable date missing: '+note);el.value='2025-11-02T01:30';el.dispatchEvent(new Event('input',{bubbles:true}));if(!el.nextElementSibling.textContent.includes('unambiguous'))throw Error('Ambiguous date must not invent an instant');document.querySelector('#capture-dialog').close();return {readableDate:note,contextStatusHidden:document.querySelector('#context-status').hidden}})));
 """).strip().splitlines()[-1])
         report['console'] = axi('console')
         report['passed'] = True

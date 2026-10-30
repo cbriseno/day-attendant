@@ -7,11 +7,12 @@ import sys
 import tempfile
 import threading
 import unittest
+from zoneinfo import ZoneInfo
 from urllib.request import Request, urlopen
 
 from day_attendant.connected import Connected, PENDING, RECENT_PROPOSALS
 from day_attendant.service import Assistant, encoded
-from day_attendant.timeutil import parse
+from day_attendant.timeutil import parse, zone_rules
 from day_attendant.web import LocalServer
 from test_connected import NOW, ReviewFixture
 
@@ -108,6 +109,26 @@ class StateViewTests(unittest.TestCase):
         self.assertEqual(first['tag'], second['tag'])
         self.apply('task_update', {'uuid': self.ids[0], 'priority': 'low'})
         self.assertNotEqual(self.board.view()['tag'], first['tag'])
+
+    def test_zone_rules_are_the_services_offsets(self):
+        rules = self.board.view()['zoneRules']
+        zone = ZoneInfo(rules['zone'])
+        self.assertEqual(rules['zone'], self.board.view()['timezone'])
+        self.assertLessEqual(rules['from'], NOW.timestamp() * 1000 - 365 * 86400000)
+        self.assertGreaterEqual(rules['until'], NOW.timestamp() * 1000 + 5 * 365 * 86400000)
+        def offset(ms):
+            return [m for at, m in rules['offsets'] if at <= ms][-1]
+        expected = lambda ms: datetime.fromtimestamp(ms / 1000, timezone.utc).astimezone(zone).utcoffset().total_seconds() // 60
+        for at, _ in rules['offsets']:
+            for ms in (at - 60000, at):
+                if ms >= rules['from']:
+                    self.assertEqual(offset(ms), expected(ms))
+        for ms in range(rules['from'], rules['until'], 3 * 3600000 + 60000):
+            self.assertEqual(offset(ms), expected(ms))
+        york = zone_rules('America/New_York', NOW.date())['offsets']
+        self.assertIn([parse('2026-03-08T07:00:00Z').timestamp() * 1000, -240], york)
+        self.assertIn([parse('2026-11-01T06:00:00Z').timestamp() * 1000, -300], york)
+        self.assertEqual(zone_rules('UTC', NOW.date())['offsets'], [[zone_rules('UTC', NOW.date())['from'], 0]])
 
 
 class StateRouteTests(unittest.TestCase):

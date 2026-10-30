@@ -19,7 +19,7 @@ from .errors import AssistantError
 from .profiles import turn_timeout
 from .service import PUBLIC_PRIORITY, Assistant, continuity_values, encoded, fingerprint, group_key
 from .taskstore import PRIORITIES, canonical
-from .timeutil import instant, parse, stamp, wire
+from .timeutil import instant, parse, stamp, wire, zone_rules
 
 SUGGESTION_SCHEMA = {"type": "object", "properties": {
     "message": {"type": "string"},
@@ -407,6 +407,7 @@ class Connected:
         """The browser's state: the snapshot without plan history, tagged by its content."""
         with self.store.lock():
             data = self._snapshot("last")
+        data["zoneRules"] = zone_rules(data["timezone"], parse(data["now"]).date())
         data["tag"] = fingerprint({k: v for k, v in data.items() if k != "now"})[:32]
         return data
 

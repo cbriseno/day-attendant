@@ -40,7 +40,8 @@ submission is rejected and the dialog stays open.
 Unchanged task deadlines, calendar bounds, reminder pauses and availability times
 retain their exact stored instants, including seconds and the resolved occurrence
 of a repeated hour. Editing other fields or the profile timezone does not
-reinterpret them. Changed local dates use the profile timezone; the browser rejects
+reinterpret them. Changed local dates use the profile timezone with the service's rules, not the
+browser's own time zone data, within one year back and five years ahead; the browser rejects
 missing or repeated local times and retains the draft for correction. Date fields also
 show a readable preview in the interface language beside the browser's native picker.
 

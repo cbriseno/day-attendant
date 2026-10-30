@@ -1,5 +1,6 @@
 """Resolve input once; persist instants in UTC and retain the origin zone."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .errors import AssistantError
@@ -55,3 +56,29 @@ def parse(value):
 
 def wire(value):
     return parse(value).strftime("%Y%m%dT%H%M%SZ") if value else None
+
+
+@lru_cache(maxsize=8)
+def zone_rules(zone, day):
+    """UTC offsets of `zone` from a year before `day` to five years after it.
+
+    The browser resolves local dates with these rules instead of its own time zone
+    data, so what a person sees and types matches the instant the service keeps.
+    Outside the window the browser accepts no new local time."""
+    tz = ZoneInfo(zone)
+    start = datetime(day.year, day.month, day.day, tzinfo=UTC) - timedelta(days=366)
+    until = start + timedelta(days=366 * 6)
+    minute = lambda moment: int(moment.timestamp()) // 60
+    offset = lambda m: int(datetime.fromtimestamp(m * 60, UTC).astimezone(tz).utcoffset().total_seconds()) // 60
+    first, last = minute(start), minute(until)
+    offsets = [[first * 60000, offset(first)]]
+    # Daily steps find each transition; bisection places it on its exact minute.
+    for low in range(first, last, 1440):
+        high = min(low + 1440, last)
+        if offset(high) == offsets[-1][1]:
+            continue
+        while high - low > 1:
+            mid = (low + high) // 2
+            low, high = (mid, high) if offset(mid) == offsets[-1][1] else (low, mid)
+        offsets.append([high * 60000, offset(high)])
+    return {"zone": zone, "from": first * 60000, "until": last * 60000, "offsets": offsets}
