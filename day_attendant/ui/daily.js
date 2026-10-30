@@ -17,7 +17,7 @@ function storedTime(id,instant){$(id).value=instant?ui.localValue(new Date(insta
 function submit(label){return `<button type="submit" class="btn primary">${esc(label)}</button>`}
 function open(el,origin){ui.openDialog(el,origin);el.querySelector('input,select,button')?.focus()}
 let eventId=null,captureRevision=null,settingsRevision=null,lastProfile=null,lastDailyDigest='',lastDiagnostics='',lastCalendar='',selectedImages=[];
-const toolbar=document.querySelector('.toolbar-right');toolbar.insertAdjacentHTML('afterbegin',button('capture-open','Add','Agregar','primary'));
+const toolbar=document.querySelector('.toolbar-right');toolbar.insertAdjacentHTML('afterbegin',button('capture-open','Add with details','Agregar con detalles'));
 document.querySelector('.app-controls').insertAdjacentHTML('beforeend','<button type="button" class="btn" id="settings-open" aria-label="Settings">⚙ <span>Settings</span></button>');
 const diagnostic=document.createElement('div');diagnostic.className='diagnostic-banner';diagnostic.hidden=true;diagnostic.id='daily-diagnostics';$('tasks-area').insertBefore(diagnostic,document.querySelector('.toolbar'));
 const calendar=document.createElement('section');calendar.className='calendar-area';calendar.id='calendar-area';$('tasks-area').append(calendar);
@@ -29,16 +29,84 @@ const priorityOptions=()=>globalThis.dayOrdering.PRIORITIES.map(p=>`<option valu
 function buildCapture(){
  $('capture-dialog')?.remove();return dialog('capture-dialog',text('New item','Nuevo elemento'),`<div class="daily-grid"><label class="field wide"><span>${text('Kind','Tipo')}</span><select id="capture-kind"><option value="task">${text('Responsibility','Responsabilidad')}</option><option value="event">${text('Calendar commitment','Compromiso de agenda')}</option></select></label>${field('capture-title','Title','Título','text','maxlength="2000" required class="wide"')}<label class="field" id="capture-priority-field"><span>${tr('priority')}</span><select id="capture-priority">${priorityOptions()}</select></label>${field('capture-due','Deadline (optional)','Vencimiento (opcional)','datetime-local')}${groupField('capture-group')}<div id="event-fields" class="daily-grid wide" hidden>${field('capture-start','Starts','Inicio','datetime-local')}${field('capture-end','Ends','Fin','datetime-local')}</div><details class="wide daily-section"><summary>${text('Source and observation time','Origen y hora de observación')}</summary><div class="daily-grid">${field('capture-person','Person (optional)','Persona (opcional)')}${field('capture-reference','Reference (optional)','Referencia (opcional)')}<label class="field"><span>${text('Source','Origen')}</span><select id="capture-source"><option value="general">General</option><option value="chat">Chat</option><option value="email">Email</option><option value="call">${text('Call','Llamada')}</option><option value="ticket">Ticket</option><option value="pr">PR</option><option value="research">${text('Research','Investigación')}</option></select></label>${field('capture-observed','Observed at (optional)','Observado el (opcional)','datetime-local')}</div><p class="hint">${text('Observation time and capture time are separate. This does not open an inbox.','La observación y la captura tienen horas separadas. Esto no abre ninguna bandeja.')}</p></details></div>`,submit(tr('save_context').replace(/ context| contexto/i,'')));
 }
-function openCapture(origin,event=null){
- const d=buildCapture();eventId=event?.uuid||null;captureRevision=flow.snapshot().revision;$('capture-title').value=event?.title||'';
+function openCapture(origin,event=null,draft=null){
+ const d=buildCapture();eventId=event?.uuid||null;captureRevision=flow.snapshot().revision;$('capture-title').value=event?.title||draft?.title||'';
+ if(draft){if(draft.priority)$('capture-priority').value=draft.priority;if(draft.group)$('capture-group').value=draft.group;if(draft.due)$('capture-due').value=ui.localValue(new Date(draft.due))}
  $('capture-kind').value=event?'event':'task';$('capture-kind').disabled=!!event;
  const kind=()=>{const isEvent=$('capture-kind').value==='event';$('event-fields').hidden=!isEvent;$('capture-due').closest('label').hidden=isEvent;$('capture-priority-field').hidden=isEvent;$('capture-group').closest('label').hidden=isEvent};$('capture-kind').onchange=kind;kind();
  const start=storedTime('capture-start',event?.start_at),end=storedTime('capture-end',event?.end_at);if(event)d.querySelector('details').hidden=true;
  d.querySelector('form').onsubmit=e=>{e.preventDefault();formAction(d.id,async()=>{const title=$('capture-title').value.trim();if(!title)throw Error(text('Enter a title.','Escribe un título.'));const isEvent=$('capture-kind').value==='event';let payload={title};if(isEvent){payload.start=start();payload.end=end();if(!payload.start||!payload.end)throw Error(text('Choose the start and end.','Elige el inicio y el fin.'));if(eventId)payload.uuid=eventId}else{payload.priority=$('capture-priority').value;payload.due=requiredTime('capture-due');const group=$('capture-group').value.trim();if(group)payload.group=group}
  if(!eventId){payload.source=$('capture-source').value;for(const [name,id] of [['person','capture-person'],['reference','capture-reference']])if($(id).value.trim())payload[name]=$(id).value.trim();const observed=requiredTime('capture-observed');if(observed)payload.observed_at=observed}
- await flow.request(eventId?'event_update':isEvent?'event_add':'task_add',payload,undefined,captureRevision);d.close('saved')})};open(d,origin);
+ await flow.request(eventId?'event_update':isEvent?'event_add':'task_add',payload,undefined,captureRevision);if(draft&&$('qa-input').value===draft.raw){$('qa-input').value='';renderQuick()}d.close('saved')})};open(d,origin);
 }
-$('capture-open').onclick=e=>openCapture(e.currentTarget);
+// The full form starts from what the quick line already says; an unreadable line starts empty.
+$('capture-open').onclick=e=>{const q=parseQuick($('qa-input').value);openCapture(e.currentTarget,null,q.error?null:q)};
+
+// One line above the list: «pagar luz mañana !2 #Casa» and Enter. Every token it reads is shown in the
+// preview before saving; a word it cannot place stays in the title, and a doubtful line is not saved.
+const PRIORITY_WORDS={1:'urgent',2:'high',3:'medium',4:'low',urgente:'urgent',urgent:'urgent',alta:'high',high:'high',media:'medium',medium:'medium',baja:'low',low:'low'};
+const DAY_WORDS={hoy:0,today:0,'mañana':1,manana:1,tomorrow:1};
+const WEEKDAYS={domingo:0,sunday:0,lunes:1,monday:1,martes:2,tuesday:2,'miércoles':3,miercoles:3,wednesday:3,jueves:4,thursday:4,viernes:5,friday:5,'sábado':6,sabado:6,saturday:6};
+// «la mañana», «esta mañana»: the morning, not tomorrow.
+const MORNING=new Set(['la','esta','una','cada','toda','media','en']);
+const LEADS=new Set(['el','para','on','by']);
+const CLOCK=/^([01]?\d|2[0-3]):([0-5]\d)$/;
+function quickDue(days,weekday,time){
+ const [y,m,d]=ui.localValue(new Date(flow.snapshot().now||Date.now())).slice(0,10).split('-').map(Number),day=new Date(Date.UTC(y,m-1,d));
+ // A weekday is its next occurrence; today's own weekday is a week ahead, as the approved demo does.
+ if(weekday!==null){let add=(weekday-day.getUTCDay()+7)%7;days=add||7}
+ day.setUTCDate(day.getUTCDate()+days);const raw=day.toISOString().slice(0,10)+'T'+(time||'18:00'),date=ui.parseLocal(raw);
+ if(!Number.isFinite(date.getTime())||ui.localValue(date)!==raw||ui.ambiguous(date))return {error:text('That date and time is not unambiguous here. Choose it in Add with details.','Esa fecha y hora no es inequívoca aquí. Elígela en Agregar con detalles.')};
+ return {due:date.toISOString()};
+}
+function parseQuick(value){
+ const words=value.trim().split(/\s+/).filter(Boolean),title=[],errors=[];let priority=null,group=null,isNew=false,due=null,dated=false;
+ const known=[...new Set(flow.snapshot().tasks.map(t=>t.group).filter(Boolean))];
+ const twice=(en,es)=>errors.push(text(en,es));
+ for(let i=0;i<words.length;i++){
+  const word=words[i],bare=word.toLocaleLowerCase().replace(/[.,;]+$/,''),next=(words[i+1]||'').toLocaleLowerCase().replace(/[.,;]+$/,'');
+  const p=/^!(\S+)$/.exec(bare);if(p&&PRIORITY_WORDS[p[1]]){if(priority)twice('Two priorities: keep one.','Dos prioridades: deja una.');priority=PRIORITY_WORDS[p[1]];continue}
+  const g=/^#([\p{L}\p{N}_-]{1,120})$/u.exec(word.replace(/[.,;]+$/,''));if(g){if(group)twice('Two groups: a task has one group.','Dos grupos: una tarea tiene un solo grupo.');const match=known.find(k=>k.toLocaleLowerCase()===g[1].toLocaleLowerCase());group=match||g[1];isNew=!match;continue}
+  let days=null,weekday=null,span=1;
+  if(bare==='pasado'&&['mañana','manana'].includes(next)){days=2;span=2}
+  else if(bare==='day'&&next==='after'&&(words[i+2]||'').toLocaleLowerCase().replace(/[.,;]+$/,'')==='tomorrow'){days=2;span=3}
+  else if(bare in DAY_WORDS&&!(DAY_WORDS[bare]===1&&bare!=='tomorrow'&&MORNING.has((title.at(-1)||'').toLocaleLowerCase())))days=DAY_WORDS[bare];
+  else if(bare in WEEKDAYS)weekday=WEEKDAYS[bare];
+  if(days===null&&weekday===null){title.push(word);continue}
+  if(dated)twice('Two dates: keep one.','Dos fechas: deja una.');dated=true;
+  while(title.length&&LEADS.has(title.at(-1).toLocaleLowerCase()))title.pop();
+  i+=span-1;const clock=CLOCK.exec(words[i+1]||'');if(clock)i++;
+  const result=quickDue(days,weekday,clock?clock[1].padStart(2,'0')+':'+clock[2]:null);if(result.error)errors.push(result.error);else due=result.due;
+ }
+ let name=title.join(' ');name=name.charAt(0).toLocaleUpperCase()+name.slice(1);
+ if(!name&&words.length)errors.push(text('Write what to add, not only its details.','Escribe qué agregar, no solo sus detalles.'));
+ if(name.length>2000)errors.push(text('The title is too long.','El título es demasiado largo.'));
+ return {raw:value,title:name,priority,group,isNew,due,error:errors[0]||null};
+}
+function renderQuick(showError=false){
+ const value=$('qa-input').value,box=$('qa-preview');
+ if(!value.trim()){box.innerHTML=`<span class="qa-hint">${esc(text('Also understands:','También entiende:'))} <span class="kbd">!1</span>…<span class="kbd">!4</span> ${esc(tr('priority').toLocaleLowerCase())} · <span class="kbd">#${esc(text('group','grupo'))}</span> · <span class="kbd">${esc(text('today','hoy'))}</span> <span class="kbd">${esc(text('tomorrow','mañana'))}</span> <span class="kbd">${esc(text('friday','viernes'))}</span> <span class="kbd">9:30</span> ${esc(text('for the deadline','para el vencimiento'))}</span>`;return}
+ const q=parseQuick(value);
+ if(q.error&&(showError||!q.title)){box.innerHTML=`<span class="qa-error">${esc(q.error)}</span>`;return}
+ const past=q.due&&new Date(q.due)<new Date(flow.snapshot().now||Date.now());
+ box.innerHTML=`<span>${esc(text('Will add:','Se agregará:'))}</span><b>${esc(q.title)}</b><span class="priority-pill" data-priority="${q.priority||'medium'}">${esc(tr('priority_'+(q.priority||'medium')))}</span>`
+  +(q.group?`<span class="qa-group">${ui.groupDot(q.group)}${esc(q.group)}${q.isNew?` <span class="muted">(${esc(text('new group','grupo nuevo'))})</span>`:''}</span>`:'')
+  +(q.due?`<span${past?' class="qa-warn"':''}>${esc(text('due ','vence ')+ui.full(q.due))}${past?' · '+esc(text('already past','ya pasó')):''}</span>`:'')
+  +(q.error?`<span class="qa-error">${esc(q.error)}</span>`:`<span>· Enter</span>`);
+}
+const quick=document.createElement('form');quick.className='quick-add';quick.id='quick-add';quick.autocomplete='off';
+quick.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><input id="qa-input" maxlength="2400" enterkeyhint="done" aria-describedby="qa-preview"><button class="btn primary" type="submit" id="qa-submit"></button>`;
+const quickPreview=document.createElement('div');quickPreview.className='qa-preview';quickPreview.id='qa-preview';quickPreview.setAttribute('aria-live','polite');
+$('tasks-area').insertBefore(quick,document.querySelector('.toolbar'));$('tasks-area').insertBefore(quickPreview,document.querySelector('.toolbar'));
+const quickLabels=()=>{$('qa-input').placeholder=text('Add a task…  e.g. “pay electricity tomorrow !2 #Home”','Agregar tarea…  ej. «pagar luz mañana !2 #Casa»');$('qa-input').setAttribute('aria-label',text('Add a task','Agregar tarea'));$('qa-submit').textContent=text('Add','Agregar')};
+$('qa-input').addEventListener('input',()=>renderQuick());
+// Local keys only: Enter adds, Esc clears the line, then leaves it.
+$('qa-input').addEventListener('keydown',e=>{if(e.key!=='Escape')return;e.preventDefault();e.stopPropagation();if($('qa-input').value){$('qa-input').value='';renderQuick()}else $('qa-input').blur()});
+quick.onsubmit=e=>{e.preventDefault();const input=$('qa-input'),raw=input.value;if(!raw.trim()){input.focus();return}const q=parseQuick(raw);if(q.error){renderQuick(true);input.focus();return}
+ const payload={title:q.title,priority:q.priority||'medium',source:'general',...(q.group?{group:q.group}:{}),...(q.due?{due:q.due}:{})};
+ // The card shows at once; the line is free for the next one while the service saves it.
+ input.value='';renderQuick();input.focus();
+ safely(async()=>{try{await flow.request('task_add',payload)}catch(error){if(!input.value){input.value=raw;renderQuick()}throw error}})};
 
 function buildSettings(){
  $('settings-dialog')?.remove();const days=text(['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']);
@@ -106,12 +174,13 @@ function receipts(state){for(const el of $('messages').children){
 function update(state){
  if(!state.profile)return;
  const digest=JSON.stringify([state.profile,state.notification_policy,state.diagnostics,state.operations_status,state.calendar_events,state.tasks,state.rawProposals,state.messages,state.readOnly,document.documentElement.lang,state.timezone,(state.calendar_events||[]).map(e=>new Date(e.end_at)>=new Date(state.now))]);if(digest===lastDailyDigest)return;lastDailyDigest=digest;
- $('profile-badge').textContent=state.synthetic?text('Synthetic profile','Perfil ficticio'):state.profile.name;$('profile-footer').textContent=text('Local personal assistant','Asistente personal local');$('settings-open').title=text('Daily settings','Configuración diaria');$('settings-open').setAttribute('aria-label',text('Daily settings','Configuración diaria'));$('settings-open').querySelector('span').textContent=text('Settings','Configuración');$('capture-open').textContent=text('Add','Agregar');
+ $('profile-badge').textContent=state.synthetic?text('Synthetic profile','Perfil ficticio'):state.profile.name;$('profile-footer').textContent=text('Local personal assistant','Asistente personal local');$('settings-open').title=text('Daily settings','Configuración diaria');$('settings-open').setAttribute('aria-label',text('Daily settings','Configuración diaria'));$('settings-open').querySelector('span').textContent=text('Settings','Configuración');$('capture-open').textContent=text('Add with details','Agregar con detalles');renderQuick();
  const diag=JSON.stringify([state.diagnostics,state.operations_status?.last_tick?.status]);if(diag!==lastDiagnostics){lastDiagnostics=diag;const issue=state.readOnly||state.diagnostics?.reminders?.length>0||state.operations_status?.last_tick?.status==='failed';diagnostic.hidden=!issue;diagnostic.replaceChildren();if(issue){const p=document.createElement('p');p.textContent=state.readOnly?text('Changes are paused while an interrupted operation or maintenance is reviewed.','Los cambios están pausados mientras se revisa una operación interrumpida o mantenimiento.'):state.diagnostics?.reminders?.length?text('A local reminder failed or has an uncertain outcome. Review delivery diagnostics.','Un recordatorio local falló o tiene un resultado incierto. Revisa el diagnóstico de entrega.'):text('The last scheduled check needs attention.','La última revisión programada requiere atención.');const b=document.createElement('button');b.className='link-button';b.textContent=text('Open diagnostics','Abrir diagnóstico');b.onclick=()=>safely(()=>showDiagnostics(b));diagnostic.append(p,b)}}
  const events=(state.calendar_events||[]).filter(e=>new Date(e.end_at)>=new Date(state.now)),eventDigest=JSON.stringify([events,state.timezone,document.documentElement.lang]);if(lastCalendar!==eventDigest){lastCalendar=eventDigest;calendar.innerHTML=`<h2>${text('Calendar commitments','Compromisos de agenda')}</h2>${events.length?'':`<p class="hint">${text('No upcoming commitments saved.','No hay compromisos próximos guardados.')}</p>`}`;for(const event of events){const row=document.createElement('div');row.className='daily-row';const copy=document.createElement('div'),b=document.createElement('button'),time=document.createElement('p');b.type='button';b.className='link-button';b.textContent=event.title;b.onclick=()=>openCapture(b,event);time.textContent=ui.full(event.start_at)+' — '+ui.full(event.end_at);copy.append(b,time);const cancel=document.createElement('button');cancel.type='button';cancel.className='btn ghost';cancel.textContent=tr('cancel');cancel.onclick=()=>safely(async()=>{await flow.request('event_cancel',{uuid:event.uuid});await flow.refresh()});row.append(copy,cancel);calendar.append(row)}}
- queueMicrotask(()=>{receipts(state);$('capture-open').disabled=state.readOnly;$('send-message').disabled=state.readOnly||state.messages.some(m=>m.role==='user'&&m.status==='pending')});
+ queueMicrotask(()=>{receipts(state);$('capture-open').disabled=state.readOnly;$('qa-input').disabled=$('qa-submit').disabled=state.readOnly;$('send-message').disabled=state.readOnly||state.messages.some(m=>m.role==='user'&&m.status==='pending')});
 }
 // Localization changes labels only; typed task content is never translated.
-$('locale-choice').addEventListener('change',()=>{lastCalendar='';lastDiagnostics='';update(flow.snapshot())});
+$('locale-choice').addEventListener('change',()=>{lastCalendar='';lastDiagnostics='';quickLabels();renderQuick();update(flow.snapshot())});
+quickLabels();renderQuick();
 globalThis.dayDaily={update};if(flow.snapshot().profile)update(flow.snapshot());
 })();

@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact','snooze','drag','groups'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies','ordering','refresh','instant','compact','snooze','drag','groups','quick'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
@@ -36,6 +36,8 @@ const server=createServer(async(req,res)=>{
     if(body.action==='task_update')for(const key of ['title','priority','due','context','next','awaiting','group'])if(key in p)t[key]=p[key];
     if(body.action==='continuity_update')for(const key of ['context','next','awaiting','remainingMinutes'])if(key in p)t[key]=p[key];
     if(body.action==='order_update')state.taskOrder=p.order;
+    // The quick capture group creates the task as the service does; other groups only record the request.
+    if(body.action==='task_add'&&state.quickAdd)state.tasks.push({...task(p.title),priority:p.priority,group:p.group||null,due:p.due||null,createdAt:state.now});
     if(body.action==='group_color_update'){state.groupColors={...state.groupColors};if(p.color)state.groupColors[p.group.trim().toLowerCase()]=p.color;else delete state.groupColors[p.group.trim().toLowerCase()]}
     const nextState={front_activate:'active',front_todo:'todo',task_done:'done',front_retire:'retired',task_reopen:'todo'}[body.action];
     if(nextState)t.state=nextState;
@@ -1085,6 +1087,66 @@ try{
   await fill('locale-choice','es');assert.equal(await evaluate("dayUI.tr('drop_moved').replace('{lane}',dayUI.tr('active'))"),'Movida a En curso');await fill('locale-choice','en');
   Object.assign(state,{tasks:kept,instant:false,taskOrder:[]});state.revision++;await refresh();
   console.log('Drag regressions passed: lift, slot, exact landing, columns, snooze column, blocked refusal, Escape, groups, one Undo, in-place render, transitions, reduced motion, frame timing and touch');
+ }
+
+ if(group==='all'||group==='quick'){
+  // One line, Enter: the card shows before the answer, with the profile-zone date the preview showed.
+  await close();await fill('locale-choice','es');await click('#list-view');
+  const kept=state.tasks;Object.assign(a,{group:'Casa'});state.quickAdd=true;state.tasks=[target,a,b,c];state.revision++;await refresh();
+  const preview=()=>text('#qa-preview'),before=()=>requests.length,quickRequest=()=>requests.filter(r=>r.action==='task_add').at(-1);
+  assert.match(await preview(),/También entiende/);
+  assert.equal(await evaluate("document.getElementById('qa-submit').textContent"),'Agregar');
+  await put('#qa-input','pagar luz mañana !2 #casa');
+  assert.match(await preview(),/Se agregará:\s*Pagar luz\s*Alta\s*Casa\s*vence /);assert.doesNotMatch(await preview(),/grupo nuevo/);
+  let sent=before();const started=Date.now();
+  const shown=await evaluate(`(()=>{const t0=performance.now();document.getElementById('quick-add').requestSubmit();const row=[...document.querySelectorAll('#board .task')].find(e=>e.textContent.includes('Pagar luz'));return {visible:!!row,ms:performance.now()-t0,dialogs:document.querySelectorAll('dialog[open]').length,line:document.getElementById('qa-input').value,focused:document.activeElement.id}})()`);
+  assert.deepEqual([shown.visible,shown.dialogs,shown.line,shown.focused],[true,0,'','qa-input'],'the card shows at once, with no form, and the line is ready for the next one');
+  await serverWait(()=>state.tasks.some(t=>t.title==='Pagar luz'));const savedAt=Date.now()-started;
+  await wait(`daySnapshot().tasks.some(t=>t.title==='Pagar luz'&&!t.pending)`);const settledAt=Date.now()-started;
+  assert.equal(requests.length-sent,1);
+  assert.deepEqual(quickRequest().payload,{title:'Pagar luz',priority:'high',source:'general',group:'Casa',due:'2025-10-30T00:00:00.000Z'});
+  console.log('Quick capture timing (ms): '+JSON.stringify({visible:Math.round(shown.ms*10)/10,serviceSaved:savedAt,stateReconciled:settledAt}));
+  // «la mañana» is the morning: it stays in the title and sets no date.
+  sent=before();await put('#qa-input','llamar a Ana por la mañana');assert.doesNotMatch(await preview(),/vence/);
+  await evaluate("document.getElementById('quick-add').requestSubmit()");await serverWait(()=>requests.length>sent);
+  assert.deepEqual(quickRequest().payload,{title:'Llamar a Ana por la mañana',priority:'medium',source:'general'});
+  // The same weekday is a week ahead; an explicit time is read only after a date; a new group says so.
+  await put('#qa-input','junta el martes 9:30 #Mudanza !baja');assert.match(await preview(),/grupo nuevo/);
+  sent=before();await evaluate("document.getElementById('quick-add').requestSubmit()");await serverWait(()=>requests.length>sent);
+  assert.deepEqual(quickRequest().payload,{title:'Junta',priority:'low',source:'general',group:'Mudanza',due:'2025-11-04T16:30:00.000Z'});
+  // Doubtful lines are not saved: two priorities, two groups, a repeated DST hour, details without a title.
+  for(const [line,reason] of [['revisar !1 !3','Dos prioridades'],['revisar #Casa #Otro','Dos grupos'],['cambio de hora domingo 1:30','inequívoca'],['mañana !2','Escribe qué agregar']]){
+   sent=before();await put('#qa-input',line);await evaluate("document.getElementById('quick-add').requestSubmit()");await new Promise(r=>setTimeout(r,60));
+   assert.equal(requests.length,sent,line+' is not sent');assert.match(await preview(),new RegExp(reason));assert.equal(await evaluate("document.getElementById('qa-input').value"),line,'the line is kept to fix it');
+  }
+  // Esc clears the line, then leaves it; no other key does anything new.
+  await key('#qa-input','Escape');assert.equal(await evaluate("document.getElementById('qa-input').value"),'');
+  // The full form stays and starts from the line.
+  await put('#qa-input','pagar luz viernes !1 #Casa');await click('#capture-open');
+  assert.deepEqual(await evaluate("['capture-title','capture-priority','capture-group','capture-due'].map(id=>document.getElementById(id).value)"),['Pagar luz','urgent','Casa','2025-10-31T18:00']);
+  assert.equal(await evaluate("document.getElementById('capture-kind').querySelectorAll('option').length"),2,'calendar commitments stay in the full form');
+  sent=before();await submit('capture-dialog');await saved('capture-dialog');assert.equal(requests.length-sent,1);
+  assert.equal(await evaluate("document.getElementById('qa-input').value"),'','a line saved from the form is cleared');
+  // A refused save gives the line back and removes the draft card.
+  await put('#qa-input','no se guarda');state.revision++;sent=before();
+  await evaluate("document.getElementById('quick-add').requestSubmit()");await serverWait(()=>requests.length>sent);
+  await wait("document.getElementById('qa-input').value==='no se guarda'");await wait("!daySnapshot().tasks.some(t=>t.pending)");
+  await refresh();await key('#qa-input','Escape');
+  // English copy; typed content is not translated.
+  await fill('locale-choice','en');await put('#qa-input','pay rent tomorrow 08:15 !urgent');
+  assert.match(await preview(),/Will add:\s*Pay rent\s*Urgent\s*due /);assert.equal(await evaluate("document.getElementById('capture-open').textContent"),'Add with details');
+  await key('#qa-input','Escape');
+  // Focus keeps its own controls only; a read-only profile cannot type into the line.
+  await click('#focus-view');assert.equal(await evaluate("document.getElementById('quick-add').getClientRects().length+document.getElementById('qa-preview').getClientRects().length"),0);await click('#list-view');
+  state.readOnly=true;state.revision++;await refresh();assert.equal(await evaluate("document.getElementById('qa-input').disabled&&document.getElementById('qa-submit').disabled"),true);
+  state.readOnly=false;state.revision++;await refresh();
+  // Phone: the line stays one row with a 44 px target and nothing overflows.
+  await rpc('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);await new Promise(r=>setTimeout(r,100));
+  const phone=await evaluate("(()=>{const f=document.getElementById('quick-add').getBoundingClientRect(),b=document.getElementById('qa-submit').getBoundingClientRect();return {fits:document.documentElement.scrollWidth<=innerWidth,height:Math.round(f.height),button:Math.round(b.height)}})()");
+  assert.equal(phone.fits,true);assert.ok(phone.button>=44&&phone.height<70,JSON.stringify(phone));
+  await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
+  state.quickAdd=false;state.tasks=kept;state.revision++;await refresh();
+  console.log('Quick capture regressions passed: one line and Enter, preview, priority, single group, profile-zone dates, morning, DST refusal, Esc, full form, refused save, localization, Focus, read-only and phone');
  }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');await new Promise(resolve=>chrome.exitCode!==null?resolve():chrome.once('exit',resolve));

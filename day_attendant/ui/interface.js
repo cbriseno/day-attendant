@@ -993,5 +993,5 @@ safely(boot);
 function poll(){safely(()=>flow.poll()).finally(()=>setTimeout(poll,document.hidden?5000:900))}
 setTimeout(poll,900);document.addEventListener('visibilitychange',()=>{if(!document.hidden)safely(()=>flow.poll())});
 globalThis.daySnapshot=()=>structuredClone(flow.snapshot());
-globalThis.dayUI={api,deliver,flow,openDialog,expandTask:id=>toggleExpand(id,true),editTitle:startTitleEdit,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome,localizedDates,formatted,creates,showProposal};
+globalThis.dayUI={api,deliver,flow,openDialog,expandTask:id=>toggleExpand(id,true),editTitle:startTitleEdit,registerDialog,tr,esc,full,localValue,parseLocal,ambiguous,notice,safely,translateChrome,localizedDates,formatted,creates,showProposal,groupDot};
 })();

@@ -12,7 +12,7 @@ console.log(JSON.stringify(await page.eval(async()=>{
  check('blocked never next',!q('[data-task-id="'+blocked+'"]'));
  check('third active hidden',!q('[data-task-id="'+ids[4]+'"]'));
  check('beyond 72h hidden',!q('[data-task-id="'+ids[11]+'"]'));
- for(const s of ['#group-filters','.order-choice','#capture-open','#context-open','#chat-toggle','#chat-dock','.closed-list','#calendar-area'])check('hidden '+s,!q(s).getClientRects().length);
+ for(const s of ['#group-filters','.order-choice','#quick-add','#qa-preview','#capture-open','#context-open','#chat-toggle','#chat-dock','.closed-list','#calendar-area'])check('hidden '+s,!q(s).getClientRects().length);
  check('no group colors',!q('.focus-item.grouped,.focus-item .group-dot'));
  check('shared priority chips',document.querySelectorAll('.focus-item .priority-pill[data-action=priority]').length===7);
  check('every task has a reason',[...document.querySelectorAll('.focus-reason')].every(e=>e.textContent.length));
