@@ -1080,6 +1080,12 @@ try{
   assert.equal(await evaluate("document.querySelector('#board .lane[data-state=active]').classList.contains('drop-target')"),true);
   assert.equal(await laneOf(r3.id),'active','the slot moved into the column under the pointer');
   assert.match(await evaluate("document.querySelector('#motion-layer .drag-ghost').style.transform"),/scale\(1\.02\)/);
+  // Held, the whole viewport reads the grabbing cursor and no row takes the pointer, and no style reaches
+  // every element: one such rule restyles the page when a drag starts and again when it ends.
+  const held=await evaluate(`(()=>{const hits=[];for(let x=20;x<innerWidth;x+=130)for(let y=20;y<innerHeight;y+=90)hits.push(document.elementFromPoint(x,y));const page=[document.body,document.getElementById('board')].map(getComputedStyle);return {cursors:[...new Set(hits.map(n=>getComputedStyle(n).cursor))],rows:hits.filter(n=>n.closest('.task')).length,page:[...page.flatMap(c=>[c.userSelect,c.cursor]),getComputedStyle(document.querySelector('#board .task:not(.placeholder)')).pointerEvents]}})()`);
+  assert.deepEqual(held,{cursors:['grabbing'],rows:0,page:['auto','auto','auto','auto','auto']},'the drag state reaches the pointer without restyling the page');
+  const overToast=await evaluate(`(()=>{const t=document.getElementById('toast'),u=document.getElementById('undo'),hidden=u.hidden;t.classList.add('show');u.hidden=false;const r=u.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2),read=[!!hit.closest('#undo'),getComputedStyle(hit).cursor];t.classList.remove('show');u.hidden=hidden;return read})()`);
+  assert.deepEqual(overToast,[true,'grabbing'],'Undo stays reachable during a drag, under the same cursor');
   await mouse('mouseReleased',into,0);
   const landing=await evaluate(`(()=>{const g=document.querySelector('#motion-layer .drag-ghost'),end=g.getAnimations()[0].effect.getKeyframes().at(-1).transform.match(/-?[\d.]+/g).map(Number),layer=document.getElementById('motion-layer').getBoundingClientRect(),card=document.querySelector('#board [data-task-id="${r3.id}"]');card.getAnimations().forEach(a=>a.finish());const r=card.getBoundingClientRect();return [Math.abs(end[0]-(r.left-layer.left)),Math.abs(end[1]-(r.top-layer.top))]})()`);
   assert.ok(landing.every(d=>d<1.5),'the copy lands exactly on the card: '+landing);
@@ -1108,6 +1114,21 @@ try{
   assert.equal(await evaluate("document.querySelector('#motion-layer .drag-ghost')"),null);
   assert.equal(await evaluate("document.body.classList.contains('dragging-task')"),false,'the drag cursor ends when the card has landed');
   assert.equal(await evaluate("document.getElementById('board').classList.contains('is-dragging')"),false,'the drag state ends when the card has landed');
+  // A real mouse on a row's plain text: the press starts a selection, the lift clears it, and none comes
+  // back over other rows or after letting go. Outside the rows the same mouse still selects.
+  const selection=()=>evaluate("[getSelection().type,getSelection().toString()]");
+  const pressed=await center(`#board [data-task-id="${r5.id}"] .task-created`),over=await center(`#board [data-task-id="${r1.id}"] .task-created`);
+  await evaluate("globalThis.trusted=[];document.addEventListener('pointermove',e=>trusted.push(e.isTrusted),{capture:true,once:true})");
+  await mouse('mouseMoved',pressed,0);await mouse('mousePressed',pressed,1);await mouse('mouseMoved',{x:pressed.x+3,y:pressed.y},1);
+  assert.notEqual((await selection())[0],'None','the press on row text starts a native selection');
+  const during=[];for(let i=1;i<=10;i++){await mouse('mouseMoved',{x:pressed.x+(over.x-pressed.x)*i/10,y:pressed.y+(over.y-pressed.y)*i/10},1);await new Promise(r=>setTimeout(r,16));during.push((await selection()).join(':'))}
+  assert.equal(await evaluate("document.body.classList.contains('dragging-task')"),true,'the press on row text lifted the card');
+  assert.deepEqual([...new Set(during)],['None:'],'a lifted card selects no text');
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");await mouse('mouseReleased',over,0);await wait("document.querySelector('#motion-layer .drag-ghost')===null");
+  assert.deepEqual(await selection(),['None',''],'letting go selects no text');assert.deepEqual(await evaluate('trusted'),[true]);assert.equal(requests.length,sent);
+  const heading=await evaluate("(()=>{const r=document.querySelector('#board .lane h2').getBoundingClientRect();return {left:Math.round(r.left)+1,right:Math.round(r.right)-1,y:Math.round(r.top+r.height/2)}})()"),textStart={x:heading.left,y:heading.y},textEnd={x:heading.right,y:heading.y};
+  await mouse('mouseMoved',textStart,0);await mouse('mousePressed',textStart,1);await mouse('mouseMoved',{x:(textStart.x+textEnd.x)>>1,y:heading.y},1);await mouse('mouseMoved',textEnd,1);await mouse('mouseReleased',textEnd,0);
+  assert.ok((await selection())[1].length>0,'after a drag the same mouse selects text');await evaluate("getSelection().removeAllRanges()");
   // A redraw with nothing new reads no position and leaves running animations alone.
   await evaluate(`(()=>{const real=Element.prototype.getBoundingClientRect;globalThis.realRect=real;globalThis.reads=0;Element.prototype.getBoundingClientRect=function(){if(this.matches('.task'))globalThis.reads++;return real.call(this)};globalThis.kept=document.querySelector('#board .task').animate([{opacity:.5},{opacity:1}],{duration:60000});return true})()`);
   await evaluate("(()=>{globalThis.heading=[document.getElementById('task-count').firstChild,document.getElementById('order-note').firstChild];dayUI.flow.digest='';dayUI.flow.tag='';return dayUI.flow.refresh().then(()=>true)})()");

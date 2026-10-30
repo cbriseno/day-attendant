@@ -852,7 +852,7 @@ function finishDrag(commit){
  // The lifted copy lands on the card's place, wherever the drop or its refusal left it.
  const card=cardOf(d.id)||d.card;card.getAnimations().forEach(a=>a.finish());
  const hidden=!card.getClientRects().length,rect=(hidden?card.closest('.lane')?.querySelector('.lane-heading')||card:card).getBoundingClientRect(),at=inLayer(rect.left,rect.top),ghost=d.ghost;
- // The drag classes restyle the whole page, so they leave once the card has landed, not while the drop is saved.
+ // The page stays under the drag shield until the card has landed.
  const landed=()=>{ghost.remove();if(!drag){$('board').classList.remove('is-dragging');document.body.classList.remove('dragging-task')}for(const c of new Set([card,cardOf(d.id)]))if(c){c.classList.remove('placeholder');c.style.removeProperty('height')}};
  if(!moving()){landed();return}
  ghost.animate([{transform:ghost.style.transform},{transform:'translate('+at.x+'px,'+at.y+'px)',...(hidden?{opacity:0}:{})}],{duration:DURATION,easing:EASE,fill:'forwards'}).onfinish=landed;
