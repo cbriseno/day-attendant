@@ -478,6 +478,7 @@ class InstantHttpTests(unittest.TestCase):
         self.assertEqual((suggestion['taskId'], suggestion['code']), (self.ids[2], 'unblocked'))
         status, body = self.post('/api/suggestions/' + suggestion['id'] + '/accept', {})
         self.assertEqual((status, body['data']['phase']), (200, 'applied'))
+        self.assertEqual(body['data']['fact'], self.state()['lastFact'])
         status, body = self.post('/api/suggestions/' + suggestion['id'] + '/dismiss', {})
         self.assertEqual((status, body['data']['status']), (200, 'applied'))
         self.assertEqual(self.post('/api/suggestions/' + suggestion['id'] + '/accept', {'extra': 1})[0], 400)

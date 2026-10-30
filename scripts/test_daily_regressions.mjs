@@ -72,7 +72,7 @@ const server=createServer(async(req,res)=>{
     const [,,,id,act]=req.url.split('/'),item=state.suggestions.find(s=>s.id===id);suggestionCalls.push([id,act,body]);
     const proposalId=randomUUID();
     if(act==='accept'){const t=state.tasks.find(t=>t.id===item.action.payload.uuid),fact=++facts;undoable.set(fact,{id:t.id,before:{...t}});t.state='active';state.revision++;state.lastFact={id:fact,proposalId,action:'front_activate',taskId:t.id,undoable:true,undoOf:null,reviewStatus:'deferred'}}
-    Object.assign(item,{status:act==='accept'?'applied':'dismissed',current:false});data=act==='accept'?{id:proposalId,phase:'applied',result:{revision:state.revision}}:{id,status:item.status};
+    Object.assign(item,{status:act==='accept'?'applied':'dismissed',current:false});data=act==='accept'?{id:proposalId,phase:'applied',result:{revision:state.revision},fact:state.lastFact}:{id,status:item.status};
    }else if(req.url==='/api/settings'){
     settings.push(body);
     if(body.expected_revision!==undefined&&body.expected_revision!==state.revision){res.writeHead(409,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:{message:'State changed'}}));return}
@@ -787,7 +787,9 @@ try{
   await fill('locale-choice','es');await refresh();
   assert.equal(await evaluate(`document.querySelector('#board [data-task-id="${b.id}"] .assistant-bubble').textContent`),'Sugerencia: Al terminar «A» se desbloqueó esta tarea.Iniciar ahoraIgnorar');
   await fill('locale-choice','en');await refresh();
-  await click(`[data-suggestion="${rule.id}"][data-suggestion-action="accept"]`);await wait(`document.querySelector('#board [data-task-id="${b.id}"]').closest('.lane').dataset.state==='active'`);
+  // Accepting shows the change and offers Undo with no read behind it, like a direct change.
+  stateDelay=1000;await click(`[data-suggestion="${rule.id}"][data-suggestion-action="accept"]`);await wait(`document.querySelector('#board [data-task-id="${b.id}"]').closest('.lane').dataset.state==='active'&&!document.getElementById('undo').hidden`);
+  assert.notEqual(await evaluate('dayUI.flow.snapshot().lastFact?.id'),facts,'the read has not arrived');stateDelay=0;await wait('!dayUI.flow.sending&&!dayUI.flow.loading');
   assert.deepEqual(suggestionCalls.at(-1).slice(0,2),[rule.id,'accept']);
   assert.equal(await evaluate('document.querySelectorAll("#board .assistant-mark").length'),0);
   assert.match(await evaluate("document.getElementById('messages').textContent"),/Marked «B»: Finishing «A» unblocked this one\. · handled/);

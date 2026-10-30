@@ -221,7 +221,7 @@ class Handler(BaseHTTPRequestHandler):
                 review=True
             elif match:=re.fullmatch(r'/api/suggestions/([a-f0-9-]+)/(?P<action>accept|dismiss)',self.path):
                 if set(body)-{'key'}:raise ValueError('fields')
-                if match['action']=='accept':result=board.accept_suggestion(match[1]);review=True
+                if match['action']=='accept':result=board.announced(board.accept_suggestion(match[1]));review=True
                 else:result=board.dismiss_suggestion(match[1])
             elif self.path=='/api/chat':
                 if set(body)-{'text','key','attachments','capture_only'}:raise ValueError('fields')
