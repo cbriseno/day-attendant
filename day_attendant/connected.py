@@ -50,6 +50,8 @@ ALLOWED = {
     "event_cancel": {"uuid"},
 }
 PENDING = ("evaluating", "review", "unavailable", "stale", "invalid")
+# Settled proposals the browser view keeps so a lost reply can still find its own key.
+RECENT_PROPOSALS = 20
 # Typed UI/CLI actions are the operator's explicit decision. From the conversation, retiring is the
 # one change that waits for the person; every other interpreted change applies with Undo.
 CONFIRM_FROM_CHAT = {"front_retire"}
@@ -94,6 +96,7 @@ class Connected:
         self.bridge = bridge
         self.inflight_lock = threading.Lock()
         self.suggesting = set()
+        self.fact_targets = {}  # Facts are append-only; their operation key confirms a cached target.
         self.reviewing = threading.Lock()
         self.review_again = False
 
@@ -276,6 +279,25 @@ class Connected:
         with self.store.connect() as con:
             return self.unpack(con.execute("SELECT * FROM proposals WHERE id=?", (identity,)).fetchone())
 
+    def _fact_summary(self, row):
+        """The latest fact as an interface shows it: what changed, when, and whether Undo applies,
+        without the plan's recovery preconditions."""
+        plan = json.loads(row["plan"])
+        return {"id": row["id"], "action": row["action"], "at": row["at"], "proposal_id": row["proposal_id"], "proposalId": row["proposal_id"],
+                "taskId": plan.get("target_uuid"), "undoOf": plan.get("undo_of"), "origin": plan.get("origin"),
+                "undoable": self._undoable(plan), "reviewStatus": plan.get("review_status"),
+                "reviewComplete": plan.get("review_status") == "not_required" or plan.get("review_complete") is not False}
+
+    def _fact_targets(self, con):
+        facts = [dict(r) for r in con.execute("SELECT id,operation_key,action,at FROM facts ORDER BY id")]
+        missing = [f["id"] for f in facts if self.fact_targets.get(f["id"], (None,))[0] != f["operation_key"]]
+        for start in range(0, len(missing), 500):
+            chunk = missing[start:start+500]
+            for r in con.execute("SELECT id,operation_key,json_extract(plan,'$.target_uuid') FROM facts WHERE id IN (" + ",".join("?" * len(chunk)) + ")", chunk):
+                self.fact_targets[r[0]] = (r[1], r[2])
+        for f in facts:f["target_uuid"] = self.fact_targets[f["id"]][1]
+        return facts
+
     def _tasks(self, coherent=True):
         rows = self.app._view(coherent=coherent)
         with self.store.connect() as con:
@@ -299,20 +321,47 @@ class Connected:
                 "progressRecordedAt": row["metadata"].get("human_progress_at")})
         return tasks
 
-    def _snapshot(self):
+    def _snapshot(self, history="targets"):
+        """history="all" is the public snapshot; "last" is the browser view; internal reads ("targets")
+        need no proposals and only each fact's action, time and target, never its recorded plan."""
         unresolved=self.store.unresolved()
         maintenance=self.store.state_value('maintenance')
         tasks = self._tasks(coherent=not bool(unresolved or maintenance))
         context=self.store.state_value("day_context", {"availableMinutes": None, "availableUntil": None, "rest": False})
         with self.store.connect() as con:
-            proposals = [self.unpack(r) for r in con.execute("SELECT * FROM proposals ORDER BY rowid")]
-            failures = {r["proposal_id"]: (r["generation"], json.loads(r["result"] or "{}").get("code") or "review_failed")
-                        for r in con.execute("SELECT proposal_id,generation,result FROM evaluations WHERE status='failed' ORDER BY id")}
-            for proposal in proposals:proposal["error_code"] = error_code(proposal, failures)
-            facts = [dict(r) for r in con.execute("SELECT * FROM facts ORDER BY id")]
             # Only the current conversation is shown and sent; /clear keeps older messages stored locally.
             conversation=self.store.state_value('conversation') or {}
             messages = [dict(r) for r in con.execute("SELECT * FROM messages WHERE id>? ORDER BY id",(conversation.get('floor',0),))]
+            last = con.execute("SELECT * FROM facts ORDER BY id DESC LIMIT 1").fetchone()
+            if history == "targets":
+                proposals = None;failed = ()
+                facts = self._fact_targets(con)
+            elif history == "all":
+                proposals = [self.unpack(r) for r in con.execute("SELECT * FROM proposals ORDER BY rowid")]
+                failed = con.execute("SELECT proposal_id,generation,result FROM evaluations WHERE status='failed' ORDER BY id")
+                facts = [dict(r) for r in con.execute("SELECT * FROM facts ORDER BY id")]
+            else:
+                # The browser needs pending decisions, the receipts of this conversation and recent keys
+                # for lost replies; settled history stays local, so the view does not grow per action.
+                cited = set()
+                for m in messages:
+                    data = json.loads(m["data"] or "null")
+                    if isinstance(data, dict):cited.update(i for i in data.get("proposal_ids") or [] if isinstance(i, str))
+                keys = [m["key"] for m in messages]
+                marks = lambda n: ",".join("?" * n)
+                proposals = [self.unpack(r) for r in con.execute(
+                    "SELECT * FROM proposals WHERE phase IN (" + marks(len(PENDING)) + ") OR rowid > (SELECT coalesce(max(rowid),0) FROM proposals)-?"
+                    " OR id IN (" + marks(len(cited)) + ") OR message_key IN (" + marks(len(keys)) + ") ORDER BY rowid",
+                    (*PENDING, RECENT_PROPOSALS, *cited, *keys))]
+                # Settled proposals outside this conversation are only matched by key after a lost reply.
+                proposals = [p if p["phase"] in PENDING or p["id"] in cited or p.get("message_key") in keys
+                             else {k: p[k] for k in ("id", "key", "phase", "origin")} for p in proposals]
+                ids = [p["id"] for p in proposals]
+                failed = con.execute("SELECT proposal_id,generation,result FROM evaluations WHERE status='failed' AND proposal_id IN (" + marks(len(ids)) + ") ORDER BY id", ids)
+                facts = [self._fact_summary(last)] if last else []
+            failures = {r["proposal_id"]: (r["generation"], json.loads(r["result"] or "{}").get("code") or "review_failed") for r in failed}
+            for proposal in proposals or ():
+                if "generation" in proposal:proposal["error_code"] = error_code(proposal, failures)
             transport_issues=[dict(r) for r in con.execute("SELECT id,entity,status,error,retry_at FROM notices WHERE status IN ('failed','uncertain') OR status='pending' AND error IS NOT NULL")]
             selected_images={r['message_key']:[] for r in con.execute('SELECT DISTINCT message_key FROM message_attachments')}
             for r in con.execute('SELECT m.message_key,a.id,a.name,a.mime FROM message_attachments m JOIN attachments a ON a.id=m.attachment_id ORDER BY a.id'):selected_images[r['message_key']].append({'id':r['id'],'name':r['name'],'mime':r['mime']})
@@ -330,7 +379,7 @@ class Connected:
         return {"tasks": tasks, "taskOrder": [uid for uid in self.store.state_value('task_order',[]) if uid in known], "orderSuggestion": suggestion, "context": context,
                 "timezone": self.store.state_value('timezone','America/Edmonton'),
                 "calendar_events":self.store.events(),"notification_policy":self.store.state_value('notification_policy'),
-                "proposals": proposals, "events": facts, "lastFact": self._fact_summary(facts[-1] if facts else None), "messages": messages,
+                "proposals": proposals, "events": facts, "lastFact": self._fact_summary(last) if last else None, "messages": messages,
                 "suggestions": suggestions, "review": review,
                 "revision": self.store.revision(), "now": self.app.now(), "synthetic": profile.get('kind')=='synthetic',
                 "profile":profile or None, "readOnly":bool(unresolved or maintenance),
@@ -345,14 +394,14 @@ class Connected:
 
     def snapshot(self):
         with self.store.lock():
-            return self._snapshot()
+            return self._snapshot("all")
 
-    def _fact_summary(self, fact):
-        """What an interface needs to confirm the latest change and offer Undo."""
-        if not fact:return None
-        plan=json.loads(fact['plan'])
-        return {'id':fact['id'],'proposalId':fact['proposal_id'],'action':fact['action'],'taskId':plan.get('target_uuid'),'at':fact['at'],'origin':plan.get('origin'),
-                'undoable':self._undoable(plan),'undoOf':plan.get('undo_of'),'reviewStatus':plan.get('review_status')}
+    def view(self):
+        """The browser's state: the snapshot without plan history, tagged by its content."""
+        with self.store.lock():
+            data = self._snapshot("last")
+        data["tag"] = fingerprint({k: v for k, v in data.items() if k != "now"})[:32]
+        return data
 
     def _plan(self, intent, key):
         if intent["action"] not in ALLOWED and intent["action"] != "task_restore":

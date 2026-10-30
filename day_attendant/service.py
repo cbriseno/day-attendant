@@ -520,8 +520,7 @@ class Assistant:
         meta = self.store.metadata()
         frames = self.store.frames()
         focused = frames[-1]["target"] if frames else None
-        # Read once: a view of every task must not open a store connection per task.
-        connected = self.store.state_value("connected", False)
+        connected = self.store.state_value("connected", False)  # Read once: every lookup opens the database.
         view = []
         for row in rows:
             uid = row["uuid"]

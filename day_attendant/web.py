@@ -13,6 +13,7 @@ import sqlite3
 import threading
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .harnesses import create_harness,discover_catalog
@@ -145,14 +146,21 @@ class Handler(BaseHTTPRequestHandler):
                 data,mime=load(self.server.board.app,match[1]);self.reply(200,data,mime)
             except AssistantError as error:self.reply(404,{'error':{'code':error.code,'message':str(error)}})
             return
-        if self.path in ('/api/state','/api/doctor','/api/backups','/api/models'):
+        route,_,query=self.path.partition('?')
+        if route=='/api/state' or self.path in ('/api/doctor','/api/backups','/api/models'):
             try:
                 if self.path=='/api/doctor':data=self.server.board.app.doctor()
                 elif self.path=='/api/models':data=self.server.models()
                 elif self.path=='/api/backups':
                     from .archives import list_backups
                     data=list_backups(self.server.board.app)
-                else:data=self.server.board.snapshot()
+                else:
+                    options=parse_qs(query)
+                    if options.get('view')==['full']:data=self.server.board.snapshot()
+                    else:
+                        data=self.server.board.view()
+                        # A poll that already holds this content receives only the clock.
+                        if options.get('since')==[data['tag']]:data={'unchanged':True,'tag':data['tag'],'now':data['now']}
                 self.reply(200,{'data':data})
             except AssistantError as error:self.reply(409,{'error':{'code':error.code,'message':str(error)}})
             return
