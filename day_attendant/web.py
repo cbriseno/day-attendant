@@ -32,11 +32,11 @@ ASSETS = Path(__file__).resolve().parent / "ui"
 class LocalServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, app, bridge, port=0):
+    def __init__(self, app, bridge, port=0, token=None):
         self.board=Connected(app,bridge)
         self.chat=Conversation(self.board)
         self.pool=ThreadPoolExecutor(max_workers=3,thread_name_prefix="day-request")
-        self.token=secrets.token_urlsafe(32)
+        self.token=token or secrets.token_urlsafe(32)
         self.harness_lock=threading.Lock()
         self.catalogs={}
         self.review_lock=threading.Lock()
@@ -249,8 +249,9 @@ class Handler(BaseHTTPRequestHandler):
                 from .recovery import resolve
                 result=resolve(board.app,body['operation_key'],body['resolution'],body['precondition'])
             elif self.path=='/api/shutdown':
-                result={'stopping':True}
-                threading.Thread(target=self.server.shutdown,daemon=True).start()
+                # Answer completely before stopping, so the caller never sees a truncated reply.
+                self.reply(200,{'data':{'stopping':True}})
+                threading.Thread(target=self.server.shutdown,daemon=True).start();return
             else:
                 self.reply(404,{'error':{'code':'not_found','message':'Route unavailable.'}});return
             self.reply(200,{'data':result})
@@ -279,6 +280,24 @@ def initialize_profile(state,kind='personal',zone=None,name=None):
     return app
 
 
+def bind(app,port=0):
+    """Reuse the last address and session so an open tab keeps working after a restart."""
+    path=app.store.path/'ui-session.json'
+    try:
+        saved=json.loads(path.read_text())
+        token=saved['token'] if isinstance(saved.get('token'),str) and len(saved['token'])>=32 else None
+        previous=saved['port'] if isinstance(saved.get('port'),int) and 1024<=saved['port']<=65535 else 0
+    except (OSError,ValueError,AttributeError):token,previous=None,0
+    candidates=[port] if port else ([previous] if previous else [])+[0]
+    for index,candidate in enumerate(candidates):
+        try:server=LocalServer(app,None,candidate,token);break
+        except OSError:
+            if index==len(candidates)-1:raise  # The saved port is taken: fall back to a free one.
+    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+    with os.fdopen(fd,'w') as f:json.dump({'port':server.server_port,'token':server.token},f)
+    return server
+
+
 def serve(state,port=0,zone=None,kind=None,supervised=False):
     selected=preflight(state)
     app=Assistant(selected)
@@ -293,7 +312,7 @@ def serve(state,port=0,zone=None,kind=None,supervised=False):
             # Everything else keeps working; only urgent waits for the next start or profile upgrade.
             print('Urgent priority not enabled yet: '+str(error),file=sys.stderr,flush=True)
         board.startup()
-        server=LocalServer(app,None,port)
+        server=bind(app,port)
         receipt=app.store.path/'ui-server.json'
         try:
             server.configure_harness()

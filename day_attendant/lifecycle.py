@@ -63,10 +63,17 @@ def start(app,port=0):
 def stop(app):
     rec=receipt(app)
     if not rec:return {'running':False,'already_stopped':True}
+    from http.client import HTTPException
     from .web import client
-    client(app.store.path,'/api/shutdown',{})
-    for _ in range(100):
-        if not (app.store.path/'ui-server.json').exists():return {'running':False}
+    try:client(app.store.path,'/api/shutdown',{})
+    except (AssistantError,HTTPException):pass  # A reply cut short by the exit still means it is stopping.
+    # The old owner is gone only once it releases the server lock, so a restart can reuse its address.
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        try:
+            with exclusive(app.store.path/'server.lock',timeout=0):return {'running':False}
+        except AssistantError as error:
+            if error.code!='busy':raise
         time.sleep(.1)
     raise AssistantError('service_stopping','Shutdown is still finishing; the service was not forcibly killed.')
 
