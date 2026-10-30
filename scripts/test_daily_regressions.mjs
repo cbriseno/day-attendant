@@ -1044,6 +1044,11 @@ try{
   await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
   assert.equal(await laneOf(r5.id),'todo');await mouse('mouseReleased',{x:5,y:5},0);await new Promise(r=>setTimeout(r,450));assert.equal(requests.length,sent);
   assert.equal(await evaluate("document.querySelector('#motion-layer .drag-ghost')"),null);
+  assert.equal(await evaluate("document.body.classList.contains('dragging-task')"),false,'the drag cursor ends when the card has landed');
+  // A redraw with nothing new reads no position and leaves running animations alone.
+  await evaluate(`(()=>{const real=Element.prototype.getBoundingClientRect;globalThis.realRect=real;globalThis.reads=0;Element.prototype.getBoundingClientRect=function(){if(this.matches('.task'))globalThis.reads++;return real.call(this)};globalThis.kept=document.querySelector('#board .task').animate([{opacity:.5},{opacity:1}],{duration:60000});return true})()`);
+  await evaluate("(()=>{globalThis.heading=[document.getElementById('task-count').firstChild,document.getElementById('order-note').firstChild];dayUI.flow.digest='';dayUI.flow.tag='';return dayUI.flow.refresh().then(()=>true)})()");
+  assert.deepEqual(await evaluate("(()=>{const seen=[globalThis.reads,globalThis.kept.playState,globalThis.heading[0]===document.getElementById('task-count').firstChild,globalThis.heading[1]===document.getElementById('order-note').firstChild];Element.prototype.getBoundingClientRect=globalThis.realRect;globalThis.kept.cancel();return seen})()"),[0,'running',true,true]);
   // In Group order a drop into another group's section takes that group; into No group it has none.
   await click('#list-view');await fill('order-choice','group');await wait(`daySnapshot().revision>=${state.revision}`);
   sent=requests.length;const noGroup=await center('#board .group-section[data-group=""] .lane-heading');

@@ -134,7 +134,12 @@ function leave(card,rect,finished){const copy=floating(card,rect,'task-leaving')
 // animation; a changed one is replaced; a moved one is moved. Nothing is rebuilt as a whole.
 let changingGroupView=false;
 const groupViewNodes=new Map();
+// True when the board already shows these lanes. Nothing can have moved, so reading every position
+// and restarting the animations would only keep the page from answering.
+function drawn(lanes){const board=$('board');return board.children.length===lanes.length&&lanes.every((lane,i)=>{const section=board.children[i],box=section.lastElementChild;
+ return section._lane===(lane.id||'state:'+lane.state)&&section.className===('lane'+(lane.cls||''))&&(section.getAttribute('style')||'')===(lane.style||'')&&section.firstElementChild._html===lane.head&&box.children.length===lane.items.length&&lane.items.every((item,j)=>box.children[j]._html===item.html)})}
 function morphBoard(lanes,data){
+ if(!changingGroupView&&drawn(lanes))return;
  const board=$('board'),animate=moving()&&!changingGroupView,first=animate?cardRects():new Map(),old=new Map(boardCards().map(c=>[c.dataset.taskId,c]));
  if(changingGroupView)for(const a of board.getAnimations({subtree:true}))a.cancel();
  const make=html=>{const t=document.createElement('template');t.innerHTML=html;const node=t.content.firstElementChild;node._html=html;return node};
@@ -441,9 +446,11 @@ function render(data=flow.snapshot()) {
  const proposals=data.proposals;
  const newlyRelevant=proposals.find(p=>['review','unavailable'].includes(p.phase)&&!['review','unavailable'].includes(phaseCache.get(p.id)));
  phaseCache=new Map(proposals.map(p=>[p.id,p.phase]));
- $('task-count').textContent=data.tasks.filter(t=>!['done','retired'].includes(t.state)).length+tr("open");
- $('context-open').textContent=data.context.availableMinutes!==null?data.context.availableMinutes+tr("min_available"):tr("my_context");
- $('order-note').innerHTML=orderNote(data);
+ // Writing the same text still marks the page for layout, which the next position read then pays for.
+ const same=(node,text)=>{if(node.textContent!==text)node.textContent=text};
+ same($('task-count'),data.tasks.filter(t=>!['done','retired'].includes(t.state)).length+tr("open"));
+ same($('context-open'),data.context.availableMinutes!==null?data.context.availableMinutes+tr("min_available"):tr("my_context"));
+ const note=orderNote(data);if($('order-note')._html!==note){$('order-note').innerHTML=note;$('order-note')._html=note}
  if(expanded&&!data.tasks.some(t=>t.id===expanded&&!t.pending&&!['done','retired'].includes(t.state)))expanded=null;
  if(titleEdit&&!data.tasks.some(t=>t.id===titleEdit.id&&!['done','retired'].includes(t.state)))titleEdit=null;
  const typing=typingState();rendering=true;
@@ -819,13 +826,14 @@ function finishDrag(commit){
  const d=drag;if(!d)return;if(d.frame){cancelAnimationFrame(d.frame);d.frame=0;if(commit&&d.active){moveGhost(d.px,d.py);placeCard(d.px,d.py)}}drag=null;clearTimeout(d.timer);cancelAnimationFrame(scrollFrame);cardOf(d.id)?.classList.remove('pressing');
  if(!d.active){if(d.touch&&d.armed&&commit){swallowClick=true;openMenu(d.id,'more',{x:d.x,y:d.y})}return}
  // The release's own click comes in the same task; nothing after it is swallowed.
- $('board').classList.remove('is-dragging');document.body.classList.remove('dragging-task');setTimeout(()=>swallowClick=false);
+ $('board').classList.remove('is-dragging');setTimeout(()=>swallowClick=false);
  for(const l of $('board').querySelectorAll('.lane.drop-target'))l.classList.remove('drop-target');
  if(!(commit&&dropCard(d)))render();
  // The lifted copy lands on the card's place, wherever the drop or its refusal left it.
  const card=cardOf(d.id)||d.card;card.getAnimations().forEach(a=>a.finish());
  const hidden=!card.getClientRects().length,rect=(hidden?card.closest('.lane')?.querySelector('.lane-heading')||card:card).getBoundingClientRect(),at=inLayer(rect.left,rect.top),ghost=d.ghost;
- const landed=()=>{ghost.remove();for(const c of new Set([card,cardOf(d.id)]))if(c){c.classList.remove('placeholder');c.style.removeProperty('height')}};
+ // The cursor class restyles the whole page, so it leaves once the card has landed, not while the drop is saved.
+ const landed=()=>{ghost.remove();if(!drag)document.body.classList.remove('dragging-task');for(const c of new Set([card,cardOf(d.id)]))if(c){c.classList.remove('placeholder');c.style.removeProperty('height')}};
  if(!moving()){landed();return}
  ghost.animate([{transform:ghost.style.transform},{transform:'translate('+at.x+'px,'+at.y+'px)',...(hidden?{opacity:0}:{})}],{duration:DURATION,easing:EASE,fill:'forwards'}).onfinish=landed;
 }
