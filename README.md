@@ -52,8 +52,10 @@ an open UI or LLM session. Open the UI on demand with `service open`.
 ## Responsibilities, relationships and capture
 
 - Track multiple active fronts. Card count alone never imposes a universal limit.
-- Snooze for minutes, hours, calendar days or an exact local time. Return directly to
-  To do from an active or snoozed front. Snoozing preserves the deadline.
+- Snooze from a card's clock: in 1 hour, in 3 hours, or tomorrow, in 2 days or in 1 week
+  at 9:00 in the profile's time zone. Each choice shows the time it saves and says when
+  that is after the deadline. `board request task_snooze` and the conversation take an exact time.
+  Return directly to To do from an active or snoozed front. Snoozing preserves the deadline.
 - Edit blocking prerequisites and symmetric, nonblocking related links in Details.
   Board cards show what blocks a responsibility and what it blocks. Selecting either
   indicator highlights the linked cards and, where the layout leaves room (not at phone
@@ -73,8 +75,8 @@ an open UI or LLM session. Open the UI on demand with `service open`.
   category) when it has one. **Order** changes only how cards are shown: by priority
   (the default), your own order, newest first, grouped, or the order the assistant
   suggested. No view changes a stored priority, group or state. Each compact row
-  finishes, starts or pauses, and snoozes in one click; its priority chip opens a
-  one-level menu. Everything else is in ⋯ (also a right click, or a long press on a
+  finishes, starts or pauses in one click; its priority chip and its clock (snooze)
+  open a one-level menu. Everything else is in ⋯ (also a right click, or a long press on a
   phone); change a group in Edit card. Drag the handle, or focus it and press the arrow
   keys, or use Move up and Move down in ⋯, to set your own order. It is saved in the profile and also orders tasks of equal priority or the
   same group. Newest and Suggested accept no drops. A suggestion is computed only when

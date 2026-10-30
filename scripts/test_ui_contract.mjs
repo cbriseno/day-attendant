@@ -80,8 +80,8 @@ try {
  // Native outside click and Escape dismiss dialogs without applying changes.
  await clickSelector('#context-open');const box=await evaluate("(()=>{const r=document.querySelector('#context-dialog').getBoundingClientRect();return {x:Math.max(2,r.left-10),y:Math.max(2,r.top-10)}})()");
  await rpc('Input.dispatchMouseEvent',{type:'mousePressed',...box,button:'left',buttons:1,clickCount:1});await rpc('Input.dispatchMouseEvent',{type:'mouseReleased',...box,button:'left',buttons:0,clickCount:1});await pause(150);
- const outsideClosed=await evaluate("!document.querySelector('#context-dialog').open");await clickSelector(action(ids[0],'snooze'));await rpc('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await rpc('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await pause(150);
- record('native-dialog-dismissal',{outsideClosed,escapeClosed:await evaluate("!document.querySelector('#snooze-dialog').open")});
+ const outsideClosed=await evaluate("!document.querySelector('#context-dialog').open");await clickSelector(action(ids[0],'detail'));await rpc('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await rpc('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});await pause(150);
+ record('native-dialog-dismissal',{outsideClosed,escapeClosed:await evaluate("!document.querySelector('#detail-dialog').open")});
  // Preserve a final screenshot from this exact CDP viewport for visual review.
  const shot=await rpc('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(root,'arquitecto/20261027_investigacion/final-ui-dark.png'),Buffer.from(shot.data,'base64'));
  report.completed=true;fs.writeFileSync(out,JSON.stringify(report,null,2)+'\n');
