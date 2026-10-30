@@ -39,7 +39,7 @@ const server=createServer(async(req,res)=>{
     if(body.action==='continuity_update')for(const key of ['context','next','awaiting','remainingMinutes'])if(key in p)t[key]=p[key];
     if(p.order)state.taskOrder=p.order;
     // The quick capture group creates the task as the service does; other groups only record the request.
-    if(body.action==='task_add'&&state.quickAdd)state.tasks.push({...task(p.title),priority:p.priority,group:p.group||null,due:p.due||null,createdAt:state.now});
+    const created=body.action==='task_add'&&state.quickAdd&&{...task(p.title),priority:p.priority,group:p.group||null,due:p.due||null,createdAt:state.now};if(created)state.tasks.push(created);
     if(body.action==='group_color_update'){state.groupColors={...state.groupColors};if(p.color)state.groupColors[p.group.trim().toLowerCase()]=p.color;else delete state.groupColors[p.group.trim().toLowerCase()]}
     const nextState={front_activate:'active',front_todo:'todo',task_done:'done',front_retire:'retired',task_reopen:'todo'}[body.action];
     if(nextState)t.state=nextState;
@@ -50,23 +50,24 @@ const server=createServer(async(req,res)=>{
     if(body.action==='event_cancel')state.calendar_events=state.calendar_events.filter(e=>e.uuid!==p.uuid);
     // The instant group records each change as an undoable fact, as the service does.
     const proposalId=randomUUID();proposalsBefore.set(proposalId,{id:t?.id,before:beforeTask,order:beforeOrder});
+    if(state.instant&&created)state.lastFact={id:++facts,proposalId,action:body.action,taskId:created.id,undoable:true,undoOf:null,reviewStatus:'deferred'};
     if(state.instant&&canceledEvent){const fact=++facts;undoable.set(fact,{event:canceledEvent});state.lastFact={id:fact,proposalId,action:body.action,taskId:p.uuid,undoable:true,undoOf:null,reviewStatus:'deferred'}}
     if(state.orderFacts&&body.action==='order_update'){const fact=++facts;undoable.set(fact,{order:beforeOrder});state.lastFact={id:fact,proposalId,action:body.action,taskId:null,undoable:true,undoOf:null,reviewStatus:'not_required'}}
     if(state.instant&&(t||body.action==='group_color_update')){const fact=++facts;undoable.set(fact,t?{id:t.id,before:beforeTask}:{group:p.group.trim().toLowerCase(),before:beforeColors[p.group.trim().toLowerCase()]});state.lastFact={id:fact,proposalId,action:body.action,taskId:t?.id,undoable:true,undoOf:null,reviewStatus:'deferred'}}
     state.revision++;
-    data={id:proposalId,key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[],result:{revision:state.revision}};proposalReplied=Date.now();
+    data={id:proposalId,key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[],result:{revision:state.revision},...(state.lastFact?.proposalId===proposalId?{fact:state.lastFact}:{})};proposalReplied=Date.now();
    }else if(req.url==='/api/undo'&&body.proposal_ids){
     // A drop's changes undo together, newest first.
     undos.push(body);const undone=[];
     for(const id of [...body.proposal_ids].reverse()){const was=proposalsBefore.get(id);if(!was)continue;if(was.id)Object.assign(state.tasks.find(t=>t.id===was.id),was.before);else state.taskOrder=was.order;state.revision++;
-     const proposalId=randomUUID();undone.push({id:proposalId,phase:'applied',result:{revision:state.revision}});state.lastFact={id:++facts,proposalId,action:was.id?'task_restore':'order_update',taskId:was.id||null,undoable:true,undoOf:id,reviewStatus:'deferred'}}
+     const proposalId=randomUUID();state.lastFact={id:++facts,proposalId,action:was.id?'task_restore':'order_update',taskId:was.id||null,undoable:true,undoOf:id,reviewStatus:'deferred'};undone.push({id:proposalId,phase:'applied',result:{revision:state.revision},fact:state.lastFact})}
     data=undone;
    }else if(req.url==='/api/undo'){
     undos.push(body);const last=undoable.get(Number(body.fact_id));
     const proposalId=randomUUID();
     if(last?.event){state.calendar_events=[...state.calendar_events,last.event];state.revision++;state.lastFact={id:++facts,proposalId,action:'event_restore',taskId:last.event.uuid,undoable:true,undoOf:Number(body.fact_id),reviewStatus:'deferred'}}
     else if(last){if(last.group!==undefined){if(last.before)state.groupColors[last.group]=last.before;else delete state.groupColors[last.group]}else Object.assign(state.tasks.find(t=>t.id===last.id),last.before);state.revision++;state.lastFact={id:++facts,proposalId,action:'task_restore',taskId:last.id,undoable:true,undoOf:Number(body.fact_id),reviewStatus:'deferred'}}
-    data={id:proposalId,phase:'applied',result:{revision:state.revision}};
+    data={id:proposalId,phase:'applied',result:{revision:state.revision},...(state.lastFact?.proposalId===proposalId?{fact:state.lastFact}:{})};
    }else if(req.url.startsWith('/api/suggestions/')){
     const [,,,id,act]=req.url.split('/'),item=state.suggestions.find(s=>s.id===id);suggestionCalls.push([id,act,body]);
     const proposalId=randomUUID();
@@ -736,6 +737,27 @@ try{
   await click('#undo');await wait(`document.querySelector('#board [data-task-id="${a.id}"]').closest('.lane').dataset.state==='todo'`);
   await wait("document.getElementById('status').textContent==='Change undone'");
   assert.equal(undos.at(-1).fact_id,String(facts-1));shown=await toast();assert.equal(shown.undo,false);
+  // The reply offers Undo with no read behind it, and Undo works before that read arrives.
+  const laneOf=`document.querySelector('#board [data-task-id="${a.id}"]').closest('.lane').dataset.state`,offers=text=>`document.getElementById('status').textContent==='${text}'&&!document.getElementById('undo').hidden`,settled='!dayUI.flow.sending&&!dayUI.flow.loading';
+  stateDelay=1500;await click(`[data-id="${a.id}"][data-action="activate"]`);await wait(offers('Start · A'));
+  assert.notEqual(await evaluate('dayUI.flow.snapshot().lastFact?.id'),facts,'the read has not arrived');
+  await click('#undo');await wait(laneOf+"==='todo'");await wait("document.getElementById('status').textContent==='Change undone'");
+  assert.equal(undos.at(-1).fact_id,String(facts-1));
+  stateDelay=0;await wait(`${settled}&&dayUI.flow.snapshot().lastFact?.id===${facts}`);assert.equal(await evaluate(laneOf),'todo');
+  // The read behind the reply finds the change announced and does not raise the toast again.
+  stateDelay=300;await click(`[data-id="${a.id}"][data-action="activate"]`);await wait(offers('Start · A'));
+  await evaluate("(()=>{document.getElementById('toast').classList.remove('show');return true})()");await wait(`${settled}&&dayUI.flow.snapshot().lastFact?.id===${facts}`);
+  assert.equal((await toast()).show,false);stateDelay=0;
+  // Changes sent together confirm once, when the last one is saved.
+  await evaluate("(()=>{globalThis.statusSeen=[];globalThis.statusWatch=new MutationObserver(()=>statusSeen.push(document.getElementById('status').textContent));statusWatch.observe(document.getElementById('status'),{childList:true,characterData:true,subtree:true});return true})()");
+  await evaluate(`(()=>{document.querySelector('[data-id="${a.id}"][data-action="todo"]').click();document.querySelector('[data-id="${b.id}"][data-action="activate"]').click();return true})()`);await wait(offers('Start · B'));await wait(settled);
+  assert.deepEqual(await evaluate("(()=>{statusWatch.disconnect();return statusSeen.filter(Boolean)})()"),['Start · B']);
+  // A capture's row is still its draft when the reply arrives; the confirmation already names it.
+  state.quickAdd=true;stateDelay=300;await evaluate("(dayUI.flow.request('task_add',{title:'From the reply'}),true)");await wait("document.getElementById('status').textContent.endsWith(' · From the reply')");
+  stateDelay=0;await wait(settled);state.quickAdd=false;state.tasks=state.tasks.filter(t=>t.title!=='From the reply');Object.assign(b,{state:'todo'});state.revision++;await refresh();
+  // A refused change confirms nothing and the page returns to what the service has.
+  state.revision++;await click(`[data-id="${a.id}"][data-action="activate"]`);await wait(settled+'&&'+laneOf+"==='todo'");
+  assert.notEqual(await evaluate("document.getElementById('status').textContent"),'Start · A');assert.equal(await evaluate("document.getElementById('undo').hidden"),true);
   // A calendar addition shows before the answer; the next read holds what the service saved.
   await evaluate("(()=>{dayUI.flow.preview({action:'event_add',payload:{title:'New commitment',start:'2099-01-01T10:00:00Z',end:'2099-01-01T11:00:00Z'}});return true})()");
   assert.match(await evaluate("document.getElementById('calendar-area').textContent"),/New commitment/);

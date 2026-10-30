@@ -510,10 +510,14 @@ function renderClosed(data=flow.snapshot()){
 function announce(last,data){const t=data.tasks.find(t=>t.id===last.taskId),action=aliases[last.action]||last.action,canceled=last.action==='event_cancel'&&(timings.get(last.proposalId)?.before?.calendar_events||[]).find(e=>e.uuid===last.taskId);
  const gesture=!last.undoOf&&gestureOf.get(last.proposalId);
  if(gesture){toast(gesture.notes.join(' · ')||tr('order_saved'),{undo:gesture.id,detail:gesture.notes.length?[formatted('toast_ms',{ms:Math.max(1,Math.round(gesture.shown-gesture.started))}),data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · '):''});return}
- const text=last.undoOf?tr('change_undone'):action==='order'?tr('order_saved'):last.action==='event_cancel'?[tr('event_canceled'),canceled?.title].filter(Boolean).join(' · '):action==='snooze'&&t?.until?tr('snoozed_until').replace('{time}',short(t.until))+' · '+t.title:[action==='declaration'&&t?tr('details_saved'):actionLabel[action]||tr(last.action),t?.title||(action==='declaration'?tr('my_context'):'')].filter(Boolean).join(' · ');
+ const text=last.undoOf?tr('change_undone'):action==='order'?tr('order_saved'):last.action==='event_cancel'?[tr('event_canceled'),canceled?.title].filter(Boolean).join(' · '):action==='snooze'&&t?.until?tr('snoozed_until').replace('{time}',short(t.until))+' · '+t.title:[action==='declaration'&&t?tr('details_saved'):actionLabel[action]||tr(last.action),t?.title||last.title||(action==='declaration'?tr('my_context'):'')].filter(Boolean).join(' · ');
  // The time shown is from the click until the change was on screen.
  const timing=timings.get(last.proposalId);timings.delete(last.proposalId);if(timing?.before&&last.undoable)undoViews.set(String(last.id),{...timing.before,taskId:last.taskId});const ms=timing&&action!=='order'?Math.max(1,Math.round((timing.shown??performance.now())-timing.started)):null;
  toast(text,{undo:last.undoable&&!last.undoOf?last.id:null,detail:[ms===null?'':formatted('toast_ms',{ms}),last.reviewStatus==='deferred'&&data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · ')})}
+// The reply to a change already on screen confirms it and offers Undo without waiting for the next read,
+// which then finds it announced. While more changes are on their way only the last one confirms, as Undo
+// must cover them all.
+function confirmSaved(fact,draftTitle){if(!fact||flow.sending||fact.id<=lastSeenEvent)return;lastSeenEvent=fact.id;announce({...fact,title:draftTitle},flow.snapshot())}
 async function request(action,payload,key,expectedRevision,gesture){return safely(async()=>{const p=await flow.request(action,payload,key,expectedRevision,gesture);lastRequestedProposal=p?.id||null;if(p?.phase==='unchanged')notice(p.superseded?.length?tr("the_pending_change_was_discarded_the_respons"):tr("there_are_no_new_changes_to_apply"));else if(p&&p.phase!=='applied')notice(tr('a_pending_change_needs_review'));return p;});}
 function openDialog(dialog,origin,id,action){localizedDates(dialog);origins.set(dialog,{origin,id,action});dialog.returnValue='cancel';dialog.showModal();}
 function restoreDialog(dialog){const saved=origins.get(dialog);origins.delete(dialog);requestAnimationFrame(()=>{if(document.querySelector('dialog[open]'))return;let target=saved?.origin;if(!target?.isConnected||!target.getClientRects().length)target=saved?.id?document.querySelector('[data-id="'+saved.id+'"][data-action="'+saved.action+'"]'):null;if(!target?.getClientRects().length)target=saved?.id?$('list-view'):$('chat-toggle');target.focus({preventScroll:true});})}
@@ -938,7 +942,7 @@ class RemoteFlow{
  async send(body,key,expectedRevision){const revision=expectedRevision??this.data.revision;return this.observe(key?await api('/api/proposals',{...body,key,expected_revision:revision}):await deliver('/api/proposals',body,revision,{refresh:false}))}
  async request(action,payload,key,expectedRevision,gesture){const started=performance.now();const body={action:domain[action]||action,payload:{...(payload.taskId?{uuid:payload.taskId}:{}),...(payload.until?{until:payload.until}:{}),...(payload.taskId&&payload.order?{order:payload.order}:{}),...(!payload.taskId?payload:{})}};
   this.sending++;this.barrier=this.started;const sent=this.dispatch(()=>this.send(body,key,expectedRevision)),previewed=this.preview(body),shown=previewed?performance.now():undefined;
-  let p;try{p=timed(await sent,started,shown,previewed||undefined);if(gesture&&p?.id){gesture.proposals.push(p.id);gestureOf.set(p.id,gesture);if(gestureOf.size>60)gestureOf.delete(gestureOf.keys().next().value)}}catch(error){this.settle();if(previewed){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();
+  let p;try{p=timed(await sent,started,shown,previewed||undefined);if(gesture&&p?.id){gesture.proposals.push(p.id);gestureOf.set(p.id,gesture);if(gestureOf.size>60)gestureOf.delete(gestureOf.keys().next().value)}}catch(error){this.settle();if(previewed){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();if(previewed||gesture)confirmSaved(p?.fact,body.action==='task_add'?body.payload.title:undefined);
   // A read started while another change is on its way would be dropped, so only the last one reads.
   if(!this.sending)await this.refresh();return {...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]};}
  settle(){this.sending--;this.barrier=this.started}
@@ -951,14 +955,14 @@ class RemoteFlow{
   else if(view?.calendar_events){this.data={...this.data,calendar_events:view.calendar_events};globalThis.dayDaily?.update(this.data)}
   else if(view){const back=new Map(view.tasks.map(t=>[t.id,t]));this.data={...this.data,tasks:this.data.tasks.filter(t=>!t.pending&&(back.has(t.id)||t.id!==view.taskId)).map(t=>back.get(t.id)||t),context:view.context};render(this.data)}
   const shown=view?performance.now():undefined;
-  let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();if(view){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();await this.refresh();return r}
+  let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();if(view){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();if(view)confirmSaved(r?.fact);await this.refresh();return r}
  // Undo of a drop puts the card back at once, then reverts every change the drop saved, newest first.
  async undoGesture(gesture){const started=performance.now(),back=gesture.before.tasks.find(t=>t.id===gesture.taskId);gestures.delete(gesture.id);
   const ids=new Set(gesture.taskIds||[gesture.taskId]),before=new Map(gesture.before.tasks.filter(t=>ids.has(t.id)).map(t=>[t.id,t]));
   this.sending++;this.barrier=this.started;const sent=this.dispatch(async()=>{const undone=await deliver('/api/undo',{proposal_ids:gesture.proposals},this.data.revision,{refresh:false});return this.observe(undone.at(-1))});
   if(back){localOrder=null;this.data={...this.data,tasks:this.data.tasks.map(t=>before.get(t.id)||t),taskOrder:gesture.before.taskOrder};render(this.data)}
   const shown=performance.now();
-  let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();this.digest='';this.tag='';await this.refresh().catch(()=>{});throw error}this.settle();await this.refresh();return r}
+  let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();this.digest='';this.tag='';await this.refresh().catch(()=>{});throw error}this.settle();if(back)confirmSaved(r?.fact);await this.refresh();return r}
  async setEstimate(id,value,revision){return this.request('continuity_update',{uuid:id,remainingMinutes:value},undefined,revision)}
  async setContext(value,revision){return this.request('context_update',{availableMinutes:value.availableMinutes,availableUntil:value.availableUntil,rest:value.rest},undefined,revision)}
 }

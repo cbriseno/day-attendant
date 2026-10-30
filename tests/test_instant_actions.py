@@ -441,6 +441,31 @@ class InstantHttpTests(unittest.TestCase):
         self.assertEqual(data['lastFact']['action'], 'front_activate')
         time.sleep(.6); self.assertEqual(self.fixture.turns, 1)
 
+    def test_a_saved_change_reports_its_fact_in_the_reply(self):
+        def latest(): return self.state()['lastFact']
+        task = self.ids[2]
+        status, body = self.post('/api/proposals', {'action': 'front_activate', 'payload': {'uuid': task}, 'key': 'reply-fact'})
+        fact = body['data']['fact']
+        self.assertEqual((status, fact), (200, latest()))
+        self.assertEqual((fact['proposalId'], fact['taskId'], fact['undoable'], fact['undoOf']), (body['data']['id'], task, True, None))
+        self.assertNotIn('plan', fact)
+        replay = self.post('/api/proposals', {'action': 'front_activate', 'payload': {'uuid': task}, 'key': 'reply-fact'})[1]['data']
+        self.assertEqual(replay['fact'], fact)
+        undone = self.post('/api/undo', {'fact_id': fact['id'], 'key': 'reply-undo'})[1]['data']['fact']
+        self.assertEqual((undone, undone['undoOf'], undone['undoable']), (latest(), fact['id'], True))
+        unchanged = self.post('/api/proposals', {'action': 'front_todo', 'payload': {'uuid': task}, 'key': 'reply-same'})[1]['data']
+        self.assertEqual(unchanged['phase'], 'unchanged')
+        self.assertNotIn('fact', unchanged)
+        # Changes undone together each report their fact, and a refused undo reports none.
+        drop = [self.post('/api/proposals', {'action': action, 'payload': payload, 'key': 'reply-drop-' + str(i)})[1]['data']['id']
+                for i, (action, payload) in enumerate((('front_activate', {'uuid': task}), ('task_update', {'uuid': task, 'priority': 'high'})))]
+        together = self.post('/api/undo', {'proposal_ids': drop, 'key': 'reply-together'})[1]['data']
+        self.assertEqual([p['fact']['id'] for p in together], sorted(p['fact']['id'] for p in together))
+        self.assertEqual(together[-1]['fact'], latest())
+        status, body = self.post('/api/undo', {'fact_id': fact['id'], 'key': 'reply-conflict'})
+        self.assertEqual((status, body['error']['code']), (409, 'undo_conflict'))
+        self.assertNotIn('data', body)
+
     def test_rejection_is_a_409_with_its_code(self):
         status, body = self.post('/api/proposals', {'action': 'dependency_update', 'payload': {'uuid': self.ids[1], 'dependsOn': [self.ids[1]]}, 'key': 'self-cycle'})
         self.assertEqual((status, body['error']['code']), (409, 'dependency_cycle'))

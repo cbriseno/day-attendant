@@ -202,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
                 result=save(board.app,body['name'],body['mime'],body['base64'],body['key'])
             elif self.path=='/api/proposals':
                 if set(body)-{'action','payload','key','expected_revision'}:raise ValueError('fields')
-                result=board.request(body['action'],body['payload'],body['key'],origin='cli' if self.headers.get('Authorization','').startswith('Bearer ') else 'ui',expected_revision=body.get('expected_revision'))
+                result=board.announced(board.request(body['action'],body['payload'],body['key'],origin='cli' if self.headers.get('Authorization','').startswith('Bearer ') else 'ui',expected_revision=body.get('expected_revision')))
                 review=True
             elif match:=re.fullmatch(r'/api/proposals/([a-f0-9-]+)/(?P<action>confirm|cancel|retry)',self.path):
                 identity=match[1];action=match['action']
@@ -216,8 +216,8 @@ class Handler(BaseHTTPRequestHandler):
                     result=board.undo_message(body['message_key'],body['key'],body.get('expected_revision'))
                 elif 'proposal_ids' in body:
                     if set(body)-{'proposal_ids','key','expected_revision'}:raise ValueError('fields')
-                    result=board.undo_proposals(body['proposal_ids'],body['key'],body.get('expected_revision'))
-                else:result=board.undo(int(body['fact_id']),body['key'],body.get('expected_revision'))
+                    result=[board.announced(p) for p in board.undo_proposals(body['proposal_ids'],body['key'],body.get('expected_revision'))]
+                else:result=board.announced(board.undo(int(body['fact_id']),body['key'],body.get('expected_revision')))
                 review=True
             elif match:=re.fullmatch(r'/api/suggestions/([a-f0-9-]+)/(?P<action>accept|dismiss)',self.path):
                 if set(body)-{'key'}:raise ValueError('fields')

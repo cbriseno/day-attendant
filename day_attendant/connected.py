@@ -311,6 +311,14 @@ class Connected:
                 "undoable": self._undoable(plan), "reviewStatus": plan.get("review_status"),
                 "reviewComplete": plan.get("review_status") == "not_required" or plan.get("review_complete") is not False}
 
+    def announced(self, proposal):
+        """A saved change with its fact, so its reply alone can confirm it and offer Undo."""
+        if proposal.get("phase") != "applied":
+            return proposal
+        with self.store.connect() as con:
+            row = con.execute("SELECT * FROM facts WHERE operation_key=?", (proposal["operation_key"],)).fetchone()
+        return dict(proposal, fact=self._fact_summary(row)) if row else proposal
+
     def _fact_targets(self, con):
         facts = [dict(r) for r in con.execute("SELECT id,operation_key,action,at FROM facts ORDER BY id")]
         missing = [f["id"] for f in facts if self.fact_targets.get(f["id"], (None,))[0] != f["operation_key"]]
