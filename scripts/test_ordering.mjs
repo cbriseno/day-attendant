@@ -8,7 +8,7 @@ import vm from 'node:vm';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const context={};vm.createContext(context);
 vm.runInContext(await readFile(path.join(root,'day_attendant/ui/ordering.js'),'utf8'),context);
-const {VIEWS,manualIds,arrange,move,hue}=context.dayOrdering;
+const {VIEWS,PRIORITIES,manualIds,arrange,move,hue}=context.dayOrdering;
 const task=(id,priority,extra={})=>({id,priority,group:null,due:null,createdAt:'2026-10-0'+id.length+'T00:00:00Z',...extra});
 // Values cross the vm realm boundary; compare them as plain data.
 const plain=value=>JSON.parse(JSON.stringify(value));
@@ -29,6 +29,12 @@ const byPriority=arrange(all,'priority',{order:['e','a','c','b','d']});
 assert.deepEqual(ids(byPriority),['e','c','b','d','a']);
 assert.deepEqual(plain(byPriority.map(s=>[s.key,s.draggable])),[['high',true],['medium',true],['low',true]]);
 assert.deepEqual(ids(arrange([a],'priority')),['a']);
+// Urgent leads, in its own section; an unknown value is treated as medium.
+const u=task('u','urgent',{createdAt:'2026-10-06T00:00:00Z'}),odd=task('odd','critical',{createdAt:'2026-10-07T00:00:00Z'});
+assert.deepEqual(plain(PRIORITIES),['urgent','high','medium','low']);
+assert.deepEqual(plain(manualIds([...all,u,odd])),['u','b','c','e','d','odd','a']);
+const withUrgent=arrange([...all,u,odd],'priority',{order:['e','a','c','b','d','odd','u']});
+assert.deepEqual(plain(withUrgent.map(s=>[s.key,s.tasks.map(t=>t.id)])),[['urgent',['u']],['high',['e','c','b']],['medium',['d','odd']],['low',['a']]]);
 
 // My order shows the stored order exactly; Newest uses creation time and accepts no drops.
 assert.deepEqual(ids(arrange(all,'manual',{order:['e','a','c','b','d']})),['e','a','c','b','d']);

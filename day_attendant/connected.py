@@ -17,8 +17,8 @@ import uuid
 
 from .errors import AssistantError
 from .profiles import turn_timeout
-from .service import Assistant, continuity_values, encoded, fingerprint
-from .taskstore import canonical
+from .service import PUBLIC_PRIORITY, Assistant, continuity_values, encoded, fingerprint
+from .taskstore import PRIORITIES, canonical
 from .timeutil import instant, parse, stamp, wire
 
 SUGGESTION_SCHEMA = {"type": "object", "properties": {
@@ -69,7 +69,7 @@ def followup_schema(task_ids):
     """Each suggestion names a supplied responsibility and offers at most one direct change."""
     change = {"type": "object", "properties": {"action": {"type": "string", "enum": list(FOLLOWUP_ACTIONS)},
         "until": {"type": ["string", "null"]}, "due": {"type": ["string", "null"]},
-        "priority": {"type": ["string", "null"], "enum": ["high", "medium", "low", None]}},
+        "priority": {"type": ["string", "null"], "enum": [*PRIORITIES, None]}},
         "required": ["action", "until", "due", "priority"], "additionalProperties": False}
     return {"type": "object", "properties": {"suggestions": {"type": "array", "maxItems": 3, "items": {"type": "object", "properties": {
         "taskId": {"type": "string", "enum": sorted(task_ids)}, "message": {"type": "string"},
@@ -483,7 +483,7 @@ class Connected:
         for name in ('uuid','title','priority','due','until','start','end','observed_at','zone','source','person','reference','context','next','group'):
             if name in payload and payload[name] is not None and not isinstance(payload[name],str):
                 raise AssistantError('invalid_request','Text fields must contain strings.')
-        if payload.get('priority') is not None and payload['priority'] not in ('high','medium','low'):
+        if payload.get('priority') is not None and payload['priority'] not in PRIORITIES:
             raise AssistantError('invalid_request','Invalid priority.')
         if 'source' in payload and payload['source'] not in ('general','ticket','pr','chat','email','call','research'):
             raise AssistantError('invalid_source','Choose a supported capture source.')
@@ -790,7 +790,7 @@ class Connected:
         """One applied change in public field names, without the recovery read set."""
         plan=json.loads(row['plan']);fields={}
         names={'description':'title','priority':'priority','due':'due','wait':'until','start':'started','status':'status','project':'group','depends':'dependsOn'}
-        public=lambda k,v:stamp(parse(v)) if v and k in ('due','wait','start') else {'H':'high','M':'medium','L':'low'}.get(v,v) if k=='priority' else v
+        public=lambda k,v:stamp(parse(v)) if v and k in ('due','wait','start') else PUBLIC_PRIORITY.get(v,v) if k=='priority' else v
         for step in plan['steps']:
             before,after=step.get('before') or {},step['after']
             for k,name in names.items():

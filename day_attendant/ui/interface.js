@@ -68,7 +68,7 @@ refreshLabels();
 let orderView='priority';try{orderView=localStorage.getItem('day-attendant-order')||'priority'}catch{}if(!globalThis.dayOrdering.VIEWS.includes(orderView))orderView='priority';
 let localOrder=null,orderBase=null,orderTimer=null,orderSaving=false,drag=null;
 const groupDot=label=>'<span class="group-dot" style="--group-hue:'+globalThis.dayOrdering.hue(label)+'" aria-hidden="true"></span>';
-const PRIORITIES=['high','medium','low'];
+const PRIORITIES=globalThis.dayOrdering.PRIORITIES;
 // One compact row per task: handle · finish · title and its data · priority · start or pause · snooze · more.
 // The Board uses the same pieces as small cards. Every action is one click; priority is a one-level menu.
 function taskRow(t,s,data,proposal){

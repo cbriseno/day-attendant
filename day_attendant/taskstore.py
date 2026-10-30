@@ -13,6 +13,10 @@ import uuid
 from .errors import AssistantError
 from .timeutil import parse, stamp, wire, utcnow
 
+# Public priority names, most pressing first, and their stored codes. Schema 2 adds
+# urgent; high, medium and low keep the codes every earlier profile already uses.
+PRIORITIES = {'urgent': 'U', 'high': 'H', 'medium': 'M', 'low': 'L'}
+
 
 def canonical(row):
     if row is None:
@@ -23,6 +27,11 @@ def canonical(row):
     else:
         result.pop('depends', None)
     return result
+
+
+# Schema 1 holds only high, medium and low. Schema 2 has the same rows and also admits
+# urgent, so an older release refuses the store instead of misreading an urgent task.
+SCHEMA = 2
 
 
 class TaskStore:
@@ -43,8 +52,8 @@ class TaskStore:
                 version = con.execute('PRAGMA user_version').fetchone()[0]
                 if not existed:
                     con.execute('CREATE TABLE tasks(uuid TEXT PRIMARY KEY NOT NULL, data TEXT NOT NULL)')
-                    con.execute('PRAGMA user_version=1')
-                elif version != 1:
+                    con.execute(f'PRAGMA user_version={SCHEMA}')
+                elif version not in (1, SCHEMA):
                     raise AssistantError('unsupported_task_schema', 'The task store has an unsupported schema; no tasks were replaced.')
             self.database.chmod(0o600)
 
@@ -77,7 +86,7 @@ class TaskStore:
             for field in ('entry', 'due', 'wait', 'start', 'end'):
                 if field in row:
                     parse(row[field])
-            if row.get('priority') not in (None, 'H', 'M', 'L'):
+            if row.get('priority') not in (None, *PRIORITIES.values()):
                 raise ValueError('priority')
             if not isinstance(row.get('project', ''), str):
                 raise ValueError('project')
@@ -94,6 +103,21 @@ class TaskStore:
 
     def version(self):
         return '1'
+
+    def schema(self):
+        with self.connect() as con:
+            return con.execute('PRAGMA user_version').fetchone()[0]
+
+    def require_urgent(self):
+        if self.schema() < SCHEMA:
+            raise AssistantError('task_upgrade_required',
+                'This profile has not been upgraded for the urgent priority yet. Restart its service or run profile upgrade; nothing was changed.')
+
+    def upgrade(self):
+        """Mark a schema-1 store as able to hold urgent. No task row changes."""
+        with self.connect(write=True) as con:
+            if con.execute('PRAGMA user_version').fetchone()[0] == 1:
+                con.execute(f'PRAGMA user_version={SCHEMA}')
 
     def rows(self):
         with self.connect() as con:

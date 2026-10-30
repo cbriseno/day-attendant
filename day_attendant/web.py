@@ -10,12 +10,14 @@ import re
 import secrets
 import signal
 import sqlite3
+import sys
 import threading
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .archives import upgrade_tasks
 from .harnesses import create_harness,discover_catalog
 from .connected import Connected, FOLLOWUP_DELAY
 from .conversation import Conversation
@@ -283,6 +285,10 @@ def serve(state,port=0,zone=None,kind=None,supervised=False):
         profile=app.store.state_value('profile')
         selected_kind=kind or (profile or {}).get('kind') or ('synthetic' if app.store.state_value('synthetic_bootstrap',False) else 'personal')
         board.initialize(kind=selected_kind,zone=zone)
+        try:upgrade_tasks(app)
+        except AssistantError as error:
+            # Everything else keeps working; only urgent waits for the next start or profile upgrade.
+            print('Urgent priority not enabled yet: '+str(error),file=sys.stderr,flush=True)
         board.startup()
         server=LocalServer(app,None,port)
         receipt=app.store.path/'ui-server.json'

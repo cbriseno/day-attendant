@@ -71,7 +71,7 @@ an open UI or LLM session. Open the UI on demand with `service open`.
   capture time remain distinct. The app never opens Teams or an inbox.
 - Keep declared remaining effort, waiting state, where you left off and a next step.
   Silence does not prove inactivity, and zero effort does not complete a task.
-- Every card shows its priority, and an optional group (a project, initiative or
+- Every card shows its priority (Urgent, High, Medium or Low), and an optional group (a project, initiative or
   category) when it has one. **Order** changes only how cards are shown: by priority
   (the default), your own order, newest first, grouped, or the order the assistant
   suggested. No view changes a stored priority, group or state. Each compact row
@@ -175,6 +175,13 @@ Existing v3 synthetic pilot state requires `profile upgrade` with the old servic
 stopped; a verified pre-migration backup is automatic. Legacy commands remain for
 explicit separate legacy workspaces and cannot bypass connected proposals. Old default
 state is never silently moved. Historical pilot evidence stays labeled as historical.
+
+Urgent is stored in task store schema 2. The first service start of a profile from an
+earlier release (or `profile upgrade` with its service stopped) takes a verified
+migration backup and then marks the store; no task row changes, so existing High,
+Medium and Low tasks keep their level. If that backup cannot be taken, the service
+still starts, and only Urgent waits for the next start. Earlier releases refuse a
+schema 2 store instead of misreading it.
 
 ## Upgrading an existing Taskwarrior profile
 

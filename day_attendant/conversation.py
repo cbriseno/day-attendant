@@ -5,12 +5,13 @@ import threading
 from .connected import ALLOWED
 from .errors import AssistantError
 from .service import encoded
+from .taskstore import PRIORITIES
 
 # Manual display order is the person's own arrangement; the conversation never proposes it.
 ACTIONS=[action for action in ALLOWED if action!='order_update']
 FIELDS={"action":{"type":"string","enum":ACTIONS},
     **{key:{"type":["string","null"]} for key in ('taskId','title','due','until','context','next','source','person','reference','observed_at','start','end','group')},
-    'priority':{'type':['string','null'],'enum':['high','medium','low',None]},
+    'priority':{'type':['string','null'],'enum':[*PRIORITIES,None]},
     **{key:{'type':['number','null']} for key in ('remainingMinutes','availableMinutes','estimate_minutes')},
     **{key:{'type':['boolean','null']} for key in ('awaiting','rest','progress')},
     'availableUntil':{'type':['string','null']},'clearDue':{'type':'boolean'},

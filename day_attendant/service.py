@@ -8,11 +8,11 @@ import uuid
 from .errors import AssistantError
 from . import platforms
 from .store import Store, DEFAULTS
-from .taskstore import TaskStore, canonical
+from .taskstore import PRIORITIES, TaskStore, canonical
 from .timeutil import instant, parse, stamp, utcnow, wire
 
-PRIORITIES = {"high": "H", "medium": "M", "low": "L"}
 PUBLIC_PRIORITY = {v: k for k, v in PRIORITIES.items()}
+PRIORITY_RANK = {name: rank for rank, name in enumerate(PRIORITIES)}
 
 
 def encoded(value):
@@ -155,6 +155,8 @@ class Assistant:
         plan = {"steps": [], "effect": {}, "result": {}}
 
         def patch(row, changes):
+            if changes.get("priority") == PRIORITIES["urgent"]:
+                self.tasks.require_urgent()
             before = canonical(row)
             after = dict(before)
             for field, value in changes.items():
@@ -174,6 +176,8 @@ class Assistant:
             uid = str(uuid.uuid4())
             row = {"uuid": uid, "description": title, "status": "pending", "entry": wire(now),
                    "priority": PRIORITIES[p.get("priority", "medium")]}
+            if p.get("priority") == "urgent":
+                self.tasks.require_urgent()
             if p.get("due"):
                 row["due"] = wire(instant(p["due"], p.get("zone"), p.get("fold")))
             group = group_label(p.get("group"))
@@ -584,8 +588,7 @@ class Assistant:
         with self.store.lock():
             view = self._view()
             available = [t for t in view if t["status"] == "pending"]
-            priority_rank = {"high": 0, "medium": 1, "low": 2}
-            available.sort(key=lambda t: (not t["focused"], priority_rank[t["priority"]], t["due_at"] or "9999", t["uuid"]))
+            available.sort(key=lambda t: (not t["focused"], PRIORITY_RANK[t["priority"]], t["due_at"] or "9999", t["uuid"]))
             next_task = available[0] if available else None
             events = self.store.events()
             clashes = []
