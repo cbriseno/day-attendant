@@ -67,13 +67,61 @@ refreshLabels();
 // those views, the same priority or group) and saves the profile's manual order.
 let orderView='priority';try{orderView=localStorage.getItem('day-attendant-order')||'priority'}catch{}if(!globalThis.dayOrdering.VIEWS.includes(orderView))orderView='priority';
 let localOrder=null,orderBase=null,orderTimer=null,orderSaving=false,drag=null;
+// Motion: a card that changes place glides there from where it was (FLIP), a new one fades in and
+// a finished or retired one fades out over its old place. Reduced motion shows every change at once.
+const DURATION=200,EASE='cubic-bezier(.2,.8,.2,1)',reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
+const moving=()=>!reducedMotion.matches;
+const boardCards=()=>[...$('board').querySelectorAll('.task[data-task-id]')];
+const cardOf=id=>$('board').querySelector('.task[data-task-id="'+id+'"]');
+const cardRects=()=>new Map(boardCards().map(c=>[c.dataset.taskId,c.getBoundingClientRect()]));
+// Reads every position first and writes every animation after, so the browser lays out once.
+function playFlip(first,{duration=DURATION+80,delay=0,enter=true}={}){
+ const cards=boardCards();for(const card of cards)for(const a of card.getAnimations())a.cancel();
+ const moves=cards.map(card=>{const was=first.get(card.dataset.taskId);if(!was)return [card,null];const now=card.getBoundingClientRect();return [card,[was.left-now.left,was.top-now.top]]});
+ for(const [card,delta] of moves){
+  if(!delta){if(enter)card.animate([{opacity:0,transform:'scale(.98)'},{opacity:1,transform:'none'}],{duration,delay,easing:'ease-out',fill:'backwards'});continue}
+  const [dx,dy]=delta;if(Math.abs(dx)>=1||Math.abs(dy)>=1)card.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],{duration,delay,easing:EASE,fill:'backwards'});
+ }
+ if(dependencyFocus)setTimeout(()=>drawDependencies(),duration+delay+20);
+}
+// Floating copies (a lifted card, a leaving one) live in a layer over the list that shares its styles.
+function motionLayer(){let node=$('motion-layer');if(!node){node=document.createElement('div');node.id='motion-layer';node.className='board motion-layer';node.setAttribute('aria-hidden','true');$('tasks-area').append(node)}node.classList.toggle('is-list',$('board').classList.contains('is-list'));return node}
+const inLayer=(x,y)=>{const r=motionLayer().getBoundingClientRect();return {x:x-r.left,y:y-r.top}};
+function floating(card,rect,kind){const copy=card.cloneNode(true);copy.classList.remove('placeholder','pressing');copy.classList.add(kind);copy.removeAttribute('data-task-id');copy.removeAttribute('data-section');copy.removeAttribute('style');
+ for(const e of copy.querySelectorAll('[id],[data-id],[data-action]')){e.removeAttribute('id');e.removeAttribute('data-id');e.removeAttribute('data-action')}
+ copy.inert=true;const at=inLayer(rect.left,rect.top);Object.assign(copy.style,{width:rect.width+'px',height:rect.height+'px',transform:'translate('+at.x+'px,'+at.y+'px)'});motionLayer().append(copy);return copy}
+function leave(card,rect,finished){const copy=floating(card,rect,'task-leaving');if(finished)copy.classList.add('completing');
+ copy.animate([{opacity:1,transform:copy.style.transform},{opacity:0,transform:copy.style.transform+' translateX(16px)'}],{duration:DURATION+60,delay:finished?180:0,easing:'ease-in',fill:'forwards'}).onfinish=()=>copy.remove()}
+// The board is updated in place: an unchanged card keeps its element, focus and any running
+// animation; a changed one is replaced; a moved one is moved. Nothing is rebuilt as a whole.
+function morphBoard(lanes,data){
+ const board=$('board'),animate=moving(),first=animate?cardRects():new Map(),old=new Map(boardCards().map(c=>[c.dataset.taskId,c]));
+ const make=html=>{const t=document.createElement('template');t.innerHTML=html;const node=t.content.firstElementChild;node._html=html;return node};
+ lanes.forEach((lane,i)=>{
+  let section=board.children[i];
+  if(section?.dataset.state!==lane.state){section=make('<section class="lane" data-state="'+lane.state+'"><header class="lane-heading"></header><div class="lane-cards"></div></section>');board.insertBefore(section,board.children[i]||null)}
+  const head=section.firstElementChild,box=section.lastElementChild;if(head._html!==lane.head){head.innerHTML=lane.head;head._html=lane.head}
+  const extras=new Map([...box.children].filter(n=>n._key).map(n=>[n._key,n]));
+  const wanted=lane.items.map(item=>{let node=item.id?old.get(item.id):extras.get(item.key);if(item.id)old.delete(item.id);if(!node||node._html!==item.html){node=make(item.html);node._key=item.key}return node});
+  wanted.forEach((node,j)=>{if(box.children[j]!==node)box.insertBefore(node,box.children[j]||null)});
+  while(box.children.length>wanted.length)box.lastElementChild.remove();
+ });
+ while(board.children.length>lanes.length)board.lastElementChild.remove();
+ if(!animate||!first.size)return;
+ // A capture shown before its answer comes back under its saved id: it stays where it was.
+ const drafts=[...old].filter(([id])=>id.startsWith('draft:'));
+ for(const [id,node] of old){if(id.startsWith('draft:')||!first.has(id))continue;leave(node,first.get(id),data.tasks.find(t=>t.id===id)?.state==='done')}
+ for(const [id] of drafts){const title=data.tasks.find(t=>t.id===id)?.title??old.get(id).querySelector('.task-title')?.textContent,saved=data.tasks.find(t=>!first.has(t.id)&&t.title===title&&!t.id.startsWith('draft:'));if(saved)first.set(saved.id,first.get(id))}
+ const closing=[...old.keys()].some(id=>!id.startsWith('draft:')&&first.has(id));
+ playFlip(first,{delay:closing?260:0});
+}
 const groupDot=label=>'<span class="group-dot" style="--group-hue:'+globalThis.dayOrdering.hue(label)+'" aria-hidden="true"></span>';
 const PRIORITIES=globalThis.dayOrdering.PRIORITIES;
 // One compact row per task: handle · finish · title and its data · priority · start or pause · snooze · more.
 // The Board uses the same pieces as small cards. Every action is one click; priority is a one-level menu.
 function taskRow(t,s,data,proposal){
  const off=data.readOnly||t.pending,label=text=>esc(text+': '+t.title),blockedStart=t.blocked&&t.state!=='active';
- const handle=s.draggable&&s.tasks.length>1&&!data.readOnly?'<button type="button" class="drag-handle" data-id="'+t.id+'" data-action="move" aria-label="'+label(tr('reorder'))+'" title="'+esc(tr('reorder_hint'))+'">'+gripIcon+'</button>':'';
+ const handle=s.draggable&&!data.readOnly&&!t.pending?'<button type="button" class="drag-handle" data-id="'+t.id+'" data-action="move" aria-label="'+label(tr('reorder'))+'" title="'+esc(tr('reorder_hint'))+'">'+gripIcon+'</button>':'';
  const state=t.state==='active'?'<button type="button" class="ib state-action on" data-id="'+t.id+'" data-action="todo" aria-label="'+label(tr('pause'))+'" title="'+esc(tr('pause'))+'"'+(off?' disabled':'')+'>'+pauseIcon+'</button>'
   :'<button type="button" class="ib state-action" data-id="'+t.id+'" data-action="activate" aria-label="'+label(t.state==='snoozed'?tr('resume_b3bd0b'):tr('start'))+'" title="'+esc(blockedStart?tr('start_blocked'):t.state==='snoozed'?tr('resume_b3bd0b'):tr('start'))+'"'+(off||blockedStart?' disabled':'')+'>'+playIcon+'</button>';
  const open=expanded===t.id&&!t.pending;
@@ -108,7 +156,7 @@ function suggestionMark(t,data){return currentSuggestion(t.id,data)?'<button typ
 function suggestionBubble(t,data){const s=currentSuggestion(t.id,data);if(!s||bubbleFor!==t.id)return '';
  return '<div class="assistant-bubble"><p><strong>'+esc(tr('suggestion_prefix'))+'</strong> '+esc(suggestionText(s))+'</p><div class="bubble-actions">'+(s.action&&!data.readOnly?'<button type="button" class="btn" data-suggestion="'+s.id+'" data-suggestion-action="accept">'+esc(suggestionLabel(s,data))+'</button>':'')+'<button type="button" class="link-button" data-suggestion="'+s.id+'" data-suggestion-action="dismiss">'+esc(tr('suggestion_dismiss'))+'</button></div></div>'}
 function suggestionReason(t,data){const order=data.orderSuggestion?.result?.order;if(orderView!=='suggested'||!order)return '';const i=order.findIndex(x=>x.id===t.id);return '<p class="suggestion-reason">'+(i<0?esc(tr('not_in_suggestion')):'<span class="suggestion-rank">'+(i+1)+'</span>'+esc(order[i].reason))+'</p>'}
-function groupHeading(s){return '<h3 class="group-heading">'+(s.label?groupDot(s.label)+esc(s.label):'<span class="group-dot ungrouped" aria-hidden="true"></span>'+esc(tr('no_group')))+'<span class="lane-count">'+s.tasks.length+'</span></h3>'}
+function groupHeading(s){return '<h3 class="group-heading" data-group="'+esc(s.label||'')+'">'+(s.label?groupDot(s.label)+esc(s.label):'<span class="group-dot ungrouped" aria-hidden="true"></span>'+esc(tr('no_group')))+'<span class="lane-count">'+s.tasks.length+'</span></h3>'}
 // Only the suggested order has something to say or ask; the other orders explain themselves.
 function orderNote(data){
  if(orderView!=='suggested')return '';
@@ -119,7 +167,9 @@ function orderNote(data){
 }
 const sectionIds=section=>[...$('board').querySelectorAll('.task')].filter(c=>c.dataset.section===section).map(c=>c.dataset.taskId);
 // The visible order applies at once; saving waits for a pause and keeps the revision the person saw.
-function placeOrder(id,ids,to){const data=flow.snapshot(),open=data.tasks.filter(t=>!['done','retired'].includes(t.state)),order=globalThis.dayOrdering.manualIds(open,localOrder||data.taskOrder||[]),next=globalThis.dayOrdering.move(order,ids,id,to);if(next.join()===order.join())return false;if(localOrder===null)orderBase=data.revision;localOrder=next;render();clearTimeout(orderTimer);orderTimer=setTimeout(saveOrder,350);return true}
+const currentOrder=(data=flow.snapshot())=>globalThis.dayOrdering.manualIds(data.tasks.filter(t=>!['done','retired'].includes(t.state)),localOrder||data.taskOrder||[]);
+function placeOrder(id,ids,to){return setOrder(globalThis.dayOrdering.move(currentOrder(),ids,id,to))}
+function setOrder(next){const data=flow.snapshot(),order=currentOrder(data);if(next.join()===order.join())return false;if(localOrder===null)orderBase=data.revision;localOrder=next;render();clearTimeout(orderTimer);orderTimer=setTimeout(saveOrder,350);return true}
 async function saveOrder(){if(orderSaving){orderTimer=setTimeout(saveOrder,150);return}const order=localOrder;if(!order)return;orderSaving=true;try{const p=await flow.request('order_update',{order},undefined,orderBase);orderBase=p?.result?.revision??flow.snapshot().revision}catch(error){localOrder=null;orderBase=null;notice(error.message);render();return}finally{orderSaving=false}if(localOrder===order){localOrder=null;orderBase=null;render()}}
 // Blocked and blocking cards name their counterparts; a chip highlights those direct links.
 const titles=(ids,data)=>ids.map(id=>data.tasks.find(r=>r.id===id)?.title||id).join(', ');
@@ -159,7 +209,7 @@ function drawDependencies(data=flow.snapshot()){
 function toggleDependencies(id){dependencyFocus=dependencyFocus===id?null:id;showDependencies()}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&dependencyFocus&&!document.querySelector('dialog[open]'))toggleDependencies(dependencyFocus)});
 function render(data=flow.snapshot()) {
- if(drag)return;
+ if(drag?.active)return;
  const active=document.activeElement,focusTask=active?.dataset?.id,focusAction=active?.dataset?.action,focusProposal=active?.dataset?.proposal,reviewAction=active?.dataset?.reviewAction;
  const openIds=[...$('reviews').querySelectorAll('details[open]')].map(d=>d.dataset.proposal);
  const proposals=data.proposals;
@@ -171,10 +221,14 @@ function render(data=flow.snapshot()) {
  if(expanded&&!data.tasks.some(t=>t.id===expanded&&!t.pending&&!['done','retired'].includes(t.state)))expanded=null;
  if(titleEdit&&!data.tasks.some(t=>t.id===titleEdit.id&&!['done','retired'].includes(t.state)))titleEdit=null;
  const typing=typingState();rendering=true;
- $('board').innerHTML=[['active',tr("active")],['todo',tr("to_do")],['snoozed',tr("snoozed")]].map(([state,label])=>{
+ morphBoard([['active',tr("active")],['todo',tr("to_do")],['snoozed',tr("snoozed")]].map(([state,label])=>{
   const rows=data.tasks.filter(t=>t.state===state),sections=globalThis.dayOrdering.arrange(rows,orderView,{order:localOrder||data.taskOrder||[],suggestion:data.orderSuggestion?.result});
-  return '<section class="lane" data-state="'+state+'"><header class="lane-heading"><span class="state-dot" aria-hidden="true"></span><h2>'+label+'</h2><span class="lane-count">'+rows.length+'</span></header><div class="lane-cards">'+sections.map(s=>(orderView==='group'?groupHeading(s):'')+s.tasks.map(t=>taskRow(t,s,data,proposals.find(p=>p.intent.taskId===t.id))).join('')).join('')+(rows.length?'':'<p class="lane-empty">'+esc(tr('lane_empty'))+'</p>')+'</div></section>';
- }).join('');
+  const items=sections.flatMap(s=>[...(orderView==='group'?[{key:'heading:'+s.key,html:groupHeading(s)}]:[]),...s.tasks.map(t=>({id:t.id,html:taskRow(t,s,data,proposals.find(p=>p.intent.taskId===t.id))}))]);
+  if(!rows.length)items.push({key:'empty',html:'<p class="lane-empty">'+esc(tr('lane_empty'))+'</p>'});
+  return {state,head:'<span class="state-dot" aria-hidden="true"></span><h2>'+label+'</h2><span class="lane-count">'+rows.length+'</span>',items};
+ }),data);
+ // A focused control whose card moved keeps its focus.
+ if(active?.isConnected&&active!==document.activeElement&&$('board').contains(active))active.focus({preventScroll:true});
  restoreTyping(typing);rendering=false;
  showDependencies(data);
  const closed=data.tasks.filter(t=>['done','retired'].includes(t.state));$('closed-count').textContent=closed.length;$('closed').innerHTML=closed.map(t=>'<p class="closed-row"><span class="closed-title">'+esc(t.title)+'</span> · '+(t.state==='done'?tr("completed"):tr("retired"))+'<button type="button" class="link-button" data-reopen-id="'+t.id+'"'+(data.readOnly?' disabled':'')+' aria-label="'+esc(tr('reopen')+': '+t.title)+'">'+esc(tr('reopen'))+'</button></p>').join('');
@@ -201,11 +255,13 @@ function render(data=flow.snapshot()) {
 }
 // Confirms the latest saved change, how long it took to show, and Undo when it can be undone.
 function announce(last,data){const t=data.tasks.find(t=>t.id===last.taskId),action=aliases[last.action]||last.action;
+ const gesture=!last.undoOf&&gestureOf.get(last.proposalId);
+ if(gesture){toast(gesture.notes.join(' · ')||tr('order_saved'),{undo:gesture.id,detail:[formatted('toast_ms',{ms:Math.max(1,Math.round(gesture.shown-gesture.started))}),gesture.notes.length&&data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · ')});return}
  const text=last.undoOf?tr('change_undone'):action==='order'?tr('order_saved'):action==='snooze'&&t?.until?tr('snoozed_until').replace('{time}',short(t.until))+' · '+t.title:[action==='declaration'&&t?tr('details_saved'):actionLabel[action]||tr(last.action),t?.title||(action==='declaration'?tr('my_context'):'')].filter(Boolean).join(' · ');
  // The time shown is from the click until the change was on screen.
  const timing=timings.get(last.proposalId);timings.delete(last.proposalId);if(timing?.before&&last.undoable)undoViews.set(String(last.id),{...timing.before,taskId:last.taskId});const ms=timing&&action!=='order'?Math.max(1,Math.round((timing.shown??performance.now())-timing.started)):null;
  toast(text,{undo:last.undoable&&!last.undoOf?last.id:null,detail:[ms===null?'':formatted('toast_ms',{ms}),last.reviewStatus==='deferred'&&data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · ')})}
-async function request(action,payload,key,expectedRevision){return safely(async()=>{const p=await flow.request(action,payload,key,expectedRevision);lastRequestedProposal=p?.id||null;if(p?.phase==='unchanged')notice(p.superseded?.length?tr("the_pending_change_was_discarded_the_respons"):tr("there_are_no_new_changes_to_apply"));else if(p&&p.phase!=='applied')notice(tr('a_pending_change_needs_review'));return p;});}
+async function request(action,payload,key,expectedRevision,gesture){return safely(async()=>{const p=await flow.request(action,payload,key,expectedRevision,gesture);lastRequestedProposal=p?.id||null;if(p?.phase==='unchanged')notice(p.superseded?.length?tr("the_pending_change_was_discarded_the_respons"):tr("there_are_no_new_changes_to_apply"));else if(p&&p.phase!=='applied')notice(tr('a_pending_change_needs_review'));return p;});}
 function openDialog(dialog,origin,id,action){origins.set(dialog,{origin,id,action});dialog.returnValue='cancel';dialog.showModal();}
 function restoreDialog(dialog){const saved=origins.get(dialog);origins.delete(dialog);requestAnimationFrame(()=>{if(document.querySelector('dialog[open]'))return;let target=saved?.origin;if(!target?.isConnected||!target.getClientRects().length)target=saved?.id?document.querySelector('[data-id="'+saved.id+'"][data-action="'+saved.action+'"]'):null;if(!target?.getClientRects().length)target=saved?.id?$('list-view'):$('chat-toggle');target.focus({preventScroll:true});})}
 // Preserve v3 outside-dismiss and keyboard behavior for all dialogs.
@@ -336,11 +392,9 @@ $('board').addEventListener('keydown',e=>{const {field,id,search}=e.target.datas
 $('board').addEventListener('mousedown',e=>{if(e.target.closest('[data-conflict],[data-pick]'))e.preventDefault()});
 document.addEventListener('keydown',e=>{if(e.key!=='Escape'||!expanded||menu||document.querySelector('dialog[open]')||titleEdit)return;if(!$('board').querySelector('[data-expand="'+expanded+'"]'))return;e.preventDefault();toggleExpand(expanded,false)});
 $('closed').onclick=e=>{const b=e.target.closest('[data-reopen-id]');if(b)request('task_reopen',{uuid:b.dataset.reopenId})};
-// One menu at a time and one level deep, never over a dialog: priority from its chip, everything else
-// from ⋯, a right click or a long press. On a phone it opens as a sheet at the bottom.
 // One menu at a time and one level deep, never over a dialog: priority from its chip, snooze from the
 // clock, everything else from ⋯, a right click or a long press. On a phone it opens as a sheet at the bottom.
-let menu=null,press=null,swallowClick=false;
+let menu=null,swallowClick=false;
 const sheetMedia=matchMedia('(max-width:600px)');
 const anchorOf=(id,action)=>$('board').querySelector('[data-id="'+id+'"][data-action="'+action+'"]');
 const menuItem=(act,label,{value='',icon='',kind='',checked=null,disabled=false,hint='',title=''}={})=>'<button type="button" class="menu-item'+(kind?' '+kind:'')+'" role="'+(checked===null?'menuitem':'menuitemradio')+'"'+(checked===null?'':' aria-checked="'+checked+'"')+' data-menu-act="'+act+'" data-value="'+esc(value)+'"'+(title?' title="'+esc(title)+'"':'')+(disabled?' disabled':'')+'>'+icon+'<span class="menu-label">'+label+'</span>'+(hint?'<span class="menu-hint">'+esc(hint)+'</span>':'')+(checked?'<span class="tick">'+checkIcon+'</span>':'')+'</button>';
@@ -414,7 +468,8 @@ function menuAct(b){const {id}=menu,t=task(id),act=b.dataset.menuAct,value=b.dat
  else if(act==='retire-yes')request('retire',{taskId:id});
  else if(act==='move'){const card=$('board').querySelector('[data-task-id="'+id+'"]'),ids=sectionIds(card.dataset.section),to=Number(value);if(placeOrder(id,ids,to))notice(tr('moved_to').replace('{n}',to+1).replace('{total}',ids.length))}}
 document.addEventListener('click',e=>{if(!menu)return;const b=e.target.closest('[data-menu-act]');if(b&&menu.node.contains(b))menuAct(b);else if(e.target===menu.scrim)closeMenu()});
-document.addEventListener('click',e=>{if(swallowClick){swallowClick=false;e.preventDefault();e.stopPropagation()}},true);
+// The click that ends a drag or a long press does nothing else; the confirmation's Undo always works.
+document.addEventListener('click',e=>{if(swallowClick&&!e.target.closest?.('#toast')){swallowClick=false;e.preventDefault();e.stopPropagation()}},true);
 for(const type of ['pointerup','pointercancel'])document.addEventListener(type,()=>{if(swallowClick)setTimeout(()=>swallowClick=false,80)},true);
 document.addEventListener('pointerdown',e=>{if(e.isPrimary)swallowClick=false;if(menu&&!menu.node.contains(e.target)&&e.target!==menu.scrim&&e.target.closest?.('[data-action]')!==anchorOf(menu.id,menu.action))closeMenu(false)},true);
 document.addEventListener('keydown',e=>{if(!menu||!menu.node.contains(document.activeElement)&&e.key!=='Escape')return;
@@ -430,15 +485,11 @@ document.addEventListener('keydown',e=>{if(!menu||!menu.node.contains(document.a
 // from a button follows it, and closes once the button leaves the screen; one opened at the pointer closes.
 addEventListener('scroll',e=>{if(!menu||menu.node.classList.contains('sheet')||!(e.target===document||e.target.contains?.($('board'))))return;const a=anchorOf(menu.id,menu.action),r=a?.getClientRects().length?a.getBoundingClientRect():null;
  if(menu.point||!r||r.bottom<0||r.top>innerHeight)closeMenu(false);else placeMenu(menu.node,a)},true);addEventListener('resize',()=>{if(!document.activeElement?.matches?.('.menu-input'))closeMenu(false)});
-$('board').addEventListener('contextmenu',e=>{const card=e.target.closest('.task');if(!card||drag)return;e.preventDefault();clearTimeout(press?.timer);press=null;if(menu?.id===card.dataset.taskId&&performance.now()-menu.at<800)return;openMenu(card.dataset.taskId,'more',{x:e.clientX,y:e.clientY})});
-// A long press on a touch screen opens the same menu; the tap that ends it does nothing else.
-$('board').addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'||!e.isPrimary)return;const card=e.target.closest('.task');if(!card||e.target.closest('.drag-handle'))return;clearTimeout(press?.timer);const {clientX:x,clientY:y,pointerId:pointer}=e;press={x,y,pointer,timer:setTimeout(()=>{press=null;swallowClick=true;openMenu(card.dataset.taskId,'more',{x,y})},500)}});
-$('board').addEventListener('pointermove',e=>{if(press?.pointer===e.pointerId&&Math.hypot(e.clientX-press.x,e.clientY-press.y)>8){clearTimeout(press.timer);press=null}});
-for(const type of ['pointerup','pointercancel'])$('board').addEventListener(type,e=>{if(press?.pointer===e.pointerId){clearTimeout(press.timer);press=null}});
+$('board').addEventListener('contextmenu',e=>{const card=e.target.closest('.task');if(!card)return;if(drag){e.preventDefault();return}e.preventDefault();if(menu?.id===card.dataset.taskId&&performance.now()-menu.at<800)return;openMenu(card.dataset.taskId,'more',{x:e.clientX,y:e.clientY})});
 $('board').onclick=e=>{const sb=e.target.closest('[data-suggestion]');if(sb){const {suggestion,suggestionAction}=sb.dataset;bubbleFor=null;safely(async()=>{const started=performance.now();timed(flow.observe(await api('/api/suggestions/'+suggestion+'/'+suggestionAction,{})),started);await flow.refresh();render()});return}if(inlineClick(e))return;const b=e.target.closest('[data-action]');if(!b){const card=e.target.closest('.task');if(card&&!e.target.closest('.assistant-bubble'))toggleExpand(card.dataset.taskId);else if(dependencyFocus&&!card)toggleDependencies(dependencyFocus);return}const {id,action}=b.dataset;if(action==='suggestion'){bubbleFor=bubbleFor===id?null:id;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true});return}if(['priority','snooze','more','group','due'].includes(action)){if(menu?.id===id&&menu.action===action)closeMenu();else openMenu(id,action)}else if(action==='dependencies')toggleDependencies(id);else if(action==='title'){const t=task(id);if(t&&!t.pending&&!flow.snapshot().readOnly)startTitleEdit(id);else toggleExpand(id)}else if(action==='move')return;else if(action==='pending'){const p=flow.snapshot().proposals.find(p=>p.intent.taskId===id);if(p){collapsedProposals.delete(p.id);expandedProposal=p.id;render();$('review-title').scrollIntoView({block:'nearest'});$('review-title').focus()}}else request(action,{taskId:id})};
 $('reviews').onclick=async e=>{const summary=e.target.closest('summary');if(summary){const d=summary.parentElement;if(d.open)collapsedProposals.add(d.dataset.proposal);else collapsedProposals.delete(d.dataset.proposal);}const b=e.target.closest('[data-review-action]');if(!b)return;const p=flow.snapshot().proposals.find(p=>p.id===b.dataset.proposal);if(!p)return;if(Number(b.dataset.generation)!==p.generation){notice(tr("the_review_changed_read_the_current_state"));return;}const action=b.dataset.reviewAction;if(action==='cancel'){await flow.cancel(p.id);notice(tr("change_canceled_the_responsibility_keeps_its"))}if(action==='retry')safely(()=>flow.retry(p.id));if(action==='continue')safely(()=>flow.commit(p.id,{generation:p.generation}))};
 $('reviews').addEventListener('toggle',e=>{if(!e.target.matches('details'))return;const id=e.target.dataset.proposal;if(e.target.open){collapsedProposals.delete(id);expandedProposal=id}else collapsedProposals.add(id)},true);
-$('undo').onclick=()=>{const id=$('undo').dataset.event;$('undo').hidden=true;safely(()=>flow.undo(id))};
+$('undo').onclick=()=>{const id=$('undo').dataset.event,gesture=gestures.get(id);$('undo').hidden=true;safely(()=>gesture?flow.undoGesture(gesture):flow.undo(id))};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&bubbleFor&&!document.querySelector('dialog[open]')){const id=bubbleFor;bubbleFor=null;render();$('board').querySelector('[data-id="'+id+'"][data-action="suggestion"]')?.focus({preventScroll:true})}});
 function openContext(origin){const revision=flow.snapshot().revision,c=flow.snapshot().context;$('context-minutes').value=c.availableMinutes??'';$('context-until').value=c.availableUntil?localValue(new Date(c.availableUntil)):'';const openingUntil=$('context-until').value;$('context-rest').checked=c.rest;$('context-error').hidden=true;
  $('context-form').onsubmit=async e=>{e.preventDefault();const raw=$('context-minutes').value,until=$('context-until').value;try{let availableUntil=c.availableUntil;if(raw.trim()){if(until!==openingUntil){const date=parseLocal(until);if(!Number.isFinite(date.getTime())||ambiguous(date)||localValue(date)!==until)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"));availableUntil=date.toISOString()}if(!availableUntil)throw Error(tr("provide_an_unambiguous_local_date_and_time_f"))}await flow.setContext({availableMinutes:raw.trim()?Number(raw):null,availableUntil:raw.trim()?availableUntil:null,rest:$('context-rest').checked},revision);$('context-dialog').close('declared')}catch(error){$('context-error').hidden=false;$('context-error').textContent=error.message}};
@@ -448,12 +499,107 @@ $('list-view').onclick=()=>{$('board').classList.add('is-list');$('list-view').s
 $('order-choice').value=orderView;$('order-choice').onchange=()=>{orderView=$('order-choice').value;try{localStorage.setItem('day-attendant-order',orderView)}catch{}render()};
 $('order-note').onclick=e=>{if(e.target.closest('#suggest-order'))safely(async()=>{await deliver('/api/suggestion',{});notice(tr('suggestion_pending'))})};
 $('board').addEventListener('keydown',e=>{const handle=e.target.closest?.('.drag-handle');if(!handle||!['ArrowUp','ArrowDown'].includes(e.key)||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();const ids=sectionIds(handle.closest('.task').dataset.section),from=ids.indexOf(handle.dataset.id),to=from+(e.key==='ArrowUp'?-1:1);if(to>=0&&to<ids.length&&placeOrder(handle.dataset.id,ids,to))notice(tr('moved_to').replace('{n}',to+1).replace('{total}',ids.length))});
-$('board').addEventListener('pointerdown',e=>{const handle=e.target.closest('.drag-handle');if(!handle||e.button!==0||flow.snapshot().readOnly)return;e.preventDefault();handle.focus({preventScroll:true});$('board').setPointerCapture(e.pointerId);const card=handle.closest('.task');drag={id:handle.dataset.id,card,section:card.dataset.section,ids:sectionIds(card.dataset.section),pointer:e.pointerId};card.classList.add('dragging');$('board').classList.add('is-dragging')});
-$('board').addEventListener('pointermove',e=>{if(e.pointerId!==drag?.pointer)return;const others=[...$('board').querySelectorAll('.task')].filter(c=>c!==drag.card&&c.dataset.section===drag.section),next=others.find(c=>{const r=c.getBoundingClientRect();return e.clientY<r.top+r.height/2});if(next){if(next.previousElementSibling!==drag.card)next.before(drag.card)}else if(others.length&&others.at(-1).nextElementSibling!==drag.card)others.at(-1).after(drag.card)});
-function endDrag(commit){if(!drag)return;const {id,section,ids}=drag,to=sectionIds(section).indexOf(id);drag=null;$('board').classList.remove('is-dragging');if(!(commit&&placeOrder(id,ids,to)))render()}
-$('board').addEventListener('pointerup',e=>{if(e.pointerId===drag?.pointer)endDrag(true)});
-for(const type of ['pointercancel','lostpointercapture'])$('board').addEventListener(type,e=>{if(e.pointerId===drag?.pointer)endDrag(false)});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&drag){e.preventDefault();endDrag(false)}});
+// Dragging: the card lifts and follows the pointer with a slight tilt, the others make room and it
+// lands where it is let go. A mouse drags from the handle or any empty part of the row; a touch
+// holds the row first, and a hold let go without moving opens the row's menu instead.
+// Another column changes the state, another priority or group (in those orders) takes that one,
+// and the place is kept as the manual order. All of it applies at once, with one Undo.
+const gestures=new Map(),gestureOf=new Map();let gestureSerial=0,scrollFrame=0;
+const layoutTop=node=>{const parent=node.offsetParent;return (parent?parent.getBoundingClientRect().top+parent.clientTop:0)+node.offsetTop};
+$('board').addEventListener('pointerdown',e=>{
+ if(!e.isPrimary||drag)return;const card=e.target.closest('.task[data-task-id]'),handle=e.target.closest('.drag-handle'),mouse=e.pointerType==='mouse';
+ if(!card||card.classList.contains('saving')||flow.snapshot().readOnly||mouse&&e.button!==0)return;
+ if(mouse&&!handle&&(!e.target.closest('.row-main')||e.target.closest('button,input,textarea,select,a,label,[contenteditable]')))return;
+ if(handle&&mouse){e.preventDefault();handle.focus({preventScroll:true})}
+ drag={id:card.dataset.taskId,pointer:e.pointerId,x:e.clientX,y:e.clientY,touch:!mouse,armed:mouse,active:false};
+ if(!mouse)drag.timer=setTimeout(()=>{if(!drag||drag.active)return;drag.armed=true;cardOf(drag.id)?.classList.add('pressing');navigator.vibrate?.(8)},450);
+});
+document.addEventListener('pointermove',e=>{
+ if(e.pointerId!==drag?.pointer)return;
+ if(!drag.active){const distance=Math.hypot(e.clientX-drag.x,e.clientY-drag.y);
+  if(!drag.armed){if(distance>8){clearTimeout(drag.timer);drag=null}return}
+  if(distance<(drag.touch?6:5)||!beginDrag(e))return}
+ e.preventDefault();drag.px=e.clientX;drag.py=e.clientY;if(!drag.frame)drag.frame=requestAnimationFrame(()=>{if(!drag?.active)return;drag.frame=0;placeCard(drag.px,drag.py);moveGhost(drag.px,drag.py)});
+},{passive:false});
+// While a touch holds or drags a row, the page does not scroll under it.
+document.addEventListener('touchmove',e=>{if(drag?.armed&&drag.touch)e.preventDefault()},{passive:false});
+function beginDrag(e){
+ const card=cardOf(drag.id);if(!card){drag=null;return false}
+ clearTimeout(drag.timer);card.classList.remove('pressing');closeMenu(false);getSelection()?.removeAllRanges();
+ const rect=card.getBoundingClientRect();Object.assign(drag,{card,active:true,width:rect.width,offX:e.clientX-rect.left,offY:e.clientY-rect.top,vx:0,lastX:e.clientX,ghost:floating(card,rect,'drag-ghost')});
+ card.classList.add('placeholder');card.style.height=rect.height+'px';
+ $('board').classList.add('is-dragging');document.body.classList.add('dragging-task');swallowClick=true;
+ moveGhost(e.clientX,e.clientY);autoScroll();return true;
+}
+function moveGhost(x,y){const at=inLayer(x-drag.offX,y-drag.offY);drag.vx=drag.vx*.7+(x-drag.lastX)*.3;drag.lastX=x;
+ // A slight tilt that follows the motion; a wide row tilts less, so its ends move at most a few pixels.
+ const limit=Math.min(5,Math.atan(12/drag.width)*180/Math.PI),tilt=moving()?Math.max(-limit,Math.min(limit,drag.vx*.5)):0;drag.ghost.style.transform='translate('+at.x+'px,'+at.y+'px) rotate('+tilt.toFixed(2)+'deg) scale(1.02)'}
+function laneAt(x,y){let best=null,distance=Infinity;
+ for(const lane of $('board').querySelectorAll('.lane')){const r=lane.getBoundingClientRect(),dx=x<r.left?r.left-x:x>r.right?x-r.right:0,dy=y<r.top?r.top-y:y>r.bottom+30?y-r.bottom-30:0,d=dx*3+dy;if(d<distance){distance=d;best=lane}}
+ return best}
+// The slot moves under the pointer and the others glide out of its way. Every position is read
+// before anything changes, so a move costs one layout.
+function placeCard(x,y){
+ const lane=laneAt(x,y),card=drag.card;if(!lane)return;
+ const box=lane.querySelector('.lane-cards'),items=[...box.children].filter(n=>n.dataset.taskId&&n!==card),next=items.find(c=>y<layoutTop(c)+c.offsetHeight/2);
+ let ref=next||null;const heading=next?.previousElementSibling;
+ // Above a group's heading the slot ends the previous group instead of starting this one.
+ if(heading?.classList.contains('group-heading')&&heading.previousElementSibling&&y<layoutTop(heading)+heading.offsetHeight)ref=heading;
+ const stays=card.parentElement===box&&(ref?card.nextElementSibling===ref:card===box.lastElementChild),first=!stays&&moving()?cardRects():null;
+ for(const l of $('board').querySelectorAll('.lane'))if(l.classList.contains('drop-target')!==(l===lane))l.classList.toggle('drop-target',l===lane);
+ if(stays)return;
+ box.insertBefore(card,ref);if(first)playFlip(first,{duration:DURATION,enter:false});
+}
+function autoScroll(){cancelAnimationFrame(scrollFrame);
+ const step=()=>{if(!drag?.active)return;const edge=60,y=drag.py??drag.y;let v=0;
+  if(y<edge)v=-Math.ceil((edge-y)/6);else if(y>innerHeight-edge)v=Math.ceil((y-(innerHeight-edge))/6);
+  if(v){const before=scrollY;scrollBy(0,v);if(scrollY!==before)placeCard(drag.px??drag.x,y)}
+  scrollFrame=requestAnimationFrame(step)};
+ scrollFrame=requestAnimationFrame(step)}
+function finishDrag(commit){
+ const d=drag;if(!d)return;if(d.frame){cancelAnimationFrame(d.frame);d.frame=0;if(commit&&d.active){moveGhost(d.px,d.py);placeCard(d.px,d.py)}}drag=null;clearTimeout(d.timer);cancelAnimationFrame(scrollFrame);cardOf(d.id)?.classList.remove('pressing');
+ if(!d.active){if(d.touch&&d.armed&&commit){swallowClick=true;openMenu(d.id,'more',{x:d.x,y:d.y})}return}
+ // The release's own click comes in the same task; nothing after it is swallowed.
+ $('board').classList.remove('is-dragging');document.body.classList.remove('dragging-task');setTimeout(()=>swallowClick=false);
+ for(const l of $('board').querySelectorAll('.lane.drop-target'))l.classList.remove('drop-target');
+ if(!(commit&&dropCard(d)))render();
+ // The lifted copy lands on the card's place, wherever the drop or its refusal left it.
+ const card=cardOf(d.id)||d.card;card.getAnimations().forEach(a=>a.finish());
+ const rect=card.getBoundingClientRect(),at=inLayer(rect.left,rect.top),ghost=d.ghost;
+ const landed=()=>{ghost.remove();for(const c of new Set([card,cardOf(d.id)]))if(c){c.classList.remove('placeholder');c.style.removeProperty('height')}};
+ if(!moving()){landed();return}
+ ghost.animate([{transform:ghost.style.transform},{transform:'translate('+at.x+'px,'+at.y+'px)'}],{duration:DURATION,easing:EASE,fill:'forwards'}).onfinish=landed;
+}
+document.addEventListener('pointerup',e=>{if(e.pointerId===drag?.pointer)finishDrag(true)});
+document.addEventListener('pointercancel',e=>{if(e.pointerId===drag?.pointer)finishDrag(false)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&drag?.active){e.preventDefault();finishDrag(false)}});
+const laneName=state=>tr({active:'active',todo:'to_do',snoozed:'snoozed'}[state]);
+function tomorrowAt(hour){const [y,m,d]=localValue(NOW).slice(0,10).split('-').map(Number);return parseLocal(new Date(Date.UTC(y,m-1,d+1)).toISOString().slice(0,10)+'T'+String(hour).padStart(2,'0')+':00')}
+// What the drop means, read from where the card now sits; false when nothing changes.
+function dropCard(d){
+ const data=flow.snapshot(),t=data.tasks.find(t=>t.id===d.id),card=d.card;if(!t||!card.isConnected)return false;
+ const lane=card.closest('.lane'),state=lane.dataset.state,near=dir=>{let n=card[dir];while(n&&!n.dataset.taskId)n=n[dir];return n&&data.tasks.find(r=>r.id===n.dataset.taskId)};
+ const before=near('previousElementSibling'),after=near('nextElementSibling');let heading=card.previousElementSibling;while(heading&&!heading.classList.contains('group-heading'))heading=heading.previousElementSibling;
+ const changes=[],notes=[];
+ if(state!==t.state){
+  if(state==='active'&&t.blocked){notice(tr('drop_blocked'));return false}
+  if(state==='snoozed'){const until=tomorrowAt(9).toISOString();changes.push(['snooze',{taskId:t.id,until}]);notes.push(tr('drop_snoozed').replace('{time}',short(until)))}
+  else{changes.push([state==='active'?'activate':'todo',{taskId:t.id}]);notes.push(tr('drop_moved').replace('{lane}',laneName(state)))}
+ }
+ const patch={};
+ if(orderView==='priority'){const priority=globalThis.dayOrdering.adopt(t.priority,before?.priority,after?.priority);if(priority!==t.priority){patch.priority=priority;notes.push(tr('drop_priority').replace('{priority}',tr('priority_'+priority)))}}
+ if(orderView==='group'&&heading){const group=heading.dataset.group;if((t.group||'').trim().toLocaleLowerCase()!==group.toLocaleLowerCase()){patch.group=group;notes.push(group?tr('drop_group').replace('{group}',group):tr('drop_no_group'))}}
+ if(Object.keys(patch).length)changes.push(['task_update',{uuid:t.id,...patch}]);
+ const order=currentOrder(data),next=['manual','priority','group'].includes(orderView)?globalThis.dayOrdering.place(order,t.id,before?.id,after?.id):order,reordered=next.join()!==order.join();
+ if(!changes.length)return setOrder(next);
+ // The new place is set before the changes show, so the card stays exactly where it was let go.
+ const gesture={id:'gesture:'+(++gestureSerial),taskId:t.id,notes,proposals:[],before:{tasks:data.tasks,taskOrder:data.taskOrder},started:performance.now()};
+ gestures.set(gesture.id,gesture);if(gestures.size>20)gestures.delete(gestures.keys().next().value);
+ if(reordered){clearTimeout(orderTimer);localOrder=next}
+ for(const [action,payload] of changes)request(action,payload,undefined,undefined,gesture);
+ if(reordered)request('order_update',{order:next},undefined,undefined,gesture).then(()=>{if(localOrder===next){localOrder=null;orderBase=null;render()}});
+ gesture.shown=performance.now();return true;
+}
 const themeMedia=matchMedia('(prefers-color-scheme:dark)');let themeChoice='system';try{themeChoice=localStorage.getItem('day-attendant-theme')||'system'}catch{}if(!['system','light','dark'].includes(themeChoice))themeChoice='system';$('theme-choice').value=themeChoice;const applyTheme=()=>root.dataset.theme=themeChoice==='system'?(themeMedia.matches?'dark':'light'):themeChoice;$('theme-choice').onchange=()=>{themeChoice=$('theme-choice').value;try{localStorage.setItem('day-attendant-theme',themeChoice)}catch{}applyTheme()};themeMedia.addEventListener('change',applyTheme);applyTheme();
 const compact=matchMedia('(max-width:1279px)');let chatOpen=!compact.matches;
 function placeChat(){const modal=$('chat-dialog'),panel=$('assistant'),dock=$('chat-dock');if(compact.matches&&!modal.open&&document.querySelector('dialog[open]:not(#chat-dialog)'))chatOpen=false;$('chat-toggle').setAttribute('aria-expanded',String(chatOpen));$('workspace').classList.toggle('chat-open',chatOpen&&!compact.matches);if(compact.matches){dock.hidden=true;if(panel.parentElement!==modal)modal.append(panel);if(chatOpen&&!modal.open){modal.returnValue='cancel';origins.set(modal,{origin:$('chat-toggle')});modal.showModal()}else if(!chatOpen&&modal.open)modal.close('collapse')}else{if(modal.open)modal.close('reflow');if(panel.parentElement!==dock)dock.append(panel);dock.hidden=!chatOpen}}
@@ -509,9 +655,9 @@ class RemoteFlow{
  // Direct changes go out one at a time, each with the newest revision, so quick consecutive
  // clicks never collide with each other; none of them waits for a state read to be sent.
  async send(body,key,expectedRevision){const revision=expectedRevision??this.data.revision;return this.observe(key?await api('/api/proposals',{...body,key,expected_revision:revision}):await deliver('/api/proposals',body,revision,{refresh:false}))}
- async request(action,payload,key,expectedRevision){const started=performance.now();const body={action:domain[action]||action,payload:{...(payload.taskId?{uuid:payload.taskId}:{}),...(payload.until?{until:payload.until}:{}),...(!payload.taskId?payload:{})}};
+ async request(action,payload,key,expectedRevision,gesture){const started=performance.now();const body={action:domain[action]||action,payload:{...(payload.taskId?{uuid:payload.taskId}:{}),...(payload.until?{until:payload.until}:{}),...(!payload.taskId?payload:{})}};
   this.sending++;this.barrier=this.started;const previewed=this.preview(body),shown=previewed?performance.now():undefined,sent=this.queue.then(()=>this.send(body,key,expectedRevision));this.queue=sent.catch(()=>{});
-  let p;try{p=timed(await sent,started,shown,previewed||undefined)}catch(error){this.settle();if(previewed){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();
+  let p;try{p=timed(await sent,started,shown,previewed||undefined);if(gesture&&p?.id){gesture.proposals.push(p.id);gestureOf.set(p.id,gesture);if(gestureOf.size>60)gestureOf.delete(gestureOf.keys().next().value)}}catch(error){this.settle();if(previewed){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();
   await this.refresh();return {...p,intent:{...p.intent,action:aliases[p.intent.action]||p.intent.action,taskId:p.intent.payload.uuid,until:p.intent.payload.until},concerns:p.facts,superseded:p.result?.superseded||[]};}
  settle(){this.sending--;this.barrier=this.started}
  async cancel(id){const r=await api('/api/proposals/'+id+'/cancel',{});await this.refresh();return r}
@@ -521,6 +667,11 @@ class RemoteFlow{
   if(view){const back=new Map(view.tasks.map(t=>[t.id,t]));this.data={...this.data,tasks:this.data.tasks.filter(t=>!t.pending&&(back.has(t.id)||t.id!==view.taskId)).map(t=>back.get(t.id)||t),context:view.context};render(this.data)}
   this.sending++;this.barrier=this.started;const shown=view?performance.now():undefined,sent=this.queue.then(async()=>this.observe(await deliver('/api/undo',{fact_id:id},this.data.revision,{refresh:false})));this.queue=sent.catch(()=>{});
   let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();if(view){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();await this.refresh();return r}
+ // Undo of a drop puts the card back at once, then reverts every change the drop saved, newest first.
+ async undoGesture(gesture){const started=performance.now(),back=gesture.before.tasks.find(t=>t.id===gesture.taskId);gestures.delete(gesture.id);
+  if(back){localOrder=null;this.data={...this.data,tasks:this.data.tasks.map(t=>t.id===back.id?back:t),taskOrder:gesture.before.taskOrder};render(this.data)}
+  this.sending++;this.barrier=this.started;const shown=performance.now(),sent=this.queue.then(async()=>{const undone=await deliver('/api/undo',{proposal_ids:gesture.proposals},this.data.revision,{refresh:false});return this.observe(undone.at(-1))});this.queue=sent.catch(()=>{});
+  let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();this.digest='';this.tag='';await this.refresh().catch(()=>{});throw error}this.settle();await this.refresh();return r}
  async setEstimate(id,value,revision){return this.request('continuity_update',{uuid:id,remainingMinutes:value},undefined,revision)}
  async setContext(value,revision){return this.request('context_update',{availableMinutes:value.availableMinutes,availableUntil:value.availableUntil,rest:value.rest},undefined,revision)}
 }

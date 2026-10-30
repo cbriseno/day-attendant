@@ -208,6 +208,9 @@ class Handler(BaseHTTPRequestHandler):
                 if 'message_key' in body:
                     if set(body)-{'message_key','key','expected_revision'}:raise ValueError('fields')
                     result=board.undo_message(body['message_key'],body['key'],body.get('expected_revision'))
+                elif 'proposal_ids' in body:
+                    if set(body)-{'proposal_ids','key','expected_revision'}:raise ValueError('fields')
+                    result=board.undo_proposals(body['proposal_ids'],body['key'],body.get('expected_revision'))
                 else:result=board.undo(int(body['fact_id']),body['key'],body.get('expected_revision'))
                 self.server.schedule(result)
             elif match:=re.fullmatch(r'/api/suggestions/([a-f0-9-]+)/(?P<action>accept|dismiss)',self.path):

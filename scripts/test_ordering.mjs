@@ -8,7 +8,7 @@ import vm from 'node:vm';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const context={};vm.createContext(context);
 vm.runInContext(await readFile(path.join(root,'day_attendant/ui/ordering.js'),'utf8'),context);
-const {VIEWS,PRIORITIES,manualIds,arrange,move,hue}=context.dayOrdering;
+const {VIEWS,PRIORITIES,manualIds,arrange,move,place,adopt,hue}=context.dayOrdering;
 const task=(id,priority,extra={})=>({id,priority,group:null,due:null,createdAt:'2026-10-0'+id.length+'T00:00:00Z',...extra});
 // Values cross the vm realm boundary; compare them as plain data.
 const plain=value=>JSON.parse(JSON.stringify(value));
@@ -64,4 +64,18 @@ assert.deepEqual(plain(move(order,['e','c','b'],'e',-4)),order);
 const moved=move(order,['e','c','b'],'b',1);
 assert.deepEqual(ids(arrange(all,'priority',{order:moved})),['e','b','c','d','a']);
 assert.deepEqual(plain(moved.filter(id=>id!=='b')),order.filter(id=>id!=='b'));
+// A drop goes next to its new neighbours anywhere in the whole order; with none it changes nothing.
+assert.deepEqual(plain(place(order,'d','e','a')),['e','d','a','c','b']);
+assert.deepEqual(plain(place(order,'e','b',null)),['a','c','b','e','d']);
+assert.deepEqual(plain(place(order,'a',null,'e')),['a','e','c','b','d']);
+assert.deepEqual(plain(place(order,'c',null,null)),order);
+assert.deepEqual(plain(place(order,'missing','e','a')),order);
+assert.deepEqual(plain(place(order,'c','gone','also-gone')),order);
+// Dropped among other priorities it takes the nearer neighbour's; between them it keeps its own.
+assert.equal(adopt('high','low',null),'low');assert.equal(adopt('low',null,'high'),'high');
+assert.equal(adopt('medium','high','low'),'medium');assert.equal(adopt('high','high','low'),'high');
+assert.equal(adopt('low','high','medium'),'medium');assert.equal(adopt('high','medium','low'),'medium');
+assert.equal(adopt('medium',null,null),'medium');
+// Urgent is the highest: dropped among urgent tasks a task becomes urgent, and an urgent one let go lower takes that priority.
+assert.equal(adopt('high','urgent','urgent'),'urgent');assert.equal(adopt('low',null,'urgent'),'urgent');assert.equal(adopt('urgent','high','medium'),'high');
 console.log('Ordering rules passed');
