@@ -661,7 +661,9 @@ try{
   assert.deepEqual([requests.length-sent,requests.at(-1).payload],[1,{uuid:row.id,priority:'urgent'}]);
   assert.equal(await evaluate(`document.querySelector(${JSON.stringify(sel('priority'))}).textContent`),'Priority: Urgent');
   assert.equal(await evaluate(`document.querySelector('#board .lane[data-state="todo"] .task').dataset.taskId`),row.id,'urgent is first in the Priority order');
-  await click(sel('priority'));await click('.row-menu [data-value="high"]');await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading`);
+  sent=requests.length;await click(sel('priority'));await click('.row-menu [data-value="high"]');
+  for(let i=0;i<100&&requests.length===sent;i++)await new Promise(r=>setTimeout(r,15));
+  await wait(`daySnapshot().revision>=${state.revision}&&!dayUI.flow.loading&&!dayUI.flow.busy&&daySnapshot().tasks.find(t=>t.id===${JSON.stringify(row.id)}).priority==='high'`);await refresh();
   // Escape closes a menu and returns focus to its chip; arrows move inside it.
   await click(sel('priority'));await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))");
   assert.equal(await evaluate("document.activeElement.dataset.value"),'high','focus starts on Urgent, the first item');
@@ -686,7 +688,9 @@ try{
   for(let i=0;i<100&&requests.at(-1).action!=='order_update';i++)await new Promise(r=>setTimeout(r,15));assert.equal(requests.at(-1).action,'order_update');
   await fill('order-choice','priority');
   // Finish is the checkbox, one click.
-  sent=requests.length;await click(`[data-id="${row.id}"][data-action="done"]`);assert.equal(await laneOf(row.id),null);await wait(`daySnapshot().revision>=${state.revision}`);
+  sent=requests.length;await click(`[data-id="${row.id}"][data-action="done"]`);assert.equal(await laneOf(row.id),null);
+  // The finish waits its turn behind the order save still in flight; it is shown at once, sent right after.
+  for(let i=0;i<100&&requests.length===sent;i++)await new Promise(r=>setTimeout(r,15));await wait(`daySnapshot().revision>=${state.revision}`);
   assert.deepEqual([requests.length-sent,requests.at(-1).action,requests.at(-1).payload],[1,'task_done',{uuid:row.id}]);
   // The Board uses the same row pieces as small cards in three columns.
   await click('#board-view');assert.deepEqual(await evaluate("(()=>{const lanes=[...document.querySelectorAll('#board .lane')].map(l=>Math.round(l.getBoundingClientRect().top));const card=document.querySelector('.lane[data-state=todo] .task');return [new Set(lanes).size,['done','priority','activate','snooze','more'].every(a=>card.querySelector('[data-action='+a+']'))]})()"),[1,true]);
