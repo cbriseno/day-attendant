@@ -280,12 +280,12 @@ globalThis.dayTranslations = {
 
 Object.assign(globalThis.dayTranslations.en,{
  blocked_prefix:'Blocked · ',blocks_prefix:'Blocks · ',show_dependencies:'Highlight dependencies',dependency_prerequisite:'Prerequisite',dependency_dependent:'Depends on it',declared_context_for_this_profile:'Declared context for this profile',
- dependency_update:'Prerequisites',related_update:'Related responsibilities',provenance_update:'Source',event_add:'New commitment',event_update:'Edit commitment',event_cancel:'Cancel commitment',
+ dependency_update:'Prerequisites',related_update:'Related responsibilities',provenance_update:'Source',event_add:'New commitment',event_update:'Edit commitment',event_cancel:'Cancel commitment',event_canceled:'Commitment canceled',
  phase_ready:'Ready to save',phase_admitted:'Saving; check recovery',phase_applied:'Saved',phase_unchanged:'Unchanged',phase_review:'Needs review',phase_unavailable:'Review incomplete',phase_stale:'Context changed',phase_evaluating:'Saving',phase_canceled:'Canceled',phase_invalid:'Invalid',phase_superseded:'Replaced'
 });
 Object.assign(globalThis.dayTranslations.es,{
  blocked_prefix:'Bloqueada · ',blocks_prefix:'Bloquea · ',show_dependencies:'Resaltar dependencias',dependency_prerequisite:'Requisito',dependency_dependent:'Depende de esta',declared_context_for_this_profile:'Contexto declarado para este perfil',
- dependency_update:'Requisitos',related_update:'Responsabilidades relacionadas',provenance_update:'Origen',event_add:'Nuevo compromiso',event_update:'Editar compromiso',event_cancel:'Cancelar compromiso',
+ dependency_update:'Requisitos',related_update:'Responsabilidades relacionadas',provenance_update:'Origen',event_add:'Nuevo compromiso',event_update:'Editar compromiso',event_cancel:'Cancelar compromiso',event_canceled:'Compromiso cancelado',
  phase_ready:'Lista para guardar',phase_admitted:'Guardando; revisa recuperación',phase_applied:'Guardado',phase_unchanged:'Sin cambios',phase_review:'Requiere revisión',phase_unavailable:'Revisión incompleta',phase_stale:'Cambió el contexto',phase_evaluating:'Guardando',phase_canceled:'Cancelado',phase_invalid:'Inválido',phase_superseded:'Reemplazado'
 });
 

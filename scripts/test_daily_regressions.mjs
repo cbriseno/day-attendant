@@ -44,9 +44,11 @@ const server=createServer(async(req,res)=>{
     if(body.action==='task_snooze')Object.assign(t,{state:'snoozed',until:p.until});
     if(body.action==='context_update')Object.assign(state.context,p);
     if(body.action==='event_update')Object.assign(state.calendar_events.find(e=>e.uuid===p.uuid),{title:p.title,start_at:p.start,end_at:p.end});
+    const canceledEvent=body.action==='event_cancel'&&state.calendar_events.find(e=>e.uuid===p.uuid);
     if(body.action==='event_cancel')state.calendar_events=state.calendar_events.filter(e=>e.uuid!==p.uuid);
     // The instant group records each change as an undoable fact, as the service does.
     const proposalId=randomUUID();proposalsBefore.set(proposalId,{id:t?.id,before:beforeTask,order:beforeOrder});
+    if(state.instant&&canceledEvent){const fact=++facts;undoable.set(fact,{event:canceledEvent});state.lastFact={id:fact,proposalId,action:body.action,taskId:p.uuid,undoable:true,undoOf:null,reviewStatus:'deferred'}}
     if(state.instant&&(t||body.action==='group_color_update')){const fact=++facts;undoable.set(fact,t?{id:t.id,before:beforeTask}:{group:p.group.trim().toLowerCase(),before:beforeColors[p.group.trim().toLowerCase()]});state.lastFact={id:fact,proposalId,action:body.action,taskId:t?.id,undoable:true,undoOf:null,reviewStatus:'deferred'}}
     state.revision++;
     data={id:proposalId,key:body.key,intent:{action:body.action,payload:p},phase:'applied',generation:0,facts:[],result:{revision:state.revision}};proposalReplied=Date.now();
@@ -59,7 +61,8 @@ const server=createServer(async(req,res)=>{
    }else if(req.url==='/api/undo'){
     undos.push(body);const last=undoable.get(Number(body.fact_id));
     const proposalId=randomUUID();
-    if(last){if(last.group!==undefined){if(last.before)state.groupColors[last.group]=last.before;else delete state.groupColors[last.group]}else Object.assign(state.tasks.find(t=>t.id===last.id),last.before);state.revision++;state.lastFact={id:++facts,proposalId,action:'task_restore',taskId:last.id,undoable:true,undoOf:Number(body.fact_id),reviewStatus:'deferred'}}
+    if(last?.event){state.calendar_events=[...state.calendar_events,last.event];state.revision++;state.lastFact={id:++facts,proposalId,action:'event_restore',taskId:last.event.uuid,undoable:true,undoOf:Number(body.fact_id),reviewStatus:'deferred'}}
+    else if(last){if(last.group!==undefined){if(last.before)state.groupColors[last.group]=last.before;else delete state.groupColors[last.group]}else Object.assign(state.tasks.find(t=>t.id===last.id),last.before);state.revision++;state.lastFact={id:++facts,proposalId,action:'task_restore',taskId:last.id,undoable:true,undoOf:Number(body.fact_id),reviewStatus:'deferred'}}
     data={id:proposalId,phase:'applied',result:{revision:state.revision}};
    }else if(req.url.startsWith('/api/suggestions/')){
     const [,,,id,act]=req.url.split('/'),item=state.suggestions.find(s=>s.id===id);suggestionCalls.push([id,act,body]);
@@ -776,8 +779,29 @@ try{
   for(let i=0;i<200&&b.state!=='todo';i++)await new Promise(r=>setTimeout(r,15));
   assert.equal(b.state,'todo');assert.equal(a.state,'active');
   assert.deepEqual(requests.slice(sentBefore).map(r=>[r.action,r.expected_revision]),[['front_activate',opening],['front_todo',opening+1]]);
+  // Canceling a commitment leaves the agenda at once and offers Undo, which brings the same one back at once.
+  const soon=hours=>new Date(Date.parse(state.now)+hours*3600000).toISOString(),dentist={uuid:randomUUID(),title:'Dentist',start_at:soon(24),end_at:soon(25)};
+  state.calendar_events=[dentist];state.revision++;await refresh();
+  const agenda="[...document.querySelectorAll('#calendar-area .daily-row .link-button')].map(b=>b.textContent)";
+  assert.deepEqual(await evaluate(agenda),['Dentist']);
+  let releaseCancel;const cancelGate=new Promise(r=>releaseCancel=r);
+  server.removeAllListeners('request');server.on('request',async(req,res)=>{if(req.url==='/api/proposals')await cancelGate;return original(req,res)});
+  await click('#calendar-area .daily-row .btn');await wait(`${agenda}.length===0`);assert.equal(state.calendar_events.length,1);
+  releaseCancel();await wait("document.getElementById('status').textContent==='Commitment canceled · Dentist'&&!document.getElementById('undo').hidden");
+  assert.deepEqual([requests.at(-1).action,requests.at(-1).payload],['event_cancel',{uuid:dentist.uuid}]);assert.equal(state.calendar_events.length,0);
+  assert.match((await toast()).detail,/^\d+ ms/);
+  const cancelFact=facts;let releaseRestore;const restoreGate=new Promise(r=>releaseRestore=r);
+  server.removeAllListeners('request');server.on('request',async(req,res)=>{if(req.url==='/api/undo')await restoreGate;return original(req,res)});
+  await click('#undo');await wait(`${agenda}.length===1`);assert.deepEqual(await evaluate(agenda),['Dentist']);assert.equal(state.calendar_events.length,0);
+  releaseRestore();await wait("document.getElementById('status').textContent==='Change undone'");
+  assert.equal(undos.at(-1).fact_id,String(cancelFact));assert.deepEqual(state.calendar_events.map(e=>e.uuid),[dentist.uuid]);
+  assert.equal((await toast()).undo,false);assert.deepEqual(await evaluate(agenda),['Dentist']);
+  await fill('locale-choice','es');await refresh();await click('#calendar-area .daily-row .btn');
+  await wait("document.getElementById('status').textContent==='Compromiso cancelado · Dentist'&&!document.getElementById('undo').hidden");
+  await click('#undo');await wait("document.getElementById('status').textContent==='Cambio deshecho'");assert.deepEqual(state.calendar_events.map(e=>e.uuid),[dentist.uuid]);
+  await fill('locale-choice','en');server.removeAllListeners('request');server.on('request',original);state.calendar_events=[];state.revision++;await refresh();
   state.instant=false;
-  console.log('Instant action regressions passed: change and Undo shown before the answer, sequential revisions, toast timing, review state, suggestion mark, bubble, accept, dismiss and log');
+  console.log('Instant action regressions passed: change and Undo shown before the answer, sequential revisions, toast timing, review state, suggestion mark, bubble, accept, dismiss and log, commitment cancel and its Undo');
  }
  if(group==='all'||group==='compact'){
   // Compact rows: many tasks per screen, every row action one click away and priority two.

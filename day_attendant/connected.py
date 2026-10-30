@@ -65,7 +65,9 @@ FOLLOWUP_ACTIONS = ("front_activate", "front_todo", "task_snooze", "task_update"
 BASIS = ("state", "until", "due", "priority", "group", "dependsOn", "blockedBy", "remainingMinutes", "awaiting")
 CONTINUITY_DEFAULTS = {"remainingMinutes": None, "awaiting": False, "context": "", "next": ""}
 # Effects whose previous value a fact keeps, so Undo can restore them.
-RESTORABLE = {"order_set", "group_color_set", "context_set", "continuity_set", "related_set", "event_add", "event_meta", "event_patch", "attachments_link"}
+RESTORABLE = {"order_set", "group_color_set", "context_set", "continuity_set", "related_set", "event_add", "event_meta", "event_patch", "event_cancel", "event_restore", "attachments_link"}
+# Inverse-only actions: Undo reaches them, never a request of their own.
+RESTORE = ("task_restore", "event_restore")
 
 
 def followup_schema(task_ids):
@@ -407,7 +409,7 @@ class Connected:
         return data
 
     def _plan(self, intent, key):
-        if intent["action"] not in ALLOWED and intent["action"] != "task_restore":
+        if intent["action"] not in ALLOWED and intent["action"] not in RESTORE:
             raise AssistantError("unsupported_action", "This action is not supported in this release.")
         payload={k:v for k,v in intent["payload"].items() if k not in ("undo_of","continuity","declaredAt")}
         plan=self.app._plan(intent["action"], payload, key)
@@ -439,6 +441,10 @@ class Connected:
                 uid=effect["related_set"][0]
                 inverse["related"]=[uid,sorted(r["b"] if r["a"]==uid else r["a"] for r in con.execute("SELECT * FROM related WHERE a=? OR b=?",(uid,uid)))]
             if "event_add" in effect:inverse["event"]=["cancel",effect["event_add"][0]]
+            if "event_cancel" in effect:inverse["event"]=["restore",effect["event_cancel"]]
+            if "event_restore" in effect:
+                old=con.execute("SELECT title,start_at,end_at FROM events WHERE uuid=?",(effect["event_restore"],)).fetchone()
+                inverse["event"]=["cancel",effect["event_restore"],list(old)]
             if "event_patch" in effect:
                 uid,changes=effect["event_patch"]
                 old=con.execute("SELECT * FROM events WHERE uuid=?",(uid,)).fetchone()
@@ -482,7 +488,7 @@ class Connected:
         if not isinstance(key, str) or not 1 <= len(key) <= 200 or not isinstance(payload, dict):
             raise AssistantError("invalid_request", "The request requires content and a stable key.")
         restoring={"undo_of","declaredAt"} if inverse and action=="context_update" else {"undo_of"} if inverse else set()
-        if not isinstance(action,str) or action != "task_restore" and (action not in ALLOWED or set(payload)-ALLOWED[action]-restoring):
+        if not isinstance(action,str) or action not in RESTORE and (action not in ALLOWED or set(payload)-ALLOWED[action]-restoring):
             raise AssistantError("unsupported_action", "Unsupported action or fields.")
         for name in ('uuid','title','priority','due','until','start','end','observed_at','zone','source','person','reference','context','next','group'):
             if name in payload and payload[name] is not None and not isinstance(payload[name],str):
@@ -502,7 +508,7 @@ class Connected:
             raise AssistantError('invalid_request','A capture requires an explicit title.')
         if 'progress' in payload and not isinstance(payload['progress'],bool):
             raise AssistantError('invalid_request','Progress requires an explicit declaration.')
-        if action == "task_restore" and not inverse:
+        if action in RESTORE and not inverse:
             raise AssistantError("invalid_restore", "Use Undo on a confirmed fact.")
         intent = {"action":action,"payload":payload}
         digest = fingerprint(intent)
@@ -718,9 +724,14 @@ class Connected:
                 if sorted(r["b"] if r["a"]==uid else r["a"] for r in con.execute("SELECT * FROM related WHERE a=? OR b=?",(uid,uid)))!=sorted(wanted):raise conflict
                 return "related_update",{"uuid":uid,"relatedTo":inverse["related"][1],"undo_of":fact_id}
             kind,uid=inverse["event"][:2]
+            if kind=="restore":
+                # A canceled commitment cannot be edited, so it is still canceled unless restored since.
+                if not con.execute("SELECT 1 FROM events WHERE uuid=? AND canceled=1",(uid,)).fetchone():raise conflict
+                return "event_restore",{"uuid":uid,"undo_of":fact_id}
             event=con.execute("SELECT * FROM events WHERE uuid=? AND canceled=0",(uid,)).fetchone()
             if kind=="cancel":
-                if not event or (event["title"],event["start_at"],event["end_at"])!=tuple(effect["event_add"][1:4]):raise conflict
+                kept=effect["event_add"][1:4] if "event_add" in effect else inverse["event"][2]
+                if not event or [event["title"],event["start_at"],event["end_at"]]!=list(kept):raise conflict
                 return "event_cancel",{"uuid":uid,"undo_of":fact_id}
             if not event or any(event[k]!=v for k,v in effect["event_patch"][1].items()):raise conflict
             previous=dict(zip(("title","start_at","end_at"),(event["title"],event["start_at"],event["end_at"])),**inverse["event"][2])

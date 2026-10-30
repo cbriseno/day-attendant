@@ -412,6 +412,14 @@ class Assistant:
                 raise AssistantError("event_not_found", "The event does not exist.")
             if not event['canceled']:plan["effect"] = {"event_cancel": uid}
             plan["result"] = {"uuid": uid}
+        elif action == "event_restore":
+            # Undo of a cancellation only: the same commitment returns with its permanent UUID.
+            uid = self.validate_uuid(p["uuid"])
+            with self.store.connect() as con:event=con.execute('SELECT canceled FROM events WHERE uuid=?',(uid,)).fetchone()
+            if not event or not event['canceled']:
+                raise AssistantError("undo_conflict", "The commitment changed after this fact; nothing was overwritten.")
+            plan["effect"] = {"event_restore": uid}
+            plan["result"] = {"uuid": uid}
         elif action == "config_set":
             if p["name"] not in DEFAULTS or not isinstance(p["value"], int) or not 1 <= p["value"] <= 10080:
                 raise AssistantError("invalid_config", "Unknown setting or value outside 1–10080.")
@@ -495,6 +503,8 @@ class Assistant:
                     con.execute("INSERT INTO events(uuid,title,start_at,end_at,origin_zone,original_start) VALUES(?,?,?,?,?,?)", effect["event_add"])
                 if "event_cancel" in effect:
                     con.execute("UPDATE events SET canceled=1 WHERE uuid=?", (effect["event_cancel"],))
+                if "event_restore" in effect:
+                    con.execute("UPDATE events SET canceled=0 WHERE uuid=?", (effect["event_restore"],))
                 if 'event_meta' in effect:
                     uid,values=effect['event_meta']
                     for field,value in values.items():con.execute('UPDATE events SET '+field+'=? WHERE uuid=?',(value,uid))

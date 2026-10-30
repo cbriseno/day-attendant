@@ -111,8 +111,9 @@ about a stale retire, and `board cancel ID` to discard it.
 `board undo FACT_ID --key KEY` restores exactly what a fact replaced and refuses with
 `undo_conflict` when a later change touched the same data. It covers task changes,
 captures (the new task is retired, never erased), order, available time and rest,
-effort and continuity, related links, and calendar additions and edits; it does not
-cover calendar cancellations, provenance or recorded progress. `board undo-message
+effort and continuity, related links, and calendar additions, edits and cancellations
+(the same commitment returns with its UUID); it does not cover provenance or recorded
+progress. `board undo-message
 MESSAGE_KEY --key KEY` undoes every change one conversation message applied, newest
 first.
 

@@ -482,10 +482,10 @@ function renderClosed(data=flow.snapshot()){
  if($('closed')._html!==html){$('closed').innerHTML=html;$('closed')._html=html}
 }
 // Confirms the latest saved change, how long it took to show, and Undo when it can be undone.
-function announce(last,data){const t=data.tasks.find(t=>t.id===last.taskId),action=aliases[last.action]||last.action;
+function announce(last,data){const t=data.tasks.find(t=>t.id===last.taskId),action=aliases[last.action]||last.action,canceled=last.action==='event_cancel'&&(timings.get(last.proposalId)?.before?.calendar_events||[]).find(e=>e.uuid===last.taskId);
  const gesture=!last.undoOf&&gestureOf.get(last.proposalId);
  if(gesture){toast(gesture.notes.join(' · ')||tr('order_saved'),{undo:gesture.id,detail:[formatted('toast_ms',{ms:Math.max(1,Math.round(gesture.shown-gesture.started))}),gesture.notes.length&&data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · ')});return}
- const text=last.undoOf?tr('change_undone'):action==='order'?tr('order_saved'):action==='snooze'&&t?.until?tr('snoozed_until').replace('{time}',short(t.until))+' · '+t.title:[action==='declaration'&&t?tr('details_saved'):actionLabel[action]||tr(last.action),t?.title||(action==='declaration'?tr('my_context'):'')].filter(Boolean).join(' · ');
+ const text=last.undoOf?tr('change_undone'):action==='order'?tr('order_saved'):last.action==='event_cancel'?[tr('event_canceled'),canceled?.title].filter(Boolean).join(' · '):action==='snooze'&&t?.until?tr('snoozed_until').replace('{time}',short(t.until))+' · '+t.title:[action==='declaration'&&t?tr('details_saved'):actionLabel[action]||tr(last.action),t?.title||(action==='declaration'?tr('my_context'):'')].filter(Boolean).join(' · ');
  // The time shown is from the click until the change was on screen.
  const timing=timings.get(last.proposalId);timings.delete(last.proposalId);if(timing?.before&&last.undoable)undoViews.set(String(last.id),{...timing.before,taskId:last.taskId});const ms=timing&&action!=='order'?Math.max(1,Math.round((timing.shown??performance.now())-timing.started)):null;
  toast(text,{undo:last.undoable&&!last.undoOf?last.id:null,detail:[ms===null?'':formatted('toast_ms',{ms}),last.reviewStatus==='deferred'&&data.agent?.connected?tr('toast_reviewed_later'):''].filter(Boolean).join(' · ')})}
@@ -897,6 +897,7 @@ class RemoteFlow{
   else if(body.action==='dependency_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const done=new Set(tasks.filter(t=>t.state==='done').map(t=>t.id)),blockedBy=p.dependsOn.filter(id=>!done.has(id));tasks=tasks.map(t=>t.id===p.uuid?{...t,dependsOn:[...p.dependsOn],blockedBy,blocked:blockedBy.length>0}:t)}
   else if(body.action==='related_update'){if(!tasks.some(t=>t.id===p.uuid))return false;const wanted=new Set(p.relatedTo);tasks=tasks.map(t=>t.id===p.uuid?{...t,relatedTo:[...p.relatedTo]}:wanted.has(t.id)&&!t.relatedTo.includes(p.uuid)?{...t,relatedTo:[...t.relatedTo,p.uuid]}:!wanted.has(t.id)&&t.relatedTo.includes(p.uuid)?{...t,relatedTo:t.relatedTo.filter(x=>x!==p.uuid)}:t)}
   else if(body.action==='context_update')context={...context,...p};
+  else if(body.action==='event_cancel'){const events=data.calendar_events||[];if(!events.some(e=>e.uuid===p.uuid))return false;this.data={...data,calendar_events:events.filter(e=>e.uuid!==p.uuid)};globalThis.dayDaily?.update(this.data);return {tasks:data.tasks,context:data.context,calendar_events:events}}
   else if(body.action==='group_color_update'){const key=p.group.trim().toLowerCase();colors={...colors};if(p.color)colors[key]=p.color;else delete colors[key];this.data={...data,groupColors:colors};paintGroupColor(this.data,key);return {groupColor:[key,data.groupColors?.[key]]}}
   else return false;
   this.data={...data,tasks,context,groupColors:colors};render(this.data);return {tasks:data.tasks,context:data.context}}
@@ -913,6 +914,7 @@ class RemoteFlow{
  async commit(id,options){const started=performance.now();const r=this.observe(await api('/api/proposals/'+id+'/confirm',{generation:options.generation,without_review:!!options.withoutReview}));timings.set(id,{started});await this.refresh();return r}
  async undo(id){const started=performance.now(),view=undoViews.get(String(id));undoViews.delete(String(id));
   if(view?.groupColor){const colors={...this.data.groupColors},[key,color]=view.groupColor;if(color)colors[key]=color;else delete colors[key];this.data={...this.data,groupColors:colors};paintGroupColor(this.data,key)}
+  else if(view?.calendar_events){this.data={...this.data,calendar_events:view.calendar_events};globalThis.dayDaily?.update(this.data)}
   else if(view){const back=new Map(view.tasks.map(t=>[t.id,t]));this.data={...this.data,tasks:this.data.tasks.filter(t=>!t.pending&&(back.has(t.id)||t.id!==view.taskId)).map(t=>back.get(t.id)||t),context:view.context};render(this.data)}
   this.sending++;this.barrier=this.started;const shown=view?performance.now():undefined,sent=this.queue.then(async()=>this.observe(await deliver('/api/undo',{fact_id:id},this.data.revision,{refresh:false})));this.queue=sent.catch(()=>{});
   let r;try{r=timed(await sent,started,shown)}catch(error){this.settle();if(view){this.digest='';this.tag='';await this.refresh().catch(()=>{})}throw error}this.settle();await this.refresh();return r}

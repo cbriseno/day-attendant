@@ -2,6 +2,8 @@
 from datetime import timedelta
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -49,6 +51,7 @@ class InstantActionTests(DailyBase):
             ('related_update', {'uuid': a, 'relatedTo': [b]}), ('task_reopen', {'uuid': a}), ('front_retire', {'uuid': a}),
             ('event_update', {'uuid': event, 'title': 'Moved meeting', 'start': stamp(NOW + timedelta(hours=5)), 'end': stamp(NOW + timedelta(hours=6))}),
             ('event_add', {'title': 'Dentist', 'start': stamp(NOW + timedelta(days=1)), 'end': stamp(NOW + timedelta(days=1, hours=1))}),
+            ('event_cancel', {'uuid': event}),
         ]
         for action, payload in actions:
             with self.subTest(action=action, payload=payload):
@@ -95,6 +98,86 @@ class InstantActionTests(DailyBase):
                 with self.assertRaises(AssistantError) as error: self.board.undo(fact, 'late-undo-' + str(fact))
                 self.assertEqual(error.exception.code, 'undo_conflict')
                 self.assertEqual(self.state(), before)
+
+    def event(self, title='Dentist'):
+        return self.apply('event_add', {'title': title, 'start': stamp(NOW + timedelta(days=1)), 'end': stamp(NOW + timedelta(days=1, hours=1)),
+                                        'source': 'call', 'person': 'Clinic'})['result']['uuid']
+
+    def event_row(self, uid):
+        with self.app.store.connect() as con: return dict(con.execute('SELECT * FROM events WHERE uuid=?', (uid,)).fetchone())
+
+    def test_undoing_a_cancellation_brings_back_the_same_commitment(self):
+        uid = self.event()
+        before = self.event_row(uid)
+        self.apply('event_cancel', {'uuid': uid})
+        last = self.board.snapshot()['lastFact']
+        self.assertEqual((last['action'], last['taskId'], last['undoable']), ('event_cancel', uid, True))
+        undo = self.board.undo(last['id'], 'undo-cancel')
+        self.assertEqual((undo['phase'], undo['intent']['action']), ('applied', 'event_restore'))
+        # Same permanent UUID, title, times and provenance; only the cancellation is reverted.
+        self.assertEqual(self.event_row(uid), before)
+        self.assertEqual([e['uuid'] for e in self.board.snapshot()['calendar_events']], [uid])
+        # A retry with the same key replays the receipt instead of restoring twice.
+        self.assertEqual(self.board.undo(last['id'], 'undo-cancel')['id'], undo['id'])
+        with self.app.store.connect() as con:
+            history = [r[0] for r in con.execute('SELECT action FROM facts ORDER BY id')]
+        self.assertEqual(history, ['event_add', 'event_cancel', 'event_restore'])
+        restored = self.board.snapshot()['lastFact']
+        self.assertEqual((restored['undoOf'], restored['taskId']), (last['id'], uid))
+        # The restore is itself a fact: undoing it cancels the commitment again, unless it was edited since.
+        self.apply('event_update', {'uuid': uid, 'title': 'Dentist, confirmed'})
+        with self.assertRaises(AssistantError) as error: self.board.undo(restored['id'], 'undo-restore-late')
+        self.assertEqual(error.exception.code, 'undo_conflict')
+        self.apply('event_update', {'uuid': uid, 'title': 'Dentist'})
+        self.board.undo(restored['id'], 'undo-restore')
+        self.assertEqual(self.board.snapshot()['calendar_events'], [])
+
+    def test_cancellation_undo_never_overwrites_a_later_change(self):
+        uid = self.event()
+        self.apply('event_cancel', {'uuid': uid})
+        fact = self.board.snapshot()['lastFact']['id']
+        self.board.undo(fact, 'first-undo')
+        self.apply('event_update', {'uuid': uid, 'title': 'Dentist, moved'})
+        row = self.event_row(uid)
+        # The commitment is active again and was edited since; a second Undo with a new key is refused.
+        with self.assertRaises(AssistantError) as error: self.board.undo(fact, 'second-undo')
+        self.assertEqual(error.exception.code, 'undo_conflict')
+        self.assertEqual(self.event_row(uid), row)
+        # A cancellation is undone only through its fact, never as a request of its own.
+        self.apply('event_cancel', {'uuid': uid})
+        revision = self.app.store.revision()
+        with self.assertRaises(AssistantError) as error: self.board.request('event_restore', {'uuid': uid}, 'direct-restore')
+        self.assertEqual(error.exception.code, 'invalid_restore')
+        self.assertEqual(self.app.store.revision(), revision)
+        self.assertEqual(self.board.snapshot()['calendar_events'], [])
+
+    def test_cancellation_undo_recovers_once_after_process_death(self):
+        root = Path(__file__).resolve().parent.parent
+        script = '''
+from datetime import datetime,timezone
+import os,sys
+from day_attendant.service import Assistant
+from day_attendant.connected import Connected
+def fault(point):
+    if point==sys.argv[3]:os._exit(75)
+app=Assistant(sys.argv[1],clock=lambda:datetime(2026,10,28,12,tzinfo=timezone.utc),fault=fault)
+Connected(app).undo(int(sys.argv[2]),'death-undo-'+sys.argv[3])
+'''
+        for point in ('after_admission', 'inside_commit'):
+            with self.subTest(point=point):
+                uid = self.event('Dentist ' + point)
+                before = self.event_row(uid)
+                self.apply('event_cancel', {'uuid': uid})
+                fact = self.board.snapshot()['lastFact']['id']
+                result = subprocess.run([sys.executable, '-B', '-c', script, self.temp.name, str(fact), point], cwd=root, capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 75, result.stderr)
+                self.assertEqual(self.event_row(uid)['canceled'], 1)
+                restarted = Connected(Assistant(self.temp.name, clock=lambda: NOW)); restarted.startup(); restarted.startup()
+                self.assertEqual(self.event_row(uid), before)
+                self.assertEqual(restarted.undo(fact, 'death-undo-' + point)['phase'], 'applied')
+                with self.app.store.connect() as con:
+                    self.assertEqual(con.execute("SELECT count(*) FROM facts WHERE action='event_restore' AND json_extract(plan,'$.target_uuid')=?", (uid,)).fetchone()[0], 1)
+                self.assertEqual(self.app.store.unresolved(), [])
 
     def test_rejections_are_immediate_with_a_stable_code_and_save_nothing(self):
         a, b = self.add('A'), self.add('B')
