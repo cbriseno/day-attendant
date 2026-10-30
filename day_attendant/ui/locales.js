@@ -1,6 +1,8 @@
 // Authored interface copy only. Never apply these catalogs to card or chat content.
 globalThis.dayTranslations = {
   "en": {
+    "creation_now": "now",
+    "creation_unknown": "Creation date unknown",
     "focus_view": "Focus",
     "focus_in_progress": "in progress",
     "focus_active": "In progress",
@@ -137,6 +139,8 @@ globalThis.dayTranslations = {
     "priority_low": "Low"
   },
   "es": {
+    "creation_now": "ahora",
+    "creation_unknown": "Fecha de creación desconocida",
     "focus_view": "Enfoque",
     "focus_in_progress": "en curso",
     "focus_active": "En curso",
