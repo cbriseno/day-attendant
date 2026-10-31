@@ -1333,7 +1333,14 @@ try{
   await click(`[data-task-id="${third.id}"] [data-x=close]`);assert.doesNotMatch(await shown(third),/class="task[^"]* expanded/);
   await evaluate(`dayUI.editTitle(${JSON.stringify(third.id)})`);assert.match(await shown(third),/title-edit/);
   await key(`[data-task-id="${third.id}"] .title-edit`,'Escape');assert.doesNotMatch(await shown(third),/title-edit/);
-  console.log('Row regressions passed: one changed task builds one row; links, clock, day, language, zone, group color, read-only, availability, pending change, suggestion, details and title edit all show at once');
+  // On a long list only what can be seen glides: the moved card, and the rows it passes on screen.
+  const rows=Array.from({length:120},(_,i)=>task('Row '+(i+1)));
+  await change(()=>{state.tasks=rows;state.taskOrder=rows.map(r=>r.id)});await evaluate(`(async()=>{${still}})()`);
+  const glide=await evaluate(`(async()=>{const animate=Element.prototype.animate,moved=new Set();Element.prototype.animate=function(...a){moved.add(this.dataset.taskId);return animate.apply(this,a)};await dayUI.flow.request('task_update',{uuid:${JSON.stringify(rows[0].id)},priority:'low'});Element.prototype.animate=animate;const on=[...document.querySelectorAll('#board .task')].filter(c=>c.getBoundingClientRect().top<innerHeight);return {moved:[...moved],screen:on.map(c=>c.dataset.taskId),count:document.querySelectorAll('#board .task').length}})()`);
+  assert.equal(glide.count,120);assert.ok(glide.moved.includes(rows[0].id),'the moved card glides');
+  assert.ok(glide.screen.length>3&&glide.screen.every(id=>glide.moved.includes(id)),'every card on screen glides');
+  assert.ok(glide.moved.length<=glide.screen.length+2,'cards off screen stay still: '+glide.moved.length+' glides for '+glide.screen.length+' cards on screen');
+  console.log('Row regressions passed: one changed task builds one row; links, clock, day, language, zone, group color, read-only, availability, pending change, suggestion, details and title edit all show at once; only visible cards glide');
  }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');await new Promise(resolve=>chrome.exitCode!==null?resolve():chrome.once('exit',resolve));

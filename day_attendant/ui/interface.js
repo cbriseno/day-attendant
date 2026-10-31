@@ -116,11 +116,13 @@ function playFlip(first,{duration=DURATION+80,delay=0,enter=true}={}){
  // readings and their difference is what this change moved. Cancelling and restarting every glide
  // would restyle, lay out and repaint all of those cards in the frame that shows the change.
  const gliding=new Set($('board').getAnimations({subtree:true}).map(a=>a.effect?.target)),cards=boardCards().filter(card=>card.getClientRects().length);
- const moves=cards.map(card=>{const was=first.get(card.dataset.taskId);if(!was)return [card,null];const now=card.getBoundingClientRect();return [card,[was.left-now.left,was.top-now.top]]});
- for(const [card,delta] of moves){
+ // A glide wholly above or below the screen shows nothing, and on a long list those are most of them:
+ // each one adds to the frame that keeps the page from taking in the save's reply.
+ const moves=cards.map(card=>{const was=first.get(card.dataset.taskId);if(!was)return [card,null];const now=card.getBoundingClientRect();return [card,[was.left-now.left,was.top-now.top],Math.min(was.top,now.top)<innerHeight&&Math.max(was.bottom,now.bottom)>0]});
+ for(const [card,delta,seen] of moves){
   if(!delta){if(enter)card.animate([{opacity:0,transform:'scale(.98)'},{opacity:1,transform:'none'}],{duration,delay,easing:'ease-out',fill:'backwards'});continue}
   // Over a running glide the move adds to it. Alone it replaces, which the compositor can run.
-  const [dx,dy]=delta;if(Math.abs(dx)>=1||Math.abs(dy)>=1)card.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],{duration,delay,easing:EASE,fill:'backwards',composite:gliding.has(card)?'add':'replace'});
+  const [dx,dy]=delta;if(seen&&(Math.abs(dx)>=1||Math.abs(dy)>=1))card.animate([{transform:'translate('+dx+'px,'+dy+'px)'},{transform:'none'}],{duration,delay,easing:EASE,fill:'backwards',composite:gliding.has(card)?'add':'replace'});
  }
  if(dependencyLines.style.display==='block')setTimeout(()=>drawDependencies(),duration+delay+20);
 }
