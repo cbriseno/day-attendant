@@ -54,6 +54,32 @@ class StateViewTests(unittest.TestCase):
         self.assertLessEqual(len(view['proposals']), RECENT_PROPOSALS)
         self.assertTrue(all(set(p) == {'id', 'key', 'phase', 'origin'} for p in view['proposals']))
 
+    def test_a_fact_leaves_its_read_set_to_its_operation(self):
+        self.apply('task_update', {'uuid': self.ids[1], 'priority': 'low'})
+        with self.app.store.connect() as con:
+            fact = dict(con.execute('SELECT * FROM facts ORDER BY id DESC LIMIT 1').fetchone())
+            operation = con.execute('SELECT plan FROM operations WHERE key=?', (fact['operation_key'],)).fetchone()[0]
+        whole, kept = json.loads(operation), json.loads(fact['plan'])
+        self.assertTrue(whole['reads'] and whole['known_uuids'])
+        self.assertEqual(kept, {k: v for k, v in whole.items() if k not in ('reads', 'known_uuids')})
+        # The CLI's snapshot still shows the whole plan, in the same shape.
+        shown = self.board.snapshot()['events'][-1]
+        self.assertEqual(shown, dict(fact, plan=operation))
+        self.assertEqual(list(shown), ['id', 'operation_key', 'proposal_id', 'action', 'plan', 'at'])
+        # A fact stored whole, as before this change, reads the same.
+        with self.app.store.connect() as con:
+            con.execute('UPDATE facts SET plan=? WHERE id=?', (operation, fact['id']))
+        self.assertEqual(self.board.snapshot()['events'][-1], shown)
+        self.assertEqual(self.board.view()['events'][0]['taskId'], self.ids[1])
+
+    def test_a_change_undoes_from_a_fact_without_its_read_set(self):
+        before = next(t for t in self.board.snapshot()['tasks'] if t['id'] == self.ids[1])['priority']
+        self.apply('task_update', {'uuid': self.ids[1], 'priority': 'urgent' if before != 'urgent' else 'low'})
+        fact = self.board.view()['events'][0]
+        self.assertTrue(fact['undoable'])
+        self.board.undo(fact['id'], 'view-undo')
+        self.assertEqual(next(t for t in self.board.snapshot()['tasks'] if t['id'] == self.ids[1])['priority'], before)
+
     def test_last_fact_summary_matches_its_plan(self):
         self.apply('task_done', {'uuid': self.ids[1]})
         fact = self.board.snapshot()['events'][-1]

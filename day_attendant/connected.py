@@ -370,7 +370,8 @@ class Connected:
             elif history == "all":
                 proposals = [self.unpack(r) for r in con.execute("SELECT * FROM proposals ORDER BY rowid")]
                 failed = con.execute("SELECT proposal_id,generation,result FROM evaluations WHERE status='failed' ORDER BY id")
-                facts = [dict(r) for r in con.execute("SELECT * FROM facts ORDER BY id")]
+                # A fact leaves its recovery read set to its operation; the public snapshot shows the whole plan.
+                facts = [dict(r) for r in con.execute("SELECT f.id,f.operation_key,f.proposal_id,f.action,COALESCE(o.plan,f.plan) AS plan,f.at FROM facts f LEFT JOIN operations o ON o.key=f.operation_key ORDER BY f.id")]
             else:
                 # The browser needs pending decisions, the receipts of this conversation and recent keys
                 # for lost replies; settled history stays local, so the view does not grow per action.

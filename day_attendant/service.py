@@ -13,6 +13,8 @@ from .timeutil import instant, parse, stamp, utcnow, wire
 
 PUBLIC_PRIORITY = {v: k for k, v in PRIORITIES.items()}
 PRIORITY_RANK = {name: rank for rank, name in enumerate(PRIORITIES)}
+# Only recovery reads these, and from the operation. On a long list they are nearly all of a plan's bytes.
+RECOVERY_ONLY = ("reads", "known_uuids")
 
 
 def encoded(value):
@@ -545,7 +547,7 @@ class Assistant:
                     con.execute("INSERT OR REPLACE INTO continuity VALUES(?,?)", (uid, encoded(merged)))
                 if plan.get("proposal_id"):
                     con.execute("UPDATE proposals SET phase='applied',result=? WHERE id=?", (encoded(result), plan["proposal_id"]))
-                    con.execute("INSERT OR IGNORE INTO facts(operation_key,proposal_id,action,plan,at) VALUES(?,?,?,?,?)", (key, plan["proposal_id"], plan["action"], encoded(plan), self.now()))
+                    con.execute("INSERT OR IGNORE INTO facts(operation_key,proposal_id,action,plan,at) VALUES(?,?,?,?,?)", (key, plan["proposal_id"], plan["action"], encoded({k: v for k, v in plan.items() if k not in RECOVERY_ONLY}), self.now()))
                 con.execute("UPDATE state SET value=? WHERE key='revision'", (str(result["revision"]),))
                 con.execute("UPDATE operations SET status='confirmed',result=?,error=NULL WHERE key=?", (encoded(result), key))
                 self.fault("inside_commit")
