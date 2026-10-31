@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const group=process.argv[3]||'all';
-assert.ok(['all','details','dates','conversation','dependencies','proposals','ordering','refresh','instant','compact','snooze','drag','groups','quick'].includes(group),'Unknown browser regression group');
+assert.ok(['all','details','dates','conversation','dependencies','proposals','ordering','refresh','instant','compact','snooze','drag','groups','quick','rows'].includes(group),'Unknown browser regression group');
 const task=(title)=>({id:randomUUID(),title,state:'todo',priority:'medium',due:null,until:null,context:'',next:'',awaiting:false,remainingMinutes:null,dependsOn:[],relatedTo:[],blocked:false,blockedBy:[],attachmentIds:[],source:'general'});
 const target=task('Responsabilidad original'),a=task('A'),b=task('B'),c=task('C');
 // Historical DST fixtures remain stable as jurisdictions change future rules.
@@ -1282,6 +1282,58 @@ try{
   await rpc('Emulation.clearDeviceMetricsOverride',{},sessionId);
   state.quickAdd=false;state.tasks=kept;state.revision++;await refresh();
   console.log('Quick capture regressions passed: one line and Enter, preview, priority, single group, profile-zone dates, morning, DST refusal, Esc, full form, refused save, localization, Focus, read-only and phone');
+ }
+ if(group==='all'||group==='rows'){
+  // A redraw builds only the rows that changed, and a kept row never outlives anything it shows: another
+  // task, the clock, the language, the zone, the profile's settings or the row's own open state.
+  const first={...task('First row'),due:'2025-10-28T12:00:40Z',createdAt:'2025-10-28T11:59:30Z'},second={...task('Second row'),due:'2025-10-29T18:00:00Z',createdAt:'2025-10-28T11:59:30Z'},third={...task('Third row'),due:'2025-10-29T09:00:00Z'};
+  const shown=t=>evaluate(`document.querySelector('[data-task-id="${t.id}"]').outerHTML`);
+  const change=async edit=>{edit();state.revision++;await refresh()};
+  await change(()=>Object.assign(state,{tasks:[first,second,third],now:'2025-10-28T12:00:00Z',timezone:'America/Edmonton',readOnly:false,proposals:[],suggestions:[],messages:[],calendar_events:[],orderSuggestion:null,taskOrder:[],groupColors:{}}));
+  // Every date a row writes is read from a formatter, so these reads count the rows built.
+  await evaluate(`(()=>{const format=Object.getOwnPropertyDescriptor(Intl.DateTimeFormat.prototype,'format');Object.defineProperty(Intl.DateTimeFormat.prototype,'format',{...format,get(){window.__dates++;return format.get.call(this)}})})()`);
+  const datesFor=async edit=>{await evaluate('window.__dates=0');await change(edit);return evaluate('window.__dates')};
+  const one=await datesFor(()=>{first.title='Renamed row'}),every=await datesFor(()=>{state.groupColors={casa:'teal'}});
+  assert.ok(every-one>=6,'one changed task built as many rows as a change to all of them: '+one+' and '+every);
+  // What a row shows of the tasks it is linked to.
+  await change(()=>Object.assign(second,{dependsOn:[first.id],blockedBy:[first.id],blocked:true}));
+  assert.match(await shown(second),/title="Blocked · Renamed row"/);assert.match(await shown(first),/title="Blocks · Second row"/);
+  await change(()=>{first.title='Renamed again'});assert.match(await shown(second),/title="Blocked · Renamed again"/);
+  await change(()=>{second.title='Second renamed'});assert.match(await shown(first),/title="Blocks · Second renamed"/);
+  await change(()=>Object.assign(second,{dependsOn:[],blockedBy:[],blocked:false}));assert.doesNotMatch(await shown(first),/dependency-chip/);
+  // The clock, inside one minute: the age turns over and then the deadline passes, each at its own second.
+  assert.match(await shown(first),/>now<\/time>/);await change(()=>{state.now='2025-10-28T12:00:35Z'});assert.match(await shown(first),/>1 min<\/time>/);
+  assert.doesNotMatch(await shown(first),/task-due late/);await change(()=>{state.now='2025-10-28T12:00:50Z'});assert.match(await shown(first),/task-due late/);
+  // A new day in the profile's zone: only the word for the date changes.
+  assert.doesNotMatch(await shown(third),/Due today, /);await change(()=>{state.now='2025-10-29T07:00:00Z'});assert.match(await shown(third),/Due today, /);
+  // The language: minutes read the same in both, so nothing but the language can rebuild this row.
+  await change(()=>{first.createdAt='2025-10-29T06:55:00Z'});assert.match(await shown(first),/Was due /);
+  await fill('locale-choice','es');assert.match(await shown(first),/Venció /);await fill('locale-choice','en');assert.match(await shown(first),/Was due /);
+  await change(()=>{state.timezone='Asia/Tokyo'});assert.match(await shown(third),/GMT\+9/);await change(()=>{state.timezone='America/Edmonton'});assert.doesNotMatch(await shown(third),/GMT\+9/);
+  // The profile's settings.
+  await change(()=>{third.group='Casa'});assert.match(await shown(third),/--gc:#12a594/);await change(()=>{state.groupColors={casa:'sky'}});assert.match(await shown(third),/--gc:#0090ff/);
+  await change(()=>{state.readOnly=true});assert.match(await shown(third),/class="check"[^>]* disabled/);await change(()=>{state.readOnly=false});assert.doesNotMatch(await shown(third),/class="check"[^>]* disabled/);
+  await change(()=>{third.remainingMinutes=25});assert.doesNotMatch(await shown(third),/25 min left/);
+  await change(()=>{state.context={availableMinutes:60,availableUntil:state.now,rest:false}});assert.match(await shown(third),/25 min left/);
+  await change(()=>{state.context={availableMinutes:null,availableUntil:null,rest:false}});assert.doesNotMatch(await shown(third),/25 min left/);
+  // The suggested order's reasons belong to its view, and change without any change to the task.
+  const reasons=reason=>({request:{key:'rows',status:'completed'},result:{key:'rows',at:state.now,message:'',order:[{id:third.id,reason}]},stale:false});
+  await change(()=>{state.orderSuggestion=reasons('First reason')});assert.doesNotMatch(await shown(third),/First reason/);
+  await fill('order-choice','suggested');assert.match(await shown(third),/First reason/);
+  await change(()=>{state.orderSuggestion=reasons('Second reason')});assert.match(await shown(third),/Second reason/);
+  await fill('order-choice','priority');assert.doesNotMatch(await shown(third),/Second reason/);await change(()=>{state.orderSuggestion=null});
+  // A pending change and a suggestion come and go without any change to the task itself.
+  await change(()=>{state.proposals=[{id:randomUUID(),intent:{action:'task_update',payload:{uuid:third.id,title:'Pending title'}},phase:'unavailable',generation:0,facts:[]}]});assert.match(await shown(third),/pending-badge/);
+  await change(()=>{state.proposals=[]});assert.doesNotMatch(await shown(third),/pending-badge/);
+  await change(()=>{state.suggestions=[{id:randomUUID(),taskId:third.id,code:'unblocked',origin:'rules',message:null,messageKey:'suggest_unblocked',messageParams:{title:'A'},action:{action:'front_activate',payload:{uuid:third.id}},status:'open',current:true,createdAt:state.now}]});assert.match(await shown(third),/assistant-mark/);
+  await click(`[data-task-id="${third.id}"] .assistant-mark`);assert.match(await shown(third),/assistant-bubble/);
+  await change(()=>{state.suggestions=[]});assert.doesNotMatch(await shown(third),/assistant-mark|assistant-bubble/);
+  // Opening and editing show on the row, and leave nothing behind.
+  await evaluate(`dayUI.expandTask(${JSON.stringify(third.id)})`);assert.match(await shown(third),/class="task[^"]* expanded/);
+  await click(`[data-task-id="${third.id}"] [data-x=close]`);assert.doesNotMatch(await shown(third),/class="task[^"]* expanded/);
+  await evaluate(`dayUI.editTitle(${JSON.stringify(third.id)})`);assert.match(await shown(third),/title-edit/);
+  await key(`[data-task-id="${third.id}"] .title-edit`,'Escape');assert.doesNotMatch(await shown(third),/title-edit/);
+  console.log('Row regressions passed: one changed task builds one row; links, clock, day, language, zone, group color, read-only, availability, pending change, suggestion, details and title edit all show at once');
  }
 }finally{
  if(socket)socket.close();chrome.kill('SIGTERM');await new Promise(resolve=>chrome.exitCode!==null?resolve():chrome.once('exit',resolve));

@@ -231,7 +231,23 @@ const PRIORITIES=globalThis.dayOrdering.PRIORITIES;
 function priorityButton(t,off){return '<button type="button" class="priority-pill" data-priority="'+esc(t.priority)+'" data-id="'+t.id+'" data-action="priority" aria-haspopup="menu" aria-expanded="false" title="'+esc(tr('change_priority'))+'"'+(off?' disabled':'')+'><span class="visually-hidden">'+esc(tr('priority'))+': </span>'+esc(tr('priority_'+t.priority))+'</button>'}
 // One compact row per task: handle · finish · title and its data · priority · start or pause · snooze · more.
 // The Board uses the same pieces as small cards. Every action is one click; priority is a one-level menu.
+// A row keeps its markup with everything it was built from, so a redraw for one changed task builds one
+// row, not all of them. A row that is open, being edited or carrying a suggestion is always built, and
+// only the rows of the last redraw are kept.
+let rowsShared='',rowsKept=new Map(),rowsBuilt=new Map(),blocksOf=new Map(),suggested=new Set();
+function startRows(data){
+ // What every row reads: when any of it changes, no kept row is used.
+ const shared=JSON.stringify([locale,zone,zoneRules,[...zoneYears.values()],localValue(NOW).slice(0,10),orderView,orderView==='suggested'&&data.orderSuggestion?.result?.order,data.readOnly,groupColors,data.context.availableMinutes!==null]);
+ rowsKept=shared===rowsShared?rowsBuilt:new Map();rowsShared=shared;rowsBuilt=new Map();
+ blocksOf=new Map();for(const r of data.tasks)for(const id of new Set(r.blockedBy))if(blocksOf.has(id))blocksOf.get(id).push(r.id);else blocksOf.set(id,[r.id]);
+ suggested=new Set((data.suggestions||[]).filter(s=>s.current).map(s=>s.taskId));
+}
 function taskRow(t,s,data,proposal){
+ if(expanded===t.id||titleEdit?.id===t.id||suggested.has(t.id))return buildRow(t,s,data,proposal);
+ // The chips stand for the other tasks a row names, and the two times for what the clock changes in it.
+ const inputs=JSON.stringify([t,s.key,s.draggable,!!proposal,creationAge(t.createdAt),!!t.due&&new Date(t.due)<NOW])+dependencyChips(t,data),kept=rowsKept.get(t.id),row=kept?.inputs===inputs?kept:{inputs,html:buildRow(t,s,data,proposal)};
+ rowsBuilt.set(t.id,row);return row.html}
+function buildRow(t,s,data,proposal){
  const off=data.readOnly||t.pending,label=text=>esc(text+': '+t.title),blockedStart=t.blocked&&t.state!=='active';
  const handle=s.draggable&&!data.readOnly&&!t.pending?'<button type="button" class="drag-handle" data-id="'+t.id+'" data-action="move" aria-label="'+label(tr('reorder'))+'" title="'+esc(tr('reorder_hint'))+'">'+gripIcon+'</button>':'';
  const state=t.state==='active'?'<button type="button" class="ib state-action on" data-id="'+t.id+'" data-action="todo" aria-label="'+label(tr('pause'))+'" title="'+esc(tr('pause'))+'"'+(off?' disabled':'')+'>'+pauseIcon+'</button>'
@@ -312,7 +328,7 @@ async function saveOrder(){if(orderSaving)return;const order=localOrder;if(!orde
 // Blocked and blocking cards name their counterparts. On a wide board the chip highlights those
 // direct links; on a phone, where lines do not fit, it opens the task's links as a sheet.
 const titles=(ids,data)=>ids.map(id=>data.tasks.find(r=>r.id===id)?.title||id).join(', ');
-function dependencyChips(t,data){const blocks=data.tasks.filter(r=>r.blockedBy.includes(t.id)).map(r=>r.id),chip=(kind,count,names)=>'<button type="button" class="dependency-chip '+kind+'" data-id="'+t.id+'" data-action="dependencies" aria-pressed="false" aria-label="'+esc(names+' · '+tr('show_dependencies'))+'" title="'+esc(names)+'">'+esc(formatted(count,{n:kind==='blocked-label'?t.blockedBy.length:blocks.length}))+'</button>';return (t.blocked?chip('blocked-label','blocked_by_count',tr('blocked_prefix')+titles(t.blockedBy,data)):'')+(blocks.length?chip('blocking-label','blocks_count',tr('blocks_prefix')+titles(blocks,data)):'')}
+function dependencyChips(t,data){const blocks=blocksOf.get(t.id)||[],chip=(kind,count,names)=>'<button type="button" class="dependency-chip '+kind+'" data-id="'+t.id+'" data-action="dependencies" aria-pressed="false" aria-label="'+esc(names+' · '+tr('show_dependencies'))+'" title="'+esc(names)+'">'+esc(formatted(count,{n:kind==='blocked-label'?t.blockedBy.length:blocks.length}))+'</button>';return (t.blocked?chip('blocked-label','blocked_by_count',tr('blocked_prefix')+titles(t.blockedBy,data)):'')+(blocks.length?chip('blocking-label','blocks_count',tr('blocks_prefix')+titles(blocks,data)):'')}
 const dependencyEdges=data=>dependencyFocus?data.tasks.flatMap(r=>r.blockedBy.filter(p=>p===dependencyFocus||r.id===dependencyFocus).map(p=>[p,r.id])):[];
 const dependencyLines=document.createElementNS('http://www.w3.org/2000/svg','svg');dependencyLines.classList.add('dependency-lines');dependencyLines.setAttribute('aria-hidden','true');$('board').after(dependencyLines);
 const dependencyResize=new ResizeObserver(()=>drawDependencies());dependencyResize.observe($('board'));
@@ -469,7 +485,7 @@ function render(data=flow.snapshot()) {
  const note=orderNote(data);if($('order-note')._html!==note){$('order-note').innerHTML=note;$('order-note')._html=note}
  if(expanded&&!data.tasks.some(t=>t.id===expanded&&!t.pending&&!['done','retired'].includes(t.state)))expanded=null;
  if(titleEdit&&!data.tasks.some(t=>t.id===titleEdit.id&&!['done','retired'].includes(t.state)))titleEdit=null;
- const typing=typingState();rendering=true;
+ const typing=typingState();rendering=true;startRows(data);
  morphBoard(taskView==='focus'?focusLanes(data):orderView==='group'&&$('board').classList.contains('is-list')?groupLanes(data,proposals):[['active',tr("active")],['todo',tr("to_do")],['snoozed',tr("snoozed")]].map(([state,label])=>{
   const rows=data.tasks.filter(t=>t.state===state&&shownByFilter(t)),sections=globalThis.dayOrdering.arrange(rows,orderView,{order:localOrder||data.taskOrder||[],suggestion:data.orderSuggestion?.result});
   const items=sections.flatMap(s=>[...(orderView==='group'?[{key:'heading:'+s.key,html:groupHeading(s)}]:[]),...s.tasks.map(t=>({id:t.id,html:taskRow(t,s,data,proposals.find(p=>p.intent.taskId===t.id))}))]);
