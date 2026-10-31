@@ -1289,7 +1289,7 @@ try{
   const first={...task('First row'),due:'2025-10-28T12:00:40Z',createdAt:'2025-10-28T11:59:30Z'},second={...task('Second row'),due:'2025-10-29T18:00:00Z',createdAt:'2025-10-28T11:59:30Z'},third={...task('Third row'),due:'2025-10-29T09:00:00Z'};
   const shown=t=>evaluate(`document.querySelector('[data-task-id="${t.id}"]').outerHTML`);
   const change=async edit=>{edit();state.revision++;await refresh()};
-  await change(()=>Object.assign(state,{tasks:[first,second,third],now:'2025-10-28T12:00:00Z',timezone:'America/Edmonton',readOnly:false,proposals:[],suggestions:[],messages:[],calendar_events:[],orderSuggestion:null,taskOrder:[],groupColors:{}}));
+  await change(()=>Object.assign(state,{tasks:[first,second,third],now:'2025-10-28T12:00:00Z',timezone:'America/Edmonton',readOnly:false,proposals:[],suggestions:[],messages:[],calendar_events:[],orderSuggestion:null,taskOrder:[],groupColors:{},context:{availableMinutes:null,availableUntil:null,rest:false}}));
   // Every date a row writes is read from a formatter, so these reads count the rows built.
   await evaluate(`(()=>{const format=Object.getOwnPropertyDescriptor(Intl.DateTimeFormat.prototype,'format');Object.defineProperty(Intl.DateTimeFormat.prototype,'format',{...format,get(){window.__dates++;return format.get.call(this)}})})()`);
   const datesFor=async edit=>{await evaluate('window.__dates=0');await change(edit);return evaluate('window.__dates')};
